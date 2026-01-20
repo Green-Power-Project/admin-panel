@@ -2,12 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import AppHeader from '@/components/AppHeader';
+import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import {
   collection,
-  getDocs,
+  onSnapshot,
   query,
   orderBy,
   where,
@@ -24,7 +24,9 @@ interface Customer {
 export default function CustomersPage() {
   return (
     <ProtectedRoute>
-      <CustomersContent />
+      <AdminLayout title="Customers">
+        <CustomersContent />
+      </AdminLayout>
     </ProtectedRoute>
   );
 }
@@ -34,55 +36,77 @@ function CustomersContent() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    loadCustomers();
-  }, []);
+    if (!db) return;
 
-  async function loadCustomers() {
+    // Show loader whenever data is being fetched
     setLoading(true);
-    try {
-      // Load customers from customers collection
-      const customersSnapshot = await getDocs(
-        query(collection(db, 'customers'), orderBy('customerNumber', 'asc'))
-      );
+    let customerProjectCounts = new Map<string, number>();
 
-      // Get project counts
-      const projectsSnapshot = await getDocs(collection(db, 'projects'));
-      const customerProjectCounts = new Map<string, number>();
-
-      projectsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        if (data.customerId) {
-          customerProjectCounts.set(
-            data.customerId,
-            (customerProjectCounts.get(data.customerId) || 0) + 1
-          );
-        }
-      });
-
+    // Helper function to update customers with project counts
+    const updateCustomersWithProjectCounts = (
+      customersSnapshot: any,
+      projectCounts: Map<string, number>
+    ) => {
       const customersList: Customer[] = [];
-      customersSnapshot.forEach((doc) => {
+      customersSnapshot.forEach((doc: any) => {
         const data = doc.data();
         customersList.push({
           uid: data.uid,
           email: data.email || 'N/A',
           customerNumber: data.customerNumber || 'N/A',
           enabled: data.enabled !== false, // Default to true if not set
-          projectCount: customerProjectCounts.get(data.uid) || 0,
+          projectCount: projectCounts.get(data.uid) || 0,
         });
       });
-
       setCustomers(customersList);
-    } catch (error) {
-      console.error('Error loading customers:', error);
-    } finally {
       setLoading(false);
-    }
-  }
+    };
+
+    // Real-time listener for projects (to calculate project counts)
+    const projectsUnsubscribe = onSnapshot(
+      collection(db, 'projects'),
+      (projectsSnapshot) => {
+        customerProjectCounts = new Map<string, number>();
+
+        projectsSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.customerId) {
+            customerProjectCounts.set(
+              data.customerId,
+              (customerProjectCounts.get(data.customerId) || 0) + 1
+            );
+          }
+        });
+
+        // Trigger customers update when projects change
+        // We'll get the customers snapshot from the customers listener
+      },
+      (error) => {
+        console.error('Error listening to projects:', error);
+      }
+    );
+
+    // Real-time listener for customers
+    const customersUnsubscribe = onSnapshot(
+      query(collection(db, 'customers'), orderBy('customerNumber', 'asc')),
+      (customersSnapshot) => {
+        updateCustomersWithProjectCounts(customersSnapshot, customerProjectCounts);
+      },
+      (error) => {
+        console.error('Error listening to customers:', error);
+        setLoading(false);
+      }
+    );
+
+    // Cleanup listeners on unmount
+    return () => {
+      projectsUnsubscribe();
+      customersUnsubscribe();
+    };
+  }, []);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AppHeader />
-      <main className="max-w-7xl mx-auto px-6 py-8">
+    <div className="px-8 py-8">
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-semibold text-gray-900">Customers</h2>
@@ -97,9 +121,18 @@ function CustomersContent() {
         </div>
 
         {loading ? (
-          <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-            <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
-            <p className="mt-4 text-sm text-gray-500">Loading customers...</p>
+          <div className="bg-white border border-gray-200 rounded-sm overflow-hidden animate-pulse">
+            <div className="px-6 py-3 bg-gray-50">
+              <div className="h-4 bg-gray-200 rounded w-32"></div>
+            </div>
+            <div className="divide-y divide-gray-200">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="px-6 py-4">
+                  <div className="h-4 bg-gray-200 rounded w-40 mb-2"></div>
+                  <div className="h-3 bg-gray-100 rounded w-56"></div>
+                </div>
+              ))}
+            </div>
           </div>
         ) : customers.length === 0 ? (
           <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
@@ -172,7 +205,6 @@ function CustomersContent() {
             </table>
           </div>
         )}
-      </main>
     </div>
   );
 }

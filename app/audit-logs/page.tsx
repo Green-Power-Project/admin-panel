@@ -2,16 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import AppHeader from '@/components/AppHeader';
-import { db, storage } from '@/lib/firebase';
+import AdminLayout from '@/components/AdminLayout';
+import { db } from '@/lib/firebase';
 import {
   collection,
-  getDocs,
+  onSnapshot,
   query,
   orderBy,
   Timestamp,
+  getDocs,
 } from 'firebase/firestore';
-import { ref, listAll } from 'firebase/storage';
 import { getAllFolderPathsArray } from '@/lib/folderStructure';
 import { exportFilteredLogsToPDF, AuditLogEntry } from '@/lib/pdfExport';
 
@@ -39,159 +39,235 @@ interface AuditLogData {
 export default function AuditLogsPage() {
   return (
     <ProtectedRoute>
-      <AuditLogsContent />
+      <AdminLayout title="Audit Logs">
+        <AuditLogsContent />
+      </AdminLayout>
     </ProtectedRoute>
   );
 }
 
 function AuditLogsContent() {
+  const [allLogs, setAllLogs] = useState<AuditLogData[]>([]);
   const [logs, setLogs] = useState<AuditLogData[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterCustomer, setFilterCustomer] = useState<string>(''); // customer/project/file search
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
 
   useEffect(() => {
-    loadProjects();
-    loadAuditLogs();
+    if (!db) return;
+
+    // Real-time listener for projects
+    const projectsUnsubscribe = onSnapshot(
+      query(collection(db, 'projects'), orderBy('name', 'asc')),
+      (snapshot) => {
+        const projectsList: Array<{ id: string; name: string }> = [];
+        snapshot.forEach((doc) => {
+          projectsList.push({ id: doc.id, name: doc.data().name });
+        });
+        setProjects(projectsList);
+      },
+      (error) => {
+        console.error('Error listening to projects:', error);
+      }
+    );
+
+    // Cleanup listener on unmount
+    return () => {
+      projectsUnsubscribe();
+    };
   }, []);
 
+  // Real-time listeners for fileReadStatus, projects, and customers
   useEffect(() => {
-    loadAuditLogs();
-  }, [filterProject, filterStatus]);
+    if (!db) return;
 
-  async function loadProjects() {
-    try {
-      const q = query(collection(db, 'projects'), orderBy('name', 'asc'));
-      const snapshot = await getDocs(q);
-      const projectsList: Array<{ id: string; name: string }> = [];
-      snapshot.forEach((doc) => {
-        projectsList.push({ id: doc.id, name: doc.data().name });
-      });
-      setProjects(projectsList);
-    } catch (error) {
-      console.error('Error loading projects:', error);
-    }
-  }
+    let readStatusesMap = new Map<string, FileReadStatus[]>();
+    let projectsMap = new Map<string, { name: string; customerId: string }>();
+    let customersMap = new Map<string, { customerNumber: string; email: string }>();
 
-  async function loadAuditLogs() {
-    setLoading(true);
-    try {
-      // Get all read statuses
-      const readStatusesSnapshot = await getDocs(collection(db, 'fileReadStatus'));
-      const readStatusesMap = new Map<string, FileReadStatus[]>();
-      
-      readStatusesSnapshot.forEach((doc) => {
-        const data = doc.data();
-        const status: FileReadStatus = {
-          id: doc.id,
-          ...data,
-        } as FileReadStatus;
-        
-        if (!readStatusesMap.has(status.filePath)) {
-          readStatusesMap.set(status.filePath, []);
+    // Real-time listener for file read status
+    const fileReadStatusUnsubscribe = onSnapshot(
+      collection(db, 'fileReadStatus'),
+      (snapshot) => {
+        readStatusesMap = new Map<string, FileReadStatus[]>();
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          const status: FileReadStatus = {
+            id: doc.id,
+            ...data,
+          } as FileReadStatus;
+          
+          if (!readStatusesMap.has(status.filePath)) {
+            readStatusesMap.set(status.filePath, []);
+          }
+          readStatusesMap.get(status.filePath)!.push(status);
+        });
+        // Trigger audit logs reload when read status changes
+        if (projectsMap.size > 0 && customersMap.size > 0) {
+          processAuditLogs(readStatusesMap, projectsMap, customersMap);
         }
-        readStatusesMap.get(status.filePath)!.push(status);
-      });
+      },
+      (error) => {
+        console.error('Error listening to file read status:', error);
+      }
+    );
 
-      // Get all projects
-      const projectsSnapshot = await getDocs(collection(db, 'projects'));
-      const projectsMap = new Map<string, { name: string; customerId: string }>();
-      
-      projectsSnapshot.forEach((doc) => {
-        const data = doc.data();
-        projectsMap.set(doc.id, {
-          name: data.name,
-          customerId: data.customerId,
+    // Real-time listener for projects
+    const projectsUnsubscribe = onSnapshot(
+      collection(db, 'projects'),
+      (snapshot) => {
+        projectsMap = new Map<string, { name: string; customerId: string }>();
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          projectsMap.set(doc.id, {
+            name: data.name,
+            customerId: data.customerId,
+          });
         });
-      });
+        // Trigger audit logs reload when projects change
+        if (readStatusesMap.size >= 0 && customersMap.size > 0) {
+          processAuditLogs(readStatusesMap, projectsMap, customersMap);
+        }
+      },
+      (error) => {
+        console.error('Error listening to projects:', error);
+      }
+    );
 
-      // Get customer information
-      const customersSnapshot = await getDocs(collection(db, 'customers'));
-      const customersMap = new Map<string, { customerNumber: string; email: string }>();
-      
-      customersSnapshot.forEach((doc) => {
-        const data = doc.data();
-        customersMap.set(data.uid, {
-          customerNumber: data.customerNumber || 'N/A',
-          email: data.email || 'N/A',
+    // Real-time listener for customers
+    const customersUnsubscribe = onSnapshot(
+      collection(db, 'customers'),
+      (snapshot) => {
+        customersMap = new Map<string, { customerNumber: string; email: string }>();
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          customersMap.set(data.uid, {
+            customerNumber: data.customerNumber || 'N/A',
+            email: data.email || 'N/A',
+          });
         });
-      });
+        // Trigger audit logs reload when customers change
+        if (readStatusesMap.size >= 0 && projectsMap.size > 0) {
+          processAuditLogs(readStatusesMap, projectsMap, customersMap);
+        }
+      },
+      (error) => {
+        console.error('Error listening to customers:', error);
+      }
+    );
 
-      // Get all files from all projects
-      const allLogs: AuditLogData[] = [];
+    // Cleanup listeners on unmount
+    return () => {
+      fileReadStatusUnsubscribe();
+      projectsUnsubscribe();
+      customersUnsubscribe();
+    };
+  }, []);
+
+
+  async function processAuditLogs(
+    readStatusesMap: Map<string, FileReadStatus[]>,
+    projectsMap: Map<string, { name: string; customerId: string }>,
+    customersMap: Map<string, { customerNumber: string; email: string }>
+  ) {
+    if (!db) return;
+    
+    // Show loading when processing data from Firestore
+    setLoading(true);
+    
+    try {
+      // Helpers to build Firestore folder references
+      const getFolderSegments = (folderPath: string): string[] =>
+        folderPath.split('/').filter(Boolean);
+
+      const getProjectFolderRef = (projectId: string, folderSegments: string[]) => {
+        if (folderSegments.length === 0) {
+          throw new Error('Folder segments must not be empty');
+        }
+        return collection(db, 'files', 'projects', projectId, ...folderSegments);
+      };
+
+      // Get all files from all projects via Firestore metadata
+      const allLogsData: AuditLogData[] = [];
       const folderPaths = getAllFolderPathsArray();
 
-      for (const projectDoc of projectsSnapshot.docs) {
-        const projectId = projectDoc.id;
-        const projectData = projectDoc.data();
-        
-        // Filter by project if needed
-        if (filterProject !== 'all' && projectId !== filterProject) {
-          continue;
-        }
+      // Build all folder refs first so we can fetch in parallel (much faster than sequential awaits)
+      const folderTasks: {
+        projectId: string;
+        projectName: string;
+        customerId: string;
+        folderPath: string;
+        ref: ReturnType<typeof collection>;
+      }[] = [];
 
-        // Skip customer uploads folder (not tracked)
-        const relevantFolders = folderPaths.filter(
-          (path) => !path.startsWith('01_Customer_Uploads')
-        );
-
-        for (const folderPath of relevantFolders) {
+      for (const [projectId, projectData] of projectsMap.entries()) {
+        // Use all defined folders (including customer uploads for audit logs)
+        for (const folderPath of folderPaths) {
+          const segments = getFolderSegments(folderPath);
+          if (segments.length === 0) continue;
           try {
-            const folderRef = ref(storage, `projects/${projectId}/${folderPath}`);
-            const fileList = await listAll(folderRef);
-
-            for (const itemRef of fileList.items) {
-              // Skip .keep placeholder files
-              if (itemRef.name === '.keep') {
-                continue;
-              }
-
-              const storagePath = itemRef.fullPath;
-              const fileName = itemRef.name;
-              
-              // Get read status for this file
-              const readStatuses = readStatusesMap.get(storagePath) || [];
-              const readStatus = readStatuses.length > 0 ? readStatuses[0] : null;
-              
-              // Filter by read status if needed
-              const isRead = readStatus !== null;
-              if (filterStatus === 'read' && !isRead) continue;
-              if (filterStatus === 'unread' && isRead) continue;
-
-              const customerId = projectData.customerId;
-              const customerInfo = customersMap.get(customerId);
-
-              // Format read date
-              let readAtFormatted = 'Not read yet';
-              if (readStatus && readStatus.readAt) {
-                const date = readStatus.readAt.toDate();
-                readAtFormatted = date.toLocaleString();
-              }
-
-              allLogs.push({
-                fileName,
-                filePath: storagePath,
-                projectName: projectData.name,
-                projectId,
-                folderPath,
-                customerNumber: customerInfo?.customerNumber || 'N/A',
-                customerEmail: customerInfo?.email || 'N/A',
-                customerId,
-                readAt: readAtFormatted,
-                isRead,
-              });
-            }
-          } catch (error: any) {
-            if (error.code !== 'storage/object-not-found') {
-              console.error('Error loading folder:', folderPath, error);
-            }
+            const ref = getProjectFolderRef(projectId, segments);
+            folderTasks.push({
+              projectId,
+              projectName: projectData.name,
+              customerId: projectData.customerId,
+              folderPath,
+              ref,
+            });
+          } catch (error) {
+            console.error('Error building folder reference for audit logs:', folderPath, error);
           }
         }
       }
 
+      const snapshots = await Promise.all(
+        folderTasks.map((task) =>
+          getDocs(task.ref).catch((error) => {
+            console.error('Error loading folder from Firestore:', task.folderPath, error);
+            return null;
+          })
+        )
+      );
+
+      snapshots.forEach((filesSnapshot, index) => {
+        if (!filesSnapshot || filesSnapshot.empty) return;
+        const task = folderTasks[index];
+        const { projectId, projectName, customerId, folderPath } = task;
+        const customerInfo = customersMap.get(customerId);
+
+        filesSnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const storagePath = data.cloudinaryPublicId as string;
+          const fileName = (data.fileName as string) || 'file';
+          const readStatuses = readStatusesMap.get(storagePath) || [];
+          const readStatus = readStatuses.length > 0 ? readStatuses[0] : null;
+          const isRead = readStatus !== null;
+
+          let readAtFormatted = 'Not read yet';
+          if (readStatus && readStatus.readAt) {
+            const date = readStatus.readAt.toDate();
+            readAtFormatted = date.toLocaleString();
+          }
+
+          allLogsData.push({
+            fileName,
+            filePath: storagePath,
+            projectName,
+            projectId,
+            folderPath,
+            customerNumber: customerInfo?.customerNumber || 'N/A',
+            customerEmail: customerInfo?.email || 'N/A',
+            customerId,
+            readAt: readAtFormatted,
+            isRead,
+          });
+        });
+      });
+
       // Sort: unread first, then by read date (newest first)
-      allLogs.sort((a, b) => {
+      allLogsData.sort((a, b) => {
         if (a.isRead !== b.isRead) {
           return a.isRead ? 1 : -1; // Unread first
         }
@@ -202,13 +278,46 @@ function AuditLogsContent() {
         return 0;
       });
 
-      setLogs(allLogs);
+      setAllLogs(allLogsData);
     } catch (error) {
-      console.error('Error loading audit logs:', error);
+      console.error('Error processing audit logs:', error);
     } finally {
       setLoading(false);
     }
   }
+
+  // Fast in-memory filtering for instant UI response
+  useEffect(() => {
+    let filtered = [...allLogs];
+
+    if (filterProject !== 'all') {
+      filtered = filtered.filter((log) => log.projectId === filterProject);
+    }
+
+    if (filterStatus === 'read') {
+      filtered = filtered.filter((log) => log.isRead);
+    } else if (filterStatus === 'unread') {
+      filtered = filtered.filter((log) => !log.isRead);
+    }
+
+    const term = filterCustomer.trim().toLowerCase();
+    if (term) {
+      filtered = filtered.filter((log) => {
+        const num = log.customerNumber?.toLowerCase() || '';
+        const email = log.customerEmail?.toLowerCase() || '';
+        const projectName = log.projectName.toLowerCase();
+        const fileName = log.fileName.toLowerCase();
+        return (
+          num.includes(term) ||
+          email.includes(term) ||
+          projectName.includes(term) ||
+          fileName.includes(term)
+        );
+      });
+    }
+
+    setLogs(filtered);
+  }, [allLogs, filterProject, filterStatus, filterCustomer]);
 
   function handleExportPDF() {
     const exportData: AuditLogEntry[] = logs.map(log => ({
@@ -227,166 +336,222 @@ function AuditLogsContent() {
     exportFilteredLogsToPDF(exportData, filterProject, filterStatus, projects);
   }
 
+  const totalLogs = logs.length;
+  const readCount = logs.filter((log) => log.isRead).length;
+  const unreadCount = totalLogs - readCount;
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AppHeader />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Read Documentation / Audit Logs</h2>
-            <p className="text-sm text-gray-500 mt-1">Complete audit trail of file read activities</p>
-          </div>
-          <button
-            onClick={handleExportPDF}
-            disabled={loading || logs.length === 0}
-            className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            📄 Export PDF
-          </button>
-        </div>
-
-        <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filter by Project
-            </label>
-            <select
-              value={filterProject}
-              onChange={(e) => setFilterProject(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-            >
-              <option value="all">All Projects</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Filter by Status
-            </label>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-            >
-              <option value="all">All Files</option>
-              <option value="unread">Unread Only</option>
-              <option value="read">Read Only</option>
-            </select>
+    <div className="px-8 py-8 space-y-6">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Read Documentation / Audit Logs</h2>
+              <p className="text-xs md:text-sm text-gray-600 mt-1">
+                Complete audit trail of file read activities.
+              </p>
+              <p className="text-[11px] text-gray-500 mt-1">
+                ⚠️ Audit logs are automatically generated when customers open files. Admin can view but cannot manually change records.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-sm font-semibold text-gray-900">{totalLogs}</p>
+              </div>
+              <div className="px-3 py-2 rounded-lg bg-white/90 border border-green-200">
+                <p className="text-[11px] text-green-700 uppercase tracking-wide">Read</p>
+                <p className="text-sm font-semibold text-green-800">{readCount}</p>
+              </div>
+              <div className="px-3 py-2 rounded-lg bg-white/90 border border-yellow-200">
+                <p className="text-[11px] text-yellow-700 uppercase tracking-wide">Unread</p>
+                <p className="text-sm font-semibold text-yellow-800">{unreadCount}</p>
+              </div>
+              <button
+                onClick={handleExportPDF}
+                disabled={loading || logs.length === 0}
+                className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-md hover:bg-green-power-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+              >
+                <span>📄</span>
+                <span>Export PDF</span>
+              </button>
+            </div>
           </div>
         </div>
 
-        {loading ? (
-          <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-            <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
-            <p className="mt-4 text-sm text-gray-500">Loading audit logs...</p>
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Filter by Project
+              </label>
+              <select
+                value={filterProject}
+                onChange={(e) => setFilterProject(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+              >
+                <option value="all">All Projects</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Filter by Status
+              </label>
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+              >
+                <option value="all">All Files</option>
+                <option value="unread">Unread Only</option>
+                <option value="read">Read Only</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1.5">
+                Filter by Customer / Email / Project / File
+              </label>
+              <div className="relative">
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+                  <svg
+                    className="h-4 w-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                    />
+                  </svg>
+                </span>
+                <input
+                  type="text"
+                  value={filterCustomer}
+                  onChange={(e) => setFilterCustomer(e.target.value)}
+                  placeholder="Search by customer number, email, project, or file name"
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
+                />
+              </div>
+            </div>
           </div>
-        ) : logs.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-            <p className="text-sm text-gray-500">No audit logs found matching the selected filters.</p>
-          </div>
-        ) : (
-          <>
-            <div className="bg-white border border-gray-200 rounded-sm overflow-hidden mb-4">
-              <div className="px-5 py-3 bg-gray-50 border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-900">
-                    Total Records: {logs.length}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {logs.filter(log => log.isRead).length} Read | {logs.filter(log => !log.isRead).length} Unread
-                  </p>
+        </div>
+
+        <div className="px-6 py-4">
+          {loading ? (
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div
+                  key={i}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 animate-pulse"
+                >
+                  <div className="h-6 w-24 rounded-full bg-gray-200" />
+                  <div className="h-3 w-40 rounded bg-gray-200" />
+                  <div className="h-3 w-32 rounded bg-gray-200" />
+                  <div className="h-3 w-28 rounded bg-gray-200" />
+                  <div className="h-3 w-32 rounded bg-gray-200" />
+                  <div className="h-3 w-40 rounded bg-gray-200" />
                 </div>
-              </div>
+              ))}
             </div>
-
-            <div className="bg-white border border-gray-200 rounded-sm overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        File Name
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Project
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Folder
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Customer
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Date & Time Opened
-                      </th>
+          ) : logs.length === 0 ? (
+            <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
+              <p className="text-sm font-medium text-gray-700">
+                No audit logs found for the selected filters.
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                Try adjusting the project, status, or customer filters to widen your search.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Status
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      File Name
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Project
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Folder
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Customer
+                    </th>
+                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                      Date & Time Opened
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {logs.map((log, index) => (
+                    <tr key={`${log.filePath}-${index}`} className="hover:bg-gray-50/80">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            log.isRead
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-yellow-100 text-yellow-800'
+                          }`}
+                        >
+                          {log.isRead ? '✓ Read' : '● Unread'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                          {log.fileName || 'Untitled file'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{log.projectName}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {log.folderPath.split('/').pop() || log.folderPath}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">{log.customerNumber}</div>
+                        <div className="text-xs text-gray-500">{log.customerEmail}</div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {log.isRead ? log.readAt : <span className="text-gray-400">Not read yet</span>}
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {logs.map((log, index) => (
-                      <tr key={`${log.filePath}-${index}`} className="hover:bg-gray-50">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span
-                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              log.isRead
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-yellow-100 text-yellow-800'
-                            }`}
-                          >
-                            {log.isRead ? '✓ Read' : '● Unread'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm font-medium text-gray-900">{log.fileName}</div>
-                          <div className="text-xs text-gray-500 font-mono mt-0.5 truncate max-w-xs">
-                            {log.filePath}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{log.projectName}</div>
-                          <div className="text-xs text-gray-500 font-mono">{log.projectId.slice(0, 8)}...</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {log.folderPath.split('/').pop() || log.folderPath}
-                          </div>
-                          <div className="text-xs text-gray-500">{log.folderPath}</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">{log.customerNumber}</div>
-                          <div className="text-xs text-gray-500">{log.customerEmail}</div>
-                          <div className="text-xs text-gray-400 font-mono mt-0.5">{log.customerId.slice(0, 8)}...</div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="text-sm text-gray-900">
-                            {log.isRead ? log.readAt : <span className="text-gray-400">Not read yet</span>}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </>
-        )}
-
-        <div className="mt-6 bg-blue-50 border border-blue-200 rounded-sm p-4">
-          <p className="text-xs text-blue-800 font-medium mb-1">📋 Audit Log Information</p>
-          <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-            <li>Each record shows: File name, Customer, Project, Folder, Date & Time opened</li>
-            <li>Unread files show "Not read yet" in the Date & Time column</li>
-            <li>Export PDF includes all visible records with current filters applied</li>
-            <li>PDF export includes summary statistics and formatted table</li>
-          </ul>
+          )}
         </div>
-      </main>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <p className="text-xs text-blue-800 font-semibold mb-1">📋 Audit Log Information</p>
+        <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
+          <li>Each record shows: File name, Customer, Project, Folder, Date & Time opened</li>
+          <li>Unread files show "Not read yet" in the Date & Time column</li>
+          <li>Export PDF includes all visible records with current filters applied</li>
+          <li>PDF export includes summary statistics and formatted table</li>
+        </ul>
+      </div>
     </div>
   );
 }

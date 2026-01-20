@@ -1,6 +1,5 @@
 'use client';
 
-import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -15,8 +14,6 @@ export default function AppHeader({ title }: AppHeaderProps) {
   async function handleLogout() {
     try {
       await logout();
-      // Force redirect to login page
-      // Use window.location for a hard redirect to ensure session is cleared
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       } else {
@@ -24,7 +21,6 @@ export default function AppHeader({ title }: AppHeaderProps) {
       }
     } catch (error) {
       console.error('Error logging out:', error);
-      // Even on error, redirect to login
       if (typeof window !== 'undefined') {
         window.location.href = '/login';
       } else {
@@ -34,76 +30,31 @@ export default function AppHeader({ title }: AppHeaderProps) {
   }
 
   return (
-    <header className="bg-white border-b border-gray-200">
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="flex justify-between items-center h-14">
-          <div className="flex items-center space-x-8">
-            <Link href="/dashboard" className="flex items-center">
-              <h1 className="text-lg font-semibold text-gray-900 tracking-tight">
-                Green Power
-              </h1>
-              <span className="ml-3 text-xs text-gray-500 font-normal">
-                Admin Panel
-              </span>
-            </Link>
-            <nav className="hidden md:flex items-center space-x-4">
-              <Link
-                href="/dashboard"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Dashboard
-              </Link>
-              <Link
-                href="/projects"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Projects
-              </Link>
-              <Link
-                href="/customers"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Customers
-              </Link>
-              <Link
-                href="/files"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Files
-              </Link>
-              <Link
-                href="/tracking"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Tracking
-              </Link>
-              <Link
-                href="/approvals"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Approvals
-              </Link>
-              <Link
-                href="/audit-logs"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Audit Logs
-              </Link>
-              <Link
-                href="/customer-uploads"
-                className="text-sm text-gray-600 hover:text-gray-900 font-medium"
-              >
-                Customer Uploads
-              </Link>
-            </nav>
+    <header className="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-30">
+      <div className="ml-64 px-6">
+        <div className="flex justify-between items-center h-16">
+          <div className="flex items-center">
+            {title && (
+              <h1 className="text-xl font-semibold text-gray-900">{title}</h1>
+            )}
           </div>
           <div className="flex items-center space-x-4">
-            <span className="text-xs text-gray-600 hidden sm:inline">
-              {currentUser?.email || 'Admin'}
-            </span>
+            <div className="flex items-center space-x-3">
+              <div className="w-9 h-9 bg-gradient-to-br from-green-power-500 to-green-power-600 rounded-full flex items-center justify-center shadow-md">
+                <span className="text-white font-semibold text-sm">
+                  {currentUser?.email?.charAt(0).toUpperCase() || 'A'}
+                </span>
+              </div>
+              <div className="hidden sm:block">
+                <p className="text-sm font-medium text-gray-900">
+                  {currentUser?.email || 'Admin'}
+                </p>
+                <p className="text-xs text-gray-500">Administrator</p>
+              </div>
+            </div>
             <button
               onClick={handleLogout}
-              className="px-3 py-1.5 text-xs text-gray-700 hover:text-gray-900 border border-gray-300 rounded-sm hover:bg-gray-50 font-medium"
+              className="px-4 py-2 text-sm text-white bg-gradient-to-r from-green-power-600 to-green-power-700 hover:from-green-power-700 hover:to-green-power-800 rounded-lg font-medium shadow-md hover:shadow-lg transition-all duration-200"
             >
               Sign out
             </button>

@@ -3,18 +3,20 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import AppHeader from '@/components/AppHeader';
+import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import {
   collection,
-  getDocs,
+  onSnapshot,
   query,
   where,
   orderBy,
   doc,
-  getDoc,
   updateDoc,
+  getDocs,
+  setDoc,
+  getDoc,
 } from 'firebase/firestore';
 
 interface Project {
@@ -33,7 +35,9 @@ interface CustomerData {
 export default function CustomerDetailPage() {
   return (
     <ProtectedRoute>
-      <CustomerDetailContent />
+      <AdminLayout>
+        <CustomerDetailContent />
+      </AdminLayout>
     </ProtectedRoute>
   );
 }
@@ -52,64 +56,107 @@ function CustomerDetailContent() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (customerId) {
-      loadCustomerData();
-      loadCustomerProjects();
-    }
-  }, [customerId]);
+    if (!customerId || !db) return;
 
-  async function loadCustomerData() {
-    setLoading(true);
-    try {
-      const customerDoc = await getDoc(doc(db, 'customers', customerId));
-      
-      if (customerDoc.exists()) {
-        const data = customerDoc.data();
-        const customerData: CustomerData = {
-          uid: data.uid || customerId,
-          email: data.email || 'N/A',
-          customerNumber: data.customerNumber || 'N/A',
-          enabled: data.enabled !== false,
-        };
-        setCustomer(customerData);
-        setCustomerNumber(customerData.customerNumber);
-        setEnabled(customerData.enabled);
-      } else {
-        // Customer document doesn't exist, create it with basic info
-        setCustomer({
-          uid: customerId,
-          email: 'N/A',
-          customerNumber: 'N/A',
-          enabled: true,
-        });
+    // Check if this customer page has been visited before in this session
+    const storageKey = `customer-${customerId}-visited`;
+    const hasVisited = typeof window !== 'undefined' && sessionStorage.getItem(storageKey) === 'true';
+    
+    // Only show loading on first visit
+    if (!hasVisited) {
+      setLoading(true);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(storageKey, 'true');
       }
-    } catch (error) {
-      console.error('Error loading customer:', error);
-      setError('Failed to load customer data');
-    } finally {
+    } else {
+      // On subsequent visits (navigating back), don't show loading
+      // Real-time listener will populate data quickly from cache
       setLoading(false);
     }
-  }
 
-  async function loadCustomerProjects() {
-    try {
-      const q = query(
-        collection(db, 'projects'),
-        where('customerId', '==', customerId),
-        orderBy('name', 'asc')
-      );
-      const snapshot = await getDocs(q);
-      const projectsList: Project[] = [];
-      
-      snapshot.forEach((doc) => {
-        projectsList.push({ id: doc.id, ...doc.data() } as Project);
-      });
+    // Real-time listener for customer document - query by uid field since document ID is auto-generated
+    const customerQuery = query(
+      collection(db, 'customers'),
+      where('uid', '==', customerId)
+    );
 
-      setProjects(projectsList);
-    } catch (error) {
-      console.error('Error loading customer projects:', error);
-    }
-  }
+    const customerUnsubscribe = onSnapshot(
+      customerQuery,
+      (querySnapshot) => {
+        if (!querySnapshot.empty) {
+          // Customer found - get the first document (should only be one)
+          const customerDoc = querySnapshot.docs[0];
+          const data = customerDoc.data();
+          const actualCustomerUid = data.uid || customerId; // Use the uid from the document
+          const customerData: CustomerData = {
+            uid: actualCustomerUid,
+            email: data.email || 'N/A',
+            customerNumber: data.customerNumber || 'N/A',
+            enabled: data.enabled !== false,
+          };
+          setCustomer(customerData);
+          setCustomerNumber(customerData.customerNumber);
+          setEnabled(customerData.enabled);
+        } else {
+          // Customer document doesn't exist - try to get from Firebase Auth or set defaults
+          setCustomer({
+            uid: customerId,
+            email: 'N/A',
+            customerNumber: 'N/A',
+            enabled: true,
+          });
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error listening to customer:', error);
+        setError('Failed to load customer data');
+        setLoading(false);
+      }
+    );
+
+    // Real-time listener for customer projects
+    // Use the same approach as customer list page: listen to all projects and filter by customerId
+    // This matches projects.customerId with customers.uid (customerId from URL is the uid)
+    const projectsUnsubscribe = onSnapshot(
+      collection(db, 'projects'),
+      (snapshot) => {
+        const projectsList: Project[] = [];
+        
+        // Filter projects where customerId matches the customer's uid (same logic as customer list page)
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          // Match project's customerId with customer's uid (from URL parameter)
+          if (data.customerId === customerId) {
+            projectsList.push({ 
+              id: doc.id, 
+              name: data.name || 'Unnamed Project',
+              year: data.year,
+            } as Project);
+          }
+        });
+
+        // Sort by name manually
+        projectsList.sort((a, b) => {
+          const nameA = (a.name || '').toLowerCase();
+          const nameB = (b.name || '').toLowerCase();
+          return nameA.localeCompare(nameB);
+        });
+
+        setProjects(projectsList);
+      },
+      (error) => {
+        console.error('Error listening to customer projects:', error);
+        setProjects([]);
+      }
+    );
+
+    // Cleanup listeners on unmount
+    return () => {
+      customerUnsubscribe();
+      projectsUnsubscribe();
+    };
+  }, [customerId]);
 
   async function handleSave() {
     setSaving(true);
@@ -137,23 +184,31 @@ function CustomerDetailContent() {
         }
       }
 
-      // Update customer document
-      const customerRef = doc(db, 'customers', customerId);
-      const customerDoc = await getDoc(customerRef);
+      // Find customer document by uid field (since document ID is auto-generated)
+      const customerQuery = query(
+        collection(db, 'customers'),
+        where('uid', '==', customerId)
+      );
+      const customerSnapshot = await getDocs(customerQuery);
 
-      if (customerDoc.exists()) {
-        await updateDoc(customerRef, {
+      if (!customerSnapshot.empty) {
+        // Customer document exists - update it
+        const customerDoc = customerSnapshot.docs[0];
+        await updateDoc(doc(db, 'customers', customerDoc.id), {
           customerNumber: customerNumber.trim(),
           enabled,
+          updatedAt: new Date(),
         });
       } else {
-        // Create customer document if it doesn't exist
-        await updateDoc(customerRef, {
+        // Customer document doesn't exist - create it
+        // Use setDoc with customerId as document ID for consistency
+        await setDoc(doc(db, 'customers', customerId), {
           uid: customerId,
           email: customer?.email || 'N/A',
           customerNumber: customerNumber.trim(),
           enabled,
           createdAt: new Date(),
+          updatedAt: new Date(),
         });
       }
 
@@ -171,24 +226,10 @@ function CustomerDetailContent() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <AppHeader />
-        <main className="max-w-7xl mx-auto px-6 py-8">
-          <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-            <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
-            <p className="mt-4 text-sm text-gray-500">Loading customer...</p>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  // Don't show full-page loading - use skeleton in content area instead
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AppHeader />
-      <main className="max-w-7xl mx-auto px-6 py-8">
+    <div className="px-8 py-8">
         <div className="mb-6">
           <Link
             href="/customers"
@@ -197,16 +238,24 @@ function CustomerDetailContent() {
             ← Back to Customers
           </Link>
           <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-semibold text-gray-900">
-                {editing ? 'Edit Customer' : customer?.customerNumber || 'Customer Details'}
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                {customer?.email}
-              </p>
-              <p className="text-xs text-gray-400 mt-1 font-mono">ID: {customerId}</p>
-            </div>
-            <div className="flex items-center space-x-2">
+            {loading ? (
+              <div className="animate-pulse">
+                <div className="h-8 bg-gray-200 rounded w-64 mb-2"></div>
+                <div className="h-4 bg-gray-100 rounded w-48"></div>
+              </div>
+            ) : (
+              <div>
+                <h2 className="text-2xl font-semibold text-gray-900">
+                  {editing ? 'Edit Customer' : customer?.customerNumber || 'Customer Details'}
+                </h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {customer?.email}
+                </p>
+                <p className="text-xs text-gray-400 mt-1 font-mono">ID: {customerId}</p>
+              </div>
+            )}
+            {!loading && (
+              <div className="flex items-center space-x-2">
               {editing ? (
                 <>
                   <button
@@ -236,7 +285,8 @@ function CustomerDetailContent() {
                   Edit
                 </button>
               )}
-            </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -252,7 +302,13 @@ function CustomerDetailContent() {
             <h3 className="text-sm font-semibold text-gray-900">Customer Information</h3>
           </div>
           <div className="p-5">
-            {editing ? (
+            {loading ? (
+              <div className="space-y-4 animate-pulse">
+                <div className="h-4 bg-gray-200 rounded w-32 mb-4"></div>
+                <div className="h-10 bg-gray-100 rounded"></div>
+                <div className="h-10 bg-gray-100 rounded"></div>
+              </div>
+            ) : editing ? (
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -356,7 +412,7 @@ function CustomerDetailContent() {
             </div>
           )}
         </div>
-      </main>
+
     </div>
   );
 }

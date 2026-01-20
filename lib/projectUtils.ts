@@ -1,5 +1,3 @@
-import { storage } from './firebase';
-import { ref, uploadBytes } from 'firebase/storage';
 import { getAllFolderPathsArray } from './folderStructure';
 
 /**
@@ -13,35 +11,10 @@ import { getAllFolderPathsArray } from './folderStructure';
  * @param projectId - The project ID for which to create the folder structure
  */
 export async function createProjectFolderStructure(projectId: string): Promise<void> {
-  // Get all valid folder paths from the fixed structure
-  const folderPaths = getAllFolderPathsArray();
-  
-  // Create a small placeholder file to initialize each folder
-  const placeholderContent = new Blob([''], { type: 'text/plain' });
-  const placeholderFile = new File([placeholderContent], '.keep', { type: 'text/plain' });
-  
-  const uploadPromises = folderPaths.map(async (folderPath) => {
-    try {
-      // Create placeholder file in each folder to ensure folder exists
-      const folderRef = ref(storage, `projects/${projectId}/${folderPath}/.keep`);
-      await uploadBytes(folderRef, placeholderFile);
-    } catch (error: any) {
-      // Log errors but continue - folders will be created when files are uploaded
-      if (error.code !== 'storage/unauthorized' && error.code !== 'storage/unknown') {
-        console.warn(`Could not create folder ${folderPath} for project ${projectId}:`, error);
-      }
-    }
-  });
-  
-  // Wait for all folder creations to complete (or fail gracefully)
-  await Promise.allSettled(uploadPromises);
+  console.warn('Project folder structure placeholders are not created since Cloudinary handles folders implicitly.', projectId);
 }
 
-/**
- * Ensure folder structure exists for a project
- * Can be called to repair/restore folder structure if needed
- */
 export async function ensureProjectFolderStructure(projectId: string): Promise<void> {
-  await createProjectFolderStructure(projectId);
+  return createProjectFolderStructure(projectId);
 }
 

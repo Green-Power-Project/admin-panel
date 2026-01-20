@@ -10,7 +10,7 @@ import {
   sendPasswordResetEmail,
 } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs, setDoc, getDocFromServer, getDocsFromServer } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 interface AdminUser extends User {
@@ -40,15 +40,95 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  async function checkAdminStatus(user: User): Promise<boolean> {
-    try {
-      // Check if user is admin by checking admin collection or custom claims
-      // For now, we'll check a simple admin collection
-      const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-      return adminDoc.exists();
-    } catch (error) {
-      console.error('Error checking admin status:', error);
+  async function checkIfAnyAdminsExist(): Promise<boolean> {
+    if (!db) {
+      console.error('Firestore is not initialized');
       return false;
+    }
+
+    // Retry logic for offline errors
+    const maxRetries = 3;
+    let lastError: any = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Try server read first (forces online)
+        const adminsSnapshot = await getDocsFromServer(collection(db, 'admins'));
+        return !adminsSnapshot.empty;
+      } catch (error: any) {
+        lastError = error;
+        // If it's an offline error, wait and retry
+        if (error?.code === 'unavailable' || error?.message?.includes('offline') || error?.code === 'failed-precondition') {
+          if (attempt < maxRetries - 1) {
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            continue;
+          }
+        }
+        // For other errors or final attempt, try cache fallback
+        try {
+          const adminsSnapshot = await getDocs(collection(db, 'admins'));
+          return !adminsSnapshot.empty;
+        } catch (fallbackError) {
+          console.error('Error checking for existing admins (fallback):', fallbackError);
+        }
+      }
+    }
+    
+    console.error('Error checking for existing admins after retries:', lastError);
+    // If all retries fail, assume no admins exist (allows first user to become admin)
+    return false;
+  }
+
+  async function checkAdminStatus(user: User): Promise<boolean> {
+    if (!db) {
+      console.error('Firestore is not initialized');
+      return false;
+    }
+
+    // Retry logic for offline errors
+    const maxRetries = 3;
+    let lastError: any = null;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        // Try server read first (forces online)
+        const adminDoc = await getDocFromServer(doc(db, 'admins', user.uid));
+        return adminDoc.exists();
+      } catch (error: any) {
+        lastError = error;
+        // If it's an offline error, wait and retry
+        if (error?.code === 'unavailable' || error?.message?.includes('offline') || error?.code === 'failed-precondition') {
+          if (attempt < maxRetries - 1) {
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+            continue;
+          }
+        }
+        // For other errors or final attempt, try cache fallback
+        try {
+          const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+          return adminDoc.exists();
+        } catch (fallbackError) {
+          console.error('Error checking admin status (fallback):', fallbackError);
+        }
+      }
+    }
+    
+    console.error('Error checking admin status after retries:', lastError);
+    return false;
+  }
+
+  async function createAdminDocument(user: User): Promise<void> {
+    try {
+      await setDoc(doc(db, 'admins', user.uid), {
+        email: user.email || '',
+        createdAt: new Date().toISOString(),
+        autoCreated: true, // Mark as auto-created for first admin
+      });
+    } catch (error) {
+      console.error('Error creating admin document:', error);
+      throw error;
     }
   }
 
@@ -57,12 +137,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const userCredential = await signInWithEmailAndPassword(auth, email, password);
     const user = userCredential.user;
     
-    // Then verify admin status
-    const isAdmin = await checkAdminStatus(user);
+    // Check if user is already an admin (with retry logic)
+    let isAdmin = await checkAdminStatus(user);
+    
+    // If not an admin, check if this is the first admin (no admins exist)
     if (!isAdmin) {
-      // Not an admin, sign out immediately
-      await signOut(auth);
-      throw new Error('Access denied. Admin privileges required.');
+      const adminsExist = await checkIfAnyAdminsExist();
+      
+      if (!adminsExist) {
+        // No admins exist - automatically create admin for first user
+        try {
+          await createAdminDocument(user);
+          isAdmin = true;
+        } catch (error: any) {
+          // If creating admin doc fails due to offline, still allow login
+          // The document will be created when connection is restored
+          if (error?.code === 'unavailable' || error?.message?.includes('offline')) {
+            console.warn('Offline: Admin document creation will be retried when online');
+            isAdmin = true; // Allow login, document will sync later
+          } else {
+            throw error;
+          }
+        }
+      } else {
+        // Admins exist but this user is not one - deny access
+        await signOut(auth);
+        throw new Error('Access denied. Admin privileges required.');
+      }
     }
     
     // Admin verified, set user
@@ -117,7 +218,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         // Verify admin status on every auth state change
-        const isAdmin = await checkAdminStatus(user);
+        let isAdmin = await checkAdminStatus(user);
+        
+        // If not an admin, check if this is the first admin (no admins exist)
+        if (!isAdmin) {
+          const adminsExist = await checkIfAnyAdminsExist();
+          
+          if (!adminsExist) {
+            // No admins exist - automatically create admin for first user
+            try {
+              await createAdminDocument(user);
+              isAdmin = true;
+            } catch (error) {
+              console.error('Error auto-creating admin:', error);
+            }
+          }
+        }
+        
         if (isAdmin) {
           setCurrentUser({ ...user, isAdmin: true });
         } else {

@@ -4,12 +4,18 @@ import type { NextRequest } from 'next/server';
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Handle Chrome DevTools request silently (return 404 without logging)
+  if (pathname === '/.well-known/appspecific/com.chrome.devtools.json') {
+    return new NextResponse(null, { status: 404 });
+  }
+
   // Allow access to login page and static files
   if (
     pathname === '/login' ||
     pathname === '/' ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/api') ||
+    pathname.startsWith('/.well-known') ||
     pathname.match(/\.(ico|png|jpg|jpeg|svg|css|js|woff|woff2|ttf|eot)$/)
   ) {
     return NextResponse.next();

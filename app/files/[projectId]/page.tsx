@@ -1,14 +1,27 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import AppHeader from '@/components/AppHeader';
+import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
-import { db, storage } from '@/lib/firebase';
-import { doc, getDoc } from 'firebase/firestore';
-import { ref, listAll, getDownloadURL, getMetadata, deleteObject, uploadBytes } from 'firebase/storage';
+import { db } from '@/lib/firebase';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import { PROJECT_FOLDER_STRUCTURE, isValidFolderPath } from '@/lib/folderStructure';
+import { uploadFile, deleteFile } from '@/lib/cloudinary';
+import ConfirmationModal from '@/components/ConfirmationModal';
+import AlertModal from '@/components/AlertModal';
 
 interface Project {
   id: string;
@@ -16,21 +29,55 @@ interface Project {
   year?: number;
 }
 
-interface FileItem {
-  name: string;
-  url: string;
-  size: number;
-  type: string;
-  fullPath: string;
+interface FileMetadata {
+  fileName: string;
+  cloudinaryUrl: string;
+  cloudinaryPublicId: string;
+  fileType: 'pdf' | 'image' | 'file';
   folderPath: string;
+  uploadedAt: Date | null;
+}
+
+function getFolderSegments(folderPath: string): string[] {
+  return folderPath.split('/').filter(Boolean);
+}
+
+function getProjectFolderRef(projectId: string, folderSegments: string[]) {
+  if (folderSegments.length === 0) {
+    throw new Error('Folder segments must not be empty');
+  }
+  return collection(db, 'files', 'projects', projectId, ...folderSegments);
+}
+
+function deriveFileType(fileName: string): 'pdf' | 'image' | 'file' {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith('.pdf')) return 'pdf';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png')) return 'image';
+  return 'file';
 }
 
 export default function ProjectFilesPage() {
   return (
     <ProtectedRoute>
-      <ProjectFilesContent />
+      <AdminLayout>
+        <ProjectFilesContent />
+      </AdminLayout>
     </ProtectedRoute>
   );
+}
+
+function getDefaultFolderPath(): string {
+  const visibleFolders = PROJECT_FOLDER_STRUCTURE.filter(
+    (folder) => folder.path !== '00_New_Not_Viewed_Yet_' && folder.path !== '01_Customer_Uploads'
+  );
+  
+  for (const folder of visibleFolders) {
+    if (folder.children && folder.children.length > 0) {
+      return folder.children[0].path;
+    }
+    return folder.path;
+  }
+  return visibleFolders[0]?.path ?? '';
 }
 
 function ProjectFilesContent() {
@@ -38,76 +85,180 @@ function ProjectFilesContent() {
   const projectId = params.projectId as string;
   const [project, setProject] = useState<Project | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
-  const [files, setFiles] = useState<FileItem[]>([]);
+  const [files, setFiles] = useState<FileMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadingFileName, setUploadingFileName] = useState<string>('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState('');
+  const [uploadSuccess, setUploadSuccess] = useState('');
+  const [successFolder, setSuccessFolder] = useState('');
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Modal states
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteFileData, setDeleteFileData] = useState<{ folderPath: string; publicId: string; fileName: string } | null>(null);
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertData, setAlertData] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+
+  const clearSuccessMessage = () => {
+    setUploadSuccess('');
+    setSuccessFolder('');
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+      successTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleSuccessMessage = (message: string) => {
+    clearSuccessMessage();
+    setUploadSuccess(message);
+    setSuccessFolder(selectedFolder);
+    successTimeoutRef.current = setTimeout(() => {
+      setUploadSuccess('');
+      setSuccessFolder('');
+      successTimeoutRef.current = null;
+    }, 3000);
+  };
+
+  // Check if Cloudinary is configured
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+      if (!cloudName) {
+        console.error('❌ Cloudinary is not configured. Please check your environment variables.');
+        setUploadError('Cloudinary is not configured. Please check your .env.local file.');
+      } else {
+        console.log('✅ Cloudinary initialized:', cloudName);
+      }
+    }
+  }, []);
 
   useEffect(() => {
-    if (projectId) {
-      loadProject();
+    if (!projectId || !db) return;
+
+    // Check if this project files page has been visited before in this session
+    const storageKey = `files-${projectId}-visited`;
+    const hasVisited = typeof window !== 'undefined' && sessionStorage.getItem(storageKey) === 'true';
+    
+    // Only show loading on first visit
+    if (!hasVisited) {
+      setLoading(true);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem(storageKey, 'true');
+      }
+    } else {
+      // On subsequent visits (navigating back), don't show loading
+      // Real-time listener will populate data quickly from cache
+      setLoading(false);
     }
+
+    // Real-time listener for project document
+    const unsubscribe = onSnapshot(
+      doc(db, 'projects', projectId),
+      (projectDoc) => {
+        if (projectDoc.exists()) {
+          setProject({ id: projectDoc.id, ...projectDoc.data() } as Project);
+        }
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error listening to project:', error);
+        setLoading(false);
+      }
+    );
+
+    // Cleanup listener on unmount
+    return () => {
+      unsubscribe();
+    };
   }, [projectId]);
 
   useEffect(() => {
-    if (project && selectedFolder) {
-      loadFiles();
-    }
-  }, [project, selectedFolder]);
-
-  async function loadProject() {
-    setLoading(true);
-    try {
-      const projectDoc = await getDoc(doc(db, 'projects', projectId));
-      if (projectDoc.exists()) {
-        setProject({ id: projectDoc.id, ...projectDoc.data() } as Project);
-      }
-    } catch (error) {
-      console.error('Error loading project:', error);
-    } finally {
+    if (!projectId || !selectedFolder || !db) {
+      setFiles([]);
       setLoading(false);
+      return;
     }
-  }
 
-  async function loadFiles() {
-    if (!selectedFolder) return;
+    // Special handling for excluded folders: "New Not Viewed Yet" and "Customer Uploads"
+    // These folders are not accessible from the files screen
+    if (selectedFolder === '00_New_Not_Viewed_Yet_' || selectedFolder.startsWith('01_Customer_Uploads')) {
+      setFiles([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    try {
-      const folderRef = ref(storage, `projects/${projectId}/${selectedFolder}`);
-      const fileList = await listAll(folderRef);
-      
-      const filesList: FileItem[] = [];
-      for (const itemRef of fileList.items) {
-        try {
-          const [url, metadata] = await Promise.all([
-            getDownloadURL(itemRef),
-            getMetadata(itemRef)
-          ]);
-          
-          filesList.push({
-            name: itemRef.name,
-            url,
-            size: metadata.size,
-            type: metadata.contentType || 'application/octet-stream',
-            fullPath: itemRef.fullPath,
+    const segments = getFolderSegments(selectedFolder);
+    if (segments.length === 0) {
+      setFiles([]);
+      setLoading(false);
+      return;
+    }
+    const filesCollection = getProjectFolderRef(projectId, segments);
+    const filesQuery = query(filesCollection, orderBy('uploadedAt', 'desc'));
+    const unsubscribe = onSnapshot(
+      filesQuery,
+      (snapshot) => {
+        const list: FileMetadata[] = snapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          const fileName = data.fileName as string;
+          return {
+            fileName,
+            cloudinaryUrl: data.cloudinaryUrl,
+            cloudinaryPublicId: data.cloudinaryPublicId,
+            fileType: deriveFileType(fileName),
             folderPath: selectedFolder,
-          });
-        } catch (err) {
-          console.error('Error loading file:', itemRef.name, err);
-        }
-      }
-      setFiles(filesList);
-    } catch (error: any) {
-      if (error.code === 'storage/object-not-found') {
+            uploadedAt: data.uploadedAt?.toDate ? data.uploadedAt.toDate() : null,
+          };
+        });
+        setFiles(list);
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error listening to files:', error);
         setFiles([]);
-      } else {
-        console.error('Error loading files:', error);
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
+    );
+    return () => {
+      unsubscribe();
+    };
+  }, [projectId, selectedFolder]);
+
+  useEffect(() => {
+    clearSuccessMessage();
+  }, [selectedFolder]);
+
+  useEffect(() => {
+    return () => {
+      clearSuccessMessage();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!projectId) return;
+    if (typeof window === 'undefined') return;
+    const storageKey = `files-${projectId}-selected-folder`;
+    const storedFolder = sessionStorage.getItem(storageKey);
+    // Exclude hidden folders: Customer Uploads and New Not Viewed Yet
+    const excludedFolders = ['00_New_Not_Viewed_Yet_', '01_Customer_Uploads'];
+    if (storedFolder && isValidFolderPath(storedFolder) && !excludedFolders.includes(storedFolder) && !storedFolder.startsWith('01_Customer_Uploads/')) {
+      setSelectedFolder(storedFolder);
+      return;
     }
-  }
+    const defaultFolder = getDefaultFolderPath();
+    setSelectedFolder(defaultFolder);
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!projectId || !selectedFolder) return;
+    if (typeof window === 'undefined') return;
+    const storageKey = `files-${projectId}-selected-folder`;
+    sessionStorage.setItem(storageKey, selectedFolder);
+  }, [projectId, selectedFolder]);
 
   function validateFile(file: File): string | null {
     // Validate file type
@@ -137,58 +288,293 @@ function ProjectFilesContent() {
 
   async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !selectedFolder) return;
-
-    setUploadError('');
-    
-    // Validate folder path is valid according to fixed structure
-    if (!isValidFolderPath(selectedFolder)) {
-      setUploadError('Invalid folder path. Files can only be uploaded to predefined folders.');
+    if (!file || !selectedFolder) {
+      if (!file) {
+        setUploadError('Please select a file to upload.');
+      }
       return;
     }
+
+    setUploadError('');
+    clearSuccessMessage();
     
+    if (!isValidFolderPath(selectedFolder)) {
+      setUploadError('Invalid folder path. Files can only be uploaded to predefined folders.');
+      e.target.value = '';
+      return;
+    }
+
+    // Prevent admin uploads to Customer Uploads folders
+    if (isCustomerUploadsFolder(selectedFolder)) {
+      setUploadError('Admin cannot upload files to Customer Uploads folders. These folders are reserved for customer uploads only.');
+      e.target.value = '';
+      return;
+    }
+
     const validationError = validateFile(file);
     if (validationError) {
       setUploadError(validationError);
+      e.target.value = '';
       return;
     }
 
     setUploading(true);
+    setUploadProgress(0);
+    setUploadingFileName(file.name);
+    setUploadError('');
+    clearSuccessMessage();
+    
     try {
-      const fileRef = ref(storage, `projects/${projectId}/${selectedFolder}/${file.name}`);
-      await uploadBytes(fileRef, file);
-      await loadFiles();
+      const fileExtension = file.name.split('.').pop();
+      const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+      const sanitizedBaseName = fileNameWithoutExt
+        .replace(/\s+/g, '_')
+        .replace(/[^a-zA-Z0-9._-]/g, '');
+      const sanitizedFileName = `${sanitizedBaseName}.${fileExtension}`;
+
+      const activeProjectId = project?.id || projectId;
+      if (!activeProjectId) {
+        setUploadError('Project information is not ready yet. Please wait a moment and try again.');
+        setUploading(false);
+        setUploadProgress(0);
+        setUploadingFileName('');
+        return;
+      }
+
+      const folderPathFull = `projects/${activeProjectId}/${selectedFolder}`;
+      
+      // Upload with progress tracking
+      const result = await uploadFile(
+        file,
+        folderPathFull,
+        sanitizedFileName,
+        (progress) => {
+          setUploadProgress(progress);
+        }
+      );
+
       e.target.value = '';
-    } catch (error) {
-      console.error('Error uploading file:', error);
-      setUploadError('Failed to upload file. Please try again.');
-    } finally {
+      setUploadError('');
+
+      // Save to Firestore (this happens after upload completes)
+      const segments = getFolderSegments(selectedFolder);
+      const filesCollection = getProjectFolderRef(activeProjectId, segments);
+      const docId = result.public_id.split('/').pop() || result.public_id;
+      await setDoc(doc(filesCollection, docId), {
+        fileName: sanitizedFileName,
+        cloudinaryPublicId: result.public_id,
+        cloudinaryUrl: result.secure_url,
+        uploadedAt: serverTimestamp(),
+        uploadedBy: 'admin',
+      });
+
+      // Reset upload state
       setUploading(false);
+      setUploadProgress(0);
+      setUploadingFileName('');
+      
+      scheduleSuccessMessage(`${sanitizedFileName} uploaded successfully.`);
+    } catch (error: any) {
+      console.error('Error uploading file:', error);
+      setUploadError(`Failed to upload file: ${error.message || 'Please try again.'}`);
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadingFileName('');
     }
   }
 
-  async function handleDelete(filePath: string, fileName: string) {
-    if (!confirm(`Are you sure you want to delete "${fileName}"? This action cannot be undone.`)) {
-      return;
+  function handleDeleteClick(folderPath: string, publicId: string, fileName: string) {
+    // Prevent multiple simultaneous delete operations
+    if (deleting === publicId) {
+      return; // Already deleting this file
     }
+    setDeleteFileData({ folderPath, publicId, fileName });
+    setShowDeleteConfirm(true);
+  }
 
-    setDeleting(filePath);
+  async function confirmDelete() {
+    if (!deleteFileData) return;
+    
+    const { folderPath, publicId, fileName } = deleteFileData;
+    setShowDeleteConfirm(false);
+    setDeleting(publicId);
+    
     try {
-      const fileRef = ref(storage, filePath);
-      await deleteObject(fileRef);
-      await loadFiles();
+      const success = await deleteFile(publicId);
+      if (!success) {
+        setAlertData({
+          title: 'Delete Failed',
+          message: 'Failed to delete file from Cloudinary. Please try again.',
+          type: 'error',
+        });
+        setShowAlert(true);
+        return;
+      }
+
+      const segments = getFolderSegments(folderPath);
+      const filesCollection = getProjectFolderRef(projectId, segments);
+      const filesQuery = query(
+        filesCollection,
+        where('cloudinaryPublicId', '==', publicId)
+      );
+      const snapshot = await getDocs(filesQuery);
+      const deletePromises = snapshot.docs.map((docSnap) => deleteDoc(docSnap.ref));
+      await Promise.all(deletePromises);
+      
+      // Optimistically update UI
+      setFiles((prev) => prev.filter((file) => file.cloudinaryPublicId !== publicId));
     } catch (error) {
       console.error('Error deleting file:', error);
-      alert('Failed to delete file. Please try again.');
+      setAlertData({
+        title: 'Delete Failed',
+        message: 'Failed to delete file. Please try again.',
+        type: 'error',
+      });
+      setShowAlert(true);
     } finally {
       setDeleting(null);
+      setDeleteFileData(null);
     }
   }
 
-  function formatFileSize(bytes: number): string {
-    if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  async function handleDownload(file: FileMetadata) {
+    try {
+      const isPDF = file.fileName.toLowerCase().endsWith('.pdf');
+      
+      // Determine MIME type based on file extension
+      const getMimeType = (fileName: string): string => {
+        const lower = fileName.toLowerCase();
+        if (lower.endsWith('.pdf')) return 'application/pdf';
+        if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+        if (lower.endsWith('.png')) return 'image/png';
+        return 'application/octet-stream';
+      };
+
+      const mimeType = getMimeType(file.fileName);
+      
+      // Fix PDF URLs: Convert /image/upload/ to /raw/upload/ if PDF is stored as image
+      let downloadUrl = file.cloudinaryUrl;
+      if (isPDF) {
+        // Replace /image/upload/ with /raw/upload/ for PDFs stored incorrectly
+        downloadUrl = downloadUrl.replace('/image/upload/', '/raw/upload/');
+        
+        // Add fl_attachment flag to force download
+        if (!downloadUrl.includes('fl_attachment')) {
+          const separator = downloadUrl.includes('?') ? '&' : '?';
+          downloadUrl = `${downloadUrl}${separator}fl_attachment`;
+        }
+      }
+      
+      // Fetch the file with proper headers
+      const response = await fetch(downloadUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': mimeType,
+        },
+        redirect: 'follow',
+      });
+
+      if (!response.ok) {
+        // If raw endpoint fails, try the original URL
+        if (isPDF && downloadUrl.includes('/raw/upload/')) {
+          const originalUrl = file.cloudinaryUrl + (file.cloudinaryUrl.includes('?') ? '&' : '?') + 'fl_attachment';
+          const retryResponse = await fetch(originalUrl, {
+            method: 'GET',
+            headers: { 'Accept': mimeType },
+            redirect: 'follow',
+          });
+          
+          if (retryResponse.ok) {
+            const blob = await retryResponse.blob();
+            const typedBlob = new Blob([blob], { type: mimeType });
+            const url = URL.createObjectURL(typedBlob);
+            const anchor = document.createElement('a');
+            anchor.href = url;
+            anchor.download = file.fileName;
+            anchor.style.display = 'none';
+            document.body.appendChild(anchor);
+            anchor.click();
+            setTimeout(() => {
+              document.body.removeChild(anchor);
+              URL.revokeObjectURL(url);
+            }, 100);
+            return;
+          }
+        }
+        
+        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+      }
+
+      // Get the blob with explicit MIME type
+      const blob = await response.blob();
+      
+      // Ensure correct MIME type for PDFs
+      const typedBlob = blob.type && blob.type !== 'application/octet-stream'
+        ? blob 
+        : new Blob([blob], { type: mimeType });
+
+      // Create download link
+      const url = URL.createObjectURL(typedBlob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.fileName;
+      anchor.style.display = 'none';
+      
+      // Append to body, click, and remove
+      document.body.appendChild(anchor);
+      anchor.click();
+      
+      // Cleanup
+      setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+      }, 100);
+    } catch (error: any) {
+      console.error('Download failed:', error);
+      
+      // For PDFs, try fallback: direct link with download attribute
+      if (file.fileName.toLowerCase().endsWith('.pdf')) {
+        try {
+          // Try converting URL to raw endpoint
+          let fallbackUrl = file.cloudinaryUrl.replace('/image/upload/', '/raw/upload/');
+          if (!fallbackUrl.includes('fl_attachment')) {
+            fallbackUrl += (fallbackUrl.includes('?') ? '&' : '?') + 'fl_attachment';
+          }
+          
+          const anchor = document.createElement('a');
+          anchor.href = fallbackUrl;
+          anchor.download = file.fileName;
+          anchor.target = '_blank';
+          anchor.rel = 'noopener noreferrer';
+          document.body.appendChild(anchor);
+          anchor.click();
+          setTimeout(() => {
+            document.body.removeChild(anchor);
+          }, 100);
+          return; // Success with fallback
+        } catch (fallbackError) {
+          console.error('Fallback download also failed:', fallbackError);
+        }
+      }
+      
+      setAlertData({
+        title: 'Download Failed',
+        message: error.message || 'Failed to download file. Please try again.',
+        type: 'error',
+      });
+      setShowAlert(true);
+    }
+  }
+
+  function formatUploadedDate(date: Date | null) {
+    if (!date) return 'Pending';
+    return new Intl.DateTimeFormat('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date);
   }
 
   function getFileIcon(type: string): string {
@@ -197,179 +583,390 @@ function ProjectFilesContent() {
     return '📎';
   }
 
+  // Get folder icon
+  function getFolderIcon(path: string): string {
+    if (path === '00_New_Not_Viewed_Yet_') return '🔔';
+    if (path.startsWith('01_')) return '📤';
+    if (path.startsWith('02_')) return '📷';
+    if (path.startsWith('03_')) return '📄';
+    if (path.startsWith('04_')) return '✉️';
+    if (path.startsWith('05_')) return '💰';
+    if (path.startsWith('06_')) return '🧾';
+    if (path.startsWith('07_')) return '📦';
+    if (path.startsWith('08_')) return '📋';
+    return '📁';
+  }
+
+  // Format folder name (remove numbering and underscores)
+  function formatFolderName(name: string): string {
+    return name.replace(/^\d+_/, '').replace(/_/g, ' ');
+  }
+
+  /**
+   * Check if a folder path is part of Customer Uploads (admin cannot upload here)
+   */
+  function isCustomerUploadsFolder(folderPath: string): boolean {
+    return folderPath.startsWith('01_Customer_Uploads');
+  }
+
   if (loading && !project) {
     return (
-      <div className="min-h-screen bg-gray-50">
-        <AppHeader />
-        <main className="max-w-7xl mx-auto px-6 py-8">
-          <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-            <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
-            <p className="mt-4 text-sm text-gray-500">Loading...</p>
-          </div>
-        </main>
+      <div className="px-8 py-8">
+        <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
+          <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
+          <p className="mt-4 text-sm text-gray-500">Loading...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AppHeader />
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <Link
-            href="/files"
-            className="text-sm text-gray-600 hover:text-gray-900 mb-4 inline-block"
-          >
-            ← Back to Files
-          </Link>
-          <h2 className="text-2xl font-semibold text-gray-900">{project?.name}</h2>
-          {project?.year && (
-            <p className="text-sm text-gray-500 mt-1">Year: {project.year}</p>
-          )}
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          <div className="lg:col-span-1">
-            <div className="bg-white border border-gray-200 rounded-sm">
-              <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-sm font-semibold text-gray-900">Select Folder</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Fixed structure (read-only)</p>
-                <p className="text-xs text-gray-400 mt-1">📁 Folder structure cannot be modified</p>
+    <div className="px-8 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <Link
+          href="/files"
+          className="inline-flex items-center text-sm text-gray-600 hover:text-green-power-600 mb-4 transition-colors"
+        >
+          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          Back to Files
+        </Link>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">{project?.name}</h1>
+            {project?.year && (
+              <div className="flex items-center space-x-2">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
+                  📅 {project.year}
+                </span>
               </div>
-              <div className="p-2">
-                <div className="space-y-1">
-                  {PROJECT_FOLDER_STRUCTURE.map((folder) => (
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Sidebar - Folder Navigation */}
+        <div className="lg:col-span-3">
+          <div className="bg-white border border-gray-200 rounded-xl shadow-sm sticky top-8">
+            <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+              <h3 className="text-sm font-bold text-gray-900 mb-1">Folders</h3>
+              <p className="text-xs text-gray-500">Select a folder to manage files</p>
+            </div>
+            <div className="p-3 max-h-[calc(100vh-250px)] overflow-y-auto">
+              <div className="space-y-1">
+                {PROJECT_FOLDER_STRUCTURE.filter((folder) => 
+                  folder.path !== '00_New_Not_Viewed_Yet_' && 
+                  folder.path !== '01_Customer_Uploads'
+                ).map((folder) => {
+                  // Check if any child is selected
+                  const hasSelectedChild = folder.children?.some(child => selectedFolder === child.path);
+                  // Check if parent is selected (but no child is selected)
+                  const isParentSelected = selectedFolder === folder.path && !hasSelectedChild;
+                  
+                  return (
                     <div key={folder.path}>
                       <button
-                        onClick={() => setSelectedFolder(folder.path)}
-                        className={`w-full text-left px-3 py-2 text-sm rounded-sm ${
-                          selectedFolder === folder.path
-                            ? 'bg-green-power-50 text-green-power-700 border border-green-power-200'
-                            : 'text-gray-700 hover:bg-gray-50 border border-transparent'
+                        onClick={() => {
+                          // If folder has children, select the first child
+                          if (folder.children && folder.children.length > 0) {
+                            setSelectedFolder(folder.children[0].path);
+                          } else {
+                            // If no children, select the parent folder
+                            setSelectedFolder(folder.path);
+                          }
+                        }}
+                        className={`w-full text-left px-3 py-2.5 text-sm rounded-lg transition-all duration-200 flex items-center space-x-2 ${
+                          isParentSelected || hasSelectedChild
+                            ? 'bg-gradient-to-r from-green-power-500 to-green-power-600 text-white shadow-md'
+                            : 'text-gray-700 hover:bg-gray-50'
                         }`}
                       >
-                        {folder.name}
+                        <span className="text-base">{getFolderIcon(folder.path)}</span>
+                        <span className="flex-1 font-medium">{formatFolderName(folder.name)}</span>
+                        {folder.children && folder.children.length > 0 && (
+                          <svg 
+                            className={`w-4 h-4 transition-transform ${hasSelectedChild ? 'rotate-90' : ''}`}
+                            fill="none" 
+                            stroke="currentColor" 
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        )}
                       </button>
-                      {folder.children && (
-                        <div className="ml-3 mt-1 space-y-0.5">
+                      {folder.children && (hasSelectedChild || isParentSelected) && (
+                        <div className="ml-4 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-3">
                           {folder.children.map((child) => (
                             <button
                               key={child.path}
                               onClick={() => setSelectedFolder(child.path)}
-                              className={`w-full text-left px-3 py-1.5 text-xs rounded-sm ${
+                              className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all duration-200 ${
                                 selectedFolder === child.path
-                                  ? 'bg-green-power-50 text-green-power-700 border border-green-power-200'
-                                  : 'text-gray-600 hover:bg-gray-50 border border-transparent'
+                                  ? 'bg-green-power-100 text-green-power-700 font-medium'
+                                  : 'text-gray-600 hover:bg-gray-50'
                               }`}
                             >
-                              └─ {child.name}
+                              {formatFolderName(child.name)}
                             </button>
                           ))}
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             </div>
+            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50">
+              <p className="text-xs text-gray-500 flex items-center">
+                <span className="mr-2">ℹ️</span>
+                Fixed structure (read-only)
+              </p>
+            </div>
           </div>
+        </div>
 
-          <div className="lg:col-span-3">
-            {!selectedFolder ? (
-              <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-                <p className="text-sm text-gray-500">Select a folder to view and manage files</p>
+        {/* Right Content Area */}
+        <div className="lg:col-span-9">
+          {!selectedFolder ? (
+            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-16 text-center">
+              <div className="mb-4">
+                <span className="text-6xl">📂</span>
               </div>
-            ) : (
-              <>
-                <div className="bg-white border border-gray-200 rounded-sm mb-6">
-                  <div className="px-5 py-4 border-b border-gray-200">
-                    <h3 className="text-sm font-semibold text-gray-900">Upload File</h3>
-                    <p className="text-xs text-gray-500 mt-0.5">Folder: {selectedFolder}</p>
-                    <p className="text-xs text-gray-400 mt-1">⚠️ Files can only be uploaded to predefined folders. Folder structure cannot be modified.</p>
-                  </div>
-                  <div className="p-5">
-                    {uploadError && (
-                      <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm mb-4">
-                        {uploadError}
-                      </div>
-                    )}
-                    <input
-                      type="file"
-                      onChange={handleFileUpload}
-                      disabled={uploading}
-                      accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
-                      className="block w-full text-sm text-gray-600 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-xs file:font-medium file:bg-gray-100 file:text-gray-700 hover:file:bg-gray-200 cursor-pointer disabled:opacity-50"
-                    />
-                    <p className="mt-2 text-xs text-gray-500">
-                      Allowed formats: PDF, JPG, PNG | Max size: 5 MB
-                    </p>
-                    {uploading && (
-                      <p className="mt-2 text-xs text-green-power-600 font-medium">Uploading file...</p>
-                    )}
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Select a Folder</h3>
+              <p className="text-sm text-gray-500">
+                Choose a folder from the sidebar to view and manage files
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Upload Section */}
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="bg-gradient-to-r from-green-power-50 to-green-power-100 px-6 py-4 border-b border-green-power-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900 mb-1">Upload Files</h3>
+                      <p className="text-xs text-gray-600">
+                        <span className="font-medium">{formatFolderName(selectedFolder)}</span>
+                      </p>
+                    </div>
+                    <div className="bg-white/60 rounded-lg px-3 py-1.5">
+                      <span className="text-xs font-medium text-gray-700">📤 Upload</span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="bg-white border border-gray-200 rounded-sm">
-                  <div className="px-5 py-4 border-b border-gray-200">
-                    <h3 className="text-sm font-semibold text-gray-900">Files</h3>
-                  </div>
-                  {loading ? (
-                    <div className="p-12 text-center">
-                      <div className="inline-block h-6 w-6 border-2 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
-                      <p className="mt-4 text-sm text-gray-500">Loading files...</p>
+                <div className="p-6">
+                  {uploadError && (
+                    <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm mb-4 rounded-r-lg">
+                      {uploadError}
                     </div>
-                  ) : files.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <p className="text-sm text-gray-500">No files in this folder.</p>
+                  )}
+                  {uploadSuccess && !uploadError && successFolder === selectedFolder && (
+                    <div className="bg-green-50 border-l-4 border-green-400 text-green-700 px-4 py-3 text-sm mb-4 rounded-r-lg">
+                      {uploadSuccess}
+                    </div>
+                  )}
+                  {isCustomerUploadsFolder(selectedFolder) ? (
+                    <div className="border-2 border-dashed border-amber-300 rounded-lg p-8 text-center bg-amber-50">
+                      <div className="mb-4">
+                        <svg className="mx-auto h-12 w-12 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      </div>
+                      <div className="space-y-2">
+                        <span className="text-sm font-medium text-amber-800 block">
+                          Customer Uploads Folder (Read-Only)
+                        </span>
+                        <p className="text-xs text-amber-700">
+                          Admins cannot upload files to Customer Uploads folders. These folders are reserved for customer uploads only. You can view customer-uploaded files here.
+                        </p>
+                      </div>
                     </div>
                   ) : (
-                    <div className="divide-y divide-gray-200">
-                      {files.map((file) => (
-                        <div key={file.fullPath} className="px-5 py-3 hover:bg-gray-50">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center flex-1 min-w-0">
-                              <span className="mr-3 text-lg">{getFileIcon(file.type)}</span>
-                              <div className="flex-1 min-w-0">
-                                <a
-                                  href={file.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-sm text-gray-900 hover:text-green-power-600 break-words"
-                                >
-                                  {file.name}
-                                </a>
-                                <p className="text-xs text-gray-500 mt-0.5">
-                                  {formatFileSize(file.size)}
-                                </p>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-green-power-400 transition-colors bg-gray-50">
+                      <div className="mb-4">
+                        <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                      <label className="cursor-pointer">
+                        <input
+                          type="file"
+                          onChange={handleFileUpload}
+                          disabled={uploading}
+                          accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png"
+                          className="hidden"
+                        />
+                        <div className="space-y-2">
+                          {uploading ? (
+                            <>
+                              <div className="flex items-center justify-center space-x-2">
+                                <svg className="animate-spin h-5 w-5 text-green-power-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span className="text-sm font-medium text-gray-700">Uploading...</span>
                               </div>
-                            </div>
-                            <div className="ml-4 flex items-center space-x-2">
-                              <a
-                                href={file.url}
-                                download={file.name}
-                                className="px-3 py-1.5 text-xs text-gray-700 hover:text-gray-900 border border-gray-300 rounded-sm hover:bg-gray-50 font-medium"
-                              >
-                                Download
-                              </a>
-                              <button
-                                onClick={() => handleDelete(file.fullPath, file.name)}
-                                disabled={deleting === file.fullPath}
-                                className="px-3 py-1.5 text-xs text-red-600 hover:text-red-700 border border-red-300 rounded-sm hover:bg-red-50 font-medium disabled:opacity-50"
-                              >
-                                {deleting === file.fullPath ? 'Deleting...' : 'Delete'}
-                              </button>
-                            </div>
+                              {uploadingFileName && (
+                                <p className="text-xs text-gray-600 font-medium truncate max-w-xs mx-auto">
+                                  {uploadingFileName}
+                                </p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-sm font-medium text-gray-700">
+                                Click to upload or drag and drop
+                              </span>
+                              <p className="text-xs text-gray-500">
+                                PDF, JPG, PNG (Max 5 MB)
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </label>
+                      {uploading && (
+                        <div className="mt-6 space-y-2">
+                          <div className="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-green-power-500 to-green-power-600 h-2.5 rounded-full transition-all duration-300 ease-out"
+                              style={{ width: `${uploadProgress}%` }}
+                            ></div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-gray-600">Uploading...</span>
+                            <span className="text-gray-700 font-semibold">{uploadProgress}%</span>
                           </div>
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+
+              {/* Files List */}
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100 px-6 py-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900 mb-1">Files</h3>
+                      <p className="text-xs text-gray-600">
+                        {files.length} {files.length === 1 ? 'file' : 'files'} in this folder
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                {loading ? (
+                  <div className="p-12 text-center">
+                    <div className="inline-block h-8 w-8 border-3 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
+                    <p className="mt-4 text-sm text-gray-500">Loading files...</p>
+                  </div>
+                ) : files.length === 0 ? (
+                  <div className="p-16 text-center">
+                    <div className="mb-4">
+                      <span className="text-5xl">📄</span>
+                    </div>
+                    <h4 className="text-sm font-semibold text-gray-900 mb-1">No files yet</h4>
+                    <p className="text-xs text-gray-500">Upload files using the form above</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    {files.map((file) => (
+                      <div
+                        key={file.cloudinaryPublicId}
+                        className="px-6 py-4 hover:bg-gray-50 transition-colors group"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center flex-1 min-w-0 space-x-4">
+                              <div className="flex-shrink-0">
+                                <div className="w-10 h-10 rounded-lg bg-gray-100 flex items-center justify-center text-xl group-hover:bg-green-power-50 transition-colors">
+                                  {getFileIcon(file.fileType)}
+                                </div>
+                              </div>
+                            <div className="flex-1 min-w-0">
+                              <a
+                                href={file.cloudinaryUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-gray-900 hover:text-green-power-600 break-words block transition-colors"
+                              >
+                                {file.fileName}
+                              </a>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {file.fileType.toUpperCase()} · {formatUploadedDate(file.uploadedAt)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center space-x-2 ml-4">
+                            <button
+                              onClick={() => handleDownload(file)}
+                              className="px-4 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all flex items-center space-x-1"
+                              type="button"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                              </svg>
+                              <span>Download</span>
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClick(file.folderPath, file.cloudinaryPublicId, file.fileName)}
+                              disabled={deleting === file.cloudinaryPublicId}
+                              className="px-4 py-2 text-xs font-medium text-red-600 bg-white border border-red-300 rounded-lg hover:bg-red-50 hover:border-red-400 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+                            >
+                              {deleting === file.cloudinaryPublicId ? (
+                                <>
+                                  <div className="w-4 h-4 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
+                                  <span>Deleting...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                  </svg>
+                                  <span>Delete</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-      </main>
+      </div>
+
+      {/* Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteConfirm}
+        title="Delete File"
+        message={deleteFileData ? `Are you sure you want to delete "${deleteFileData.fileName}"? This action cannot be undone.` : ''}
+        confirmText="Delete"
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={confirmDelete}
+        onCancel={() => {
+          setShowDeleteConfirm(false);
+          setDeleteFileData(null);
+        }}
+      />
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={showAlert}
+        title={alertData?.title || 'Alert'}
+        message={alertData?.message || ''}
+        type={alertData?.type || 'info'}
+        onClose={() => {
+          setShowAlert(false);
+          setAlertData(null);
+        }}
+      />
     </div>
   );
 }

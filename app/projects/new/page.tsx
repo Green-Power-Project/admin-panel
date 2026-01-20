@@ -3,7 +3,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
-import AppHeader from '@/components/AppHeader';
+import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
@@ -19,7 +19,9 @@ interface Customer {
 export default function NewProjectPage() {
   return (
     <ProtectedRoute>
-      <NewProjectContent />
+      <AdminLayout title="Create Project">
+        <NewProjectContent />
+      </AdminLayout>
     </ProtectedRoute>
   );
 }
@@ -110,9 +112,8 @@ function NewProjectContent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <AppHeader />
-      <main className="max-w-3xl mx-auto px-6 py-8">
+    <div className="px-8 py-8">
+      <div className="max-w-3xl mx-auto">
         <div className="mb-6">
           <Link
             href="/projects"
@@ -224,7 +225,7 @@ function NewProjectContent() {
             </form>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
