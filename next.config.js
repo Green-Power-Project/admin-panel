@@ -10,6 +10,13 @@ const nextConfig = {
         ...config.resolve.fallback,
         fs: false,
       };
+      // Faster builds in development
+      config.optimization = {
+        ...config.optimization,
+        removeAvailableModules: false,
+        removeEmptyChunks: false,
+        splitChunks: false,
+      };
     }
     return config;
   },
@@ -20,8 +27,14 @@ const nextConfig = {
   },
   // Enable prefetching for better navigation performance
   experimental: {
-    optimizePackageImports: ['@/components', '@/contexts'],
+    optimizePackageImports: ['@/components', '@/contexts', 'firebase/firestore', 'firebase/auth'],
   },
+  // Optimize images
+  images: {
+    formats: ['image/avif', 'image/webp'],
+  },
+  // Compress output
+  compress: true,
 };
 
 module.exports = nextConfig;

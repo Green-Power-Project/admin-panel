@@ -46,7 +46,16 @@ function getProjectFolderRef(projectId: string, folderSegments: string[]) {
   if (folderSegments.length === 0) {
     throw new Error('Folder segments must not be empty');
   }
-  return collection(db, 'files', 'projects', projectId, ...folderSegments);
+  // Firestore requires odd number of segments for collections
+  // Since folder paths can be nested (e.g., "01_Customer_Uploads/Photos"), we need to treat
+  // the full path as a single document ID to maintain valid collection references
+  // Structure: files(collection) -> projects(doc) -> projectId(collection) -> folderPath(doc) -> files(collection)
+  // Use the full folder path as a single document ID (replace / with __ to avoid path separator issues)
+  const folderPathId = folderSegments.join('__');
+  
+  // This creates: files(collection) -> projects(doc) -> projectId(collection) -> folderPathId(doc) -> files(collection)
+  // = 5 segments (odd) ✓
+  return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
 }
 
 function deriveFileType(fileName: string): 'pdf' | 'image' | 'file' {
@@ -635,19 +644,20 @@ function ProjectFilesContent() {
         </Link>
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">{project?.name}</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">{project?.name}</h1>
             {project?.year && (
-              <div className="flex items-center space-x-2">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
-                  📅 {project.year}
-                </span>
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>{project.year}</span>
               </div>
             )}
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
         {/* Left Sidebar - Folder Navigation */}
         <div className="lg:col-span-3">
           <div className="bg-white border border-gray-200 rounded-xl shadow-sm sticky top-8">

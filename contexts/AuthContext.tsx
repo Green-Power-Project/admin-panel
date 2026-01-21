@@ -46,38 +46,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
 
-    // Retry logic for offline errors
-    const maxRetries = 3;
-    let lastError: any = null;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        // Try server read first (forces online)
-        const adminsSnapshot = await getDocsFromServer(collection(db, 'admins'));
-        return !adminsSnapshot.empty;
-      } catch (error: any) {
-        lastError = error;
-        // If it's an offline error, wait and retry
-        if (error?.code === 'unavailable' || error?.message?.includes('offline') || error?.code === 'failed-precondition') {
-          if (attempt < maxRetries - 1) {
-            // Wait before retrying (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-            continue;
-          }
-        }
-        // For other errors or final attempt, try cache fallback
-        try {
-          const adminsSnapshot = await getDocs(collection(db, 'admins'));
-          return !adminsSnapshot.empty;
-        } catch (fallbackError) {
-          console.error('Error checking for existing admins (fallback):', fallbackError);
-        }
+    try {
+      // Cache-first approach: check cache first for instant response
+      const adminsSnapshot = await getDocs(collection(db, 'admins'));
+      if (!adminsSnapshot.empty) {
+        return true;
       }
+      
+      // If cache is empty, try server (non-blocking, don't wait for retries)
+      try {
+        const serverSnapshot = await getDocsFromServer(collection(db, 'admins'));
+        return !serverSnapshot.empty;
+      } catch (serverError) {
+        // If server fails, trust cache result (empty = no admins)
+        return false;
+      }
+    } catch (error) {
+      console.error('Error checking for existing admins:', error);
+      // If all fails, assume no admins exist (allows first user to become admin)
+      return false;
     }
-    
-    console.error('Error checking for existing admins after retries:', lastError);
-    // If all retries fail, assume no admins exist (allows first user to become admin)
-    return false;
   }
 
   async function checkAdminStatus(user: User): Promise<boolean> {
@@ -86,37 +74,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return false;
     }
 
-    // Retry logic for offline errors
-    const maxRetries = 3;
-    let lastError: any = null;
-    
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      try {
-        // Try server read first (forces online)
-        const adminDoc = await getDocFromServer(doc(db, 'admins', user.uid));
-        return adminDoc.exists();
-      } catch (error: any) {
-        lastError = error;
-        // If it's an offline error, wait and retry
-        if (error?.code === 'unavailable' || error?.message?.includes('offline') || error?.code === 'failed-precondition') {
-          if (attempt < maxRetries - 1) {
-            // Wait before retrying (exponential backoff)
-            await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-            continue;
-          }
-        }
-        // For other errors or final attempt, try cache fallback
-        try {
-          const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-          return adminDoc.exists();
-        } catch (fallbackError) {
-          console.error('Error checking admin status (fallback):', fallbackError);
-        }
+    try {
+      // Cache-first approach: check cache first for instant response
+      const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+      if (adminDoc.exists()) {
+        return true;
       }
+      
+      // If cache says doesn't exist, try server (non-blocking)
+      try {
+        const serverDoc = await getDocFromServer(doc(db, 'admins', user.uid));
+        return serverDoc.exists();
+      } catch (serverError) {
+        // If server fails, trust cache result
+        return false;
+      }
+    } catch (error) {
+      console.error('Error checking admin status:', error);
+      return false;
     }
-    
-    console.error('Error checking admin status after retries:', lastError);
-    return false;
   }
 
   async function createAdminDocument(user: User): Promise<void> {
@@ -215,48 +191,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
+    // Set loading to false immediately if no cached user (show UI faster)
+    // This allows the UI to render while auth check happens in background
+    const cachedUser = auth.currentUser;
+    if (!cachedUser) {
+      setLoading(false);
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // Verify admin status on every auth state change
-        let isAdmin = await checkAdminStatus(user);
+        // Optimistically set user first (show UI immediately)
+        setCurrentUser({ ...user, isAdmin: true });
+        setLoading(false);
         
-        // If not an admin, check if this is the first admin (no admins exist)
-        if (!isAdmin) {
-          const adminsExist = await checkIfAnyAdminsExist();
-          
-          if (!adminsExist) {
-            // No admins exist - automatically create admin for first user
-            try {
-              await createAdminDocument(user);
-              isAdmin = true;
-            } catch (error) {
-              console.error('Error auto-creating admin:', error);
-            }
-          }
-        }
-        
-        if (isAdmin) {
-          setCurrentUser({ ...user, isAdmin: true });
-        } else {
-          // Not an admin, sign out immediately and clear state
-          setCurrentUser(null);
-          await signOut(auth);
-          
-          // Clear all storage
-          if (typeof window !== 'undefined') {
-            localStorage.clear();
-            sessionStorage.clear();
+        // Then verify admin status in background (non-blocking)
+        checkAdminStatus(user).then(async (isAdmin) => {
+          if (!isAdmin) {
+            // If not an admin, check if this is the first admin (no admins exist)
+            const adminsExist = await checkIfAnyAdminsExist();
             
-            // Redirect to login if not already there
-            if (window.location.pathname !== '/login') {
-              window.location.href = '/login';
+            if (!adminsExist) {
+              // No admins exist - automatically create admin for first user
+              try {
+                await createAdminDocument(user);
+                setCurrentUser({ ...user, isAdmin: true });
+              } catch (error) {
+                console.error('Error auto-creating admin:', error);
+              }
+            } else {
+              // Not an admin, sign out immediately and clear state
+              setCurrentUser(null);
+              await signOut(auth);
+              
+              // Clear all storage
+              if (typeof window !== 'undefined') {
+                localStorage.clear();
+                sessionStorage.clear();
+                
+                // Redirect to login if not already there
+                if (window.location.pathname !== '/login') {
+                  window.location.href = '/login';
+                }
+              }
             }
+          } else {
+            // Confirm admin status
+            setCurrentUser({ ...user, isAdmin: true });
           }
-        }
+        });
       } else {
         setCurrentUser(null);
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     return unsubscribe;
@@ -273,7 +259,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={value}>
-      {!loading && children}
+      {children}
     </AuthContext.Provider>
   );
 }

@@ -152,7 +152,11 @@ function CustomerUploadsContent() {
         if (folderSegments.length === 0) {
           throw new Error('Folder segments must not be empty');
         }
-        return collection(db, 'files', 'projects', projectId, ...folderSegments);
+        // Firestore requires odd number of segments for collections
+        // Since folder paths can be nested, use the full path as a single document ID
+        // Structure: files(collection) -> projects(doc) -> projectId(collection) -> folderPath(doc) -> files(collection)
+        const folderPathId = folderSegments.join('__');
+        return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
       };
 
       // Get all files from 01_Customer_Uploads folder in all projects via Firestore metadata
