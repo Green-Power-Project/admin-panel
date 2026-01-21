@@ -13,6 +13,7 @@ import {
   Timestamp,
   getDocs,
 } from 'firebase/firestore';
+import Pagination from '@/components/Pagination';
 
 interface ReportApproval {
   id: string;
@@ -58,6 +59,14 @@ function ApprovalsContent() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCustomer, setFilterCustomer] = useState<string>(''); // customer/project/file search
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
+  // Store raw approvals and maps separately so we can re-enrich when maps update
+  const [rawApprovals, setRawApprovals] = useState<ReportApproval[]>([]);
+  const [projectsMap, setProjectsMap] = useState<Map<string, string>>(new Map());
+  const [customersMap, setCustomersMap] = useState<Map<string, { customerNumber: string; email: string }>>(new Map());
 
   useEffect(() => {
     if (!db) return;
@@ -83,41 +92,53 @@ function ApprovalsContent() {
     };
   }, []);
 
-  // Real-time listeners for reportApprovals, projects, and customers
+  // Real-time listener for report approvals - store raw data
   useEffect(() => {
     if (!db) return;
 
-    let projectsMap = new Map<string, string>();
-    let customersMap = new Map<string, { customerNumber: string; email: string }>();
-
-    // Real-time listener for report approvals - load ALL approvals (no filtering in query)
+    const approvalsQuery = query(collection(db, 'reportApprovals'));
+    
     const approvalsUnsubscribe = onSnapshot(
-      query(collection(db, 'reportApprovals'), orderBy('uploadedAt', 'desc')),
+      approvalsQuery,
       (snapshot) => {
+        console.log('Report approvals snapshot received:', snapshot.size, 'documents');
         const approvalsList: ReportApproval[] = [];
         
         snapshot.forEach((doc) => {
           const data = doc.data();
-          approvalsList.push({
+          const approval = {
             id: doc.id,
             ...data,
-          } as ReportApproval);
+          } as ReportApproval;
+          approvalsList.push(approval);
+          // Log ALL approvals for debugging
+          console.log('Approval document:', { 
+            id: doc.id, 
+            filePath: approval.filePath, 
+            status: approval.status,
+            projectId: approval.projectId,
+            customerId: approval.customerId,
+            approvedAt: approval.approvedAt?.toDate(),
+            uploadedAt: approval.uploadedAt?.toDate()
+          });
+        });
+        
+        // Sort manually by approvedAt (most recent first), then uploadedAt, then by status priority
+        approvalsList.sort((a, b) => {
+          // First, prioritize by status: approved/auto-approved > pending
+          const aStatusPriority = (a.status === 'approved' || a.status === 'auto-approved') ? 2 : 1;
+          const bStatusPriority = (b.status === 'approved' || b.status === 'auto-approved') ? 2 : 1;
+          if (aStatusPriority !== bStatusPriority) {
+            return bStatusPriority - aStatusPriority; // Higher priority first
+          }
+          
+          // If same priority, sort by timestamp (most recent first)
+          const aTime = a.approvedAt?.toMillis() || a.uploadedAt?.toMillis() || 0;
+          const bTime = b.approvedAt?.toMillis() || b.uploadedAt?.toMillis() || 0;
+          return bTime - aTime; // Descending
         });
 
-        // Enrich approvals with project and customer info
-        const enrichedApprovals: ReportApprovalDisplay[] = approvalsList.map((approval) => {
-          const customerInfo = customersMap.get(approval.customerId);
-          return {
-            ...approval,
-            fileName: approval.filePath.split('/').pop() || approval.filePath,
-            projectName: projectsMap.get(approval.projectId) || 'Unknown Project',
-            customerNumber: customerInfo?.customerNumber,
-            customerEmail: customerInfo?.email,
-          };
-        });
-
-        setAllApprovals(enrichedApprovals);
-        // Set loading to false when data arrives
+        setRawApprovals(approvalsList);
         setLoading(false);
       },
       (error) => {
@@ -126,45 +147,117 @@ function ApprovalsContent() {
       }
     );
 
-    // Real-time listener for projects
+    return () => {
+      approvalsUnsubscribe();
+    };
+  }, []);
+
+  // Real-time listener for projects
+  useEffect(() => {
+    if (!db) return;
+
     const projectsUnsubscribe = onSnapshot(
       collection(db, 'projects'),
       (snapshot) => {
-        projectsMap = new Map<string, string>();
+        const newProjectsMap = new Map<string, string>();
         snapshot.forEach((doc) => {
-          projectsMap.set(doc.id, doc.data().name);
+          newProjectsMap.set(doc.id, doc.data().name);
         });
+        setProjectsMap(newProjectsMap);
       },
       (error) => {
         console.error('Error listening to projects:', error);
       }
     );
 
-    // Real-time listener for customers
+    return () => {
+      projectsUnsubscribe();
+    };
+  }, []);
+
+  // Real-time listener for customers
+  useEffect(() => {
+    if (!db) return;
+
     const customersUnsubscribe = onSnapshot(
       collection(db, 'customers'),
       (snapshot) => {
-        customersMap = new Map<string, { customerNumber: string; email: string }>();
+        const newCustomersMap = new Map<string, { customerNumber: string; email: string }>();
         snapshot.forEach((doc) => {
           const data = doc.data();
-          customersMap.set(data.uid, {
+          newCustomersMap.set(data.uid, {
             customerNumber: data.customerNumber || 'N/A',
             email: data.email || 'N/A',
           });
         });
+        setCustomersMap(newCustomersMap);
       },
       (error) => {
         console.error('Error listening to customers:', error);
       }
     );
 
-    // Cleanup listeners on unmount
     return () => {
-      approvalsUnsubscribe();
-      projectsUnsubscribe();
       customersUnsubscribe();
     };
   }, []);
+
+  // Enrich and deduplicate approvals whenever rawApprovals, projectsMap, or customersMap changes
+  useEffect(() => {
+    // Enrich approvals with project and customer info
+    const enrichedApprovals: ReportApprovalDisplay[] = rawApprovals.map((approval) => {
+      const customerInfo = customersMap.get(approval.customerId);
+      return {
+        ...approval,
+        fileName: approval.filePath.split('/').pop() || approval.filePath,
+        projectName: projectsMap.get(approval.projectId) || 'Unknown Project',
+        customerNumber: customerInfo?.customerNumber,
+        customerEmail: customerInfo?.email,
+      };
+    });
+
+    // Deduplicate: if multiple documents exist for same file, keep the one with highest priority status
+    // Priority: approved/auto-approved > pending
+    // Also handle cases where filePath might differ slightly (normalize for comparison)
+    const deduplicatedMap = new Map<string, ReportApprovalDisplay>();
+    enrichedApprovals.forEach((approval) => {
+      // Normalize filePath for comparison (handle variations in path format)
+      const normalizedPath = approval.filePath.split('/').pop() || approval.filePath;
+      const key = `${approval.projectId}_${approval.customerId}_${normalizedPath}`;
+      const existing = deduplicatedMap.get(key);
+      
+      if (!existing) {
+        deduplicatedMap.set(key, approval);
+      } else {
+        // Keep the one with higher priority status
+        const existingPriority = existing.status === 'approved' || existing.status === 'auto-approved' ? 2 : 1;
+        const currentPriority = approval.status === 'approved' || approval.status === 'auto-approved' ? 2 : 1;
+        
+        if (currentPriority > existingPriority) {
+          // Current has higher priority - replace
+          deduplicatedMap.set(key, approval);
+        } else if (currentPriority === existingPriority) {
+          // Same priority - keep the one with more recent timestamp
+          const existingTime = existing.approvedAt?.toMillis() || existing.uploadedAt?.toMillis() || 0;
+          const currentTime = approval.approvedAt?.toMillis() || approval.uploadedAt?.toMillis() || 0;
+          if (currentTime > existingTime) {
+            deduplicatedMap.set(key, approval);
+          }
+        }
+        // If existing has higher priority, keep it (don't replace)
+      }
+    });
+
+    const finalApprovals = Array.from(deduplicatedMap.values());
+    console.log('Final deduplicated approvals:', finalApprovals.map(a => ({ 
+      filePath: a.filePath, 
+      status: a.status, 
+      id: a.id,
+      projectName: a.projectName,
+      customerNumber: a.customerNumber
+    })));
+    setAllApprovals(finalApprovals);
+  }, [rawApprovals, projectsMap, customersMap]);
 
   function formatDate(timestamp?: Timestamp): string {
     if (!timestamp) return 'N/A';
@@ -220,6 +313,7 @@ function ApprovalsContent() {
     }
 
     setApprovals(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
   }, [allApprovals, filterProject, filterStatus, filterCustomer]);
 
   const totalApprovals = approvals.length;
@@ -356,63 +450,76 @@ function ApprovalsContent() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
                       Report File
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
                       Project
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
                       Customer
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
                       Approval Date & Time
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {approvals.map((approval) => (
+                  {approvals
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((approval) => (
                     <tr key={approval.id} className="hover:bg-gray-50/80">
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs font-medium text-gray-900 truncate">
                           {approval.fileName || 'Untitled file'}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{approval.projectName}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{approval.projectName}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">
                           {approval.customerNumber || 'N/A'}
                         </div>
-                        <div className="text-xs text-gray-500">{approval.customerEmail || 'N/A'}</div>
+                        <div className="text-[10px] text-gray-500 truncate">{approval.customerEmail || 'N/A'}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <span className={getStatusBadge(approval.status)}>
                           {getStatusLabel(approval.status)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5">
                         {approval.approvedAt ? (
-                          <div className="text-sm text-gray-900">
+                          <div className="text-xs text-gray-900">
                             {formatDate(approval.approvedAt)}
                           </div>
                         ) : approval.status === 'pending' && approval.autoApproveDate ? (
                           <div>
-                            <div className="text-sm text-gray-500">Auto-approve:</div>
-                            <div className="text-xs text-gray-400">{formatDate(approval.autoApproveDate)}</div>
+                            <div className="text-xs text-gray-500">Auto-approve:</div>
+                            <div className="text-[10px] text-gray-400">{formatDate(approval.autoApproveDate)}</div>
                           </div>
                         ) : (
-                          <span className="text-sm text-gray-400">Not approved yet</span>
+                          <span className="text-xs text-gray-400">Not approved yet</span>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(approvals.length / itemsPerPage)}
+                totalItems={approvals.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={(newItemsPerPage) => {
+                  setItemsPerPage(newItemsPerPage);
+                  setCurrentPage(1);
+                }}
+              />
             </div>
           )}
         </div>

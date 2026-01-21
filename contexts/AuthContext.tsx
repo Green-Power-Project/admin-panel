@@ -191,55 +191,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   useEffect(() => {
-    // Set loading to false immediately if no cached user (show UI faster)
-    // This allows the UI to render while auth check happens in background
-    const cachedUser = auth.currentUser;
-    if (!cachedUser) {
-      setLoading(false);
-    }
-
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        // Optimistically set user first (show UI immediately)
-        setCurrentUser({ ...user, isAdmin: true });
-        setLoading(false);
+        // Keep loading true while verifying admin status
+        setLoading(true);
         
-        // Then verify admin status in background (non-blocking)
-        checkAdminStatus(user).then(async (isAdmin) => {
-          if (!isAdmin) {
-            // If not an admin, check if this is the first admin (no admins exist)
-            const adminsExist = await checkIfAnyAdminsExist();
-            
-            if (!adminsExist) {
-              // No admins exist - automatically create admin for first user
-              try {
-                await createAdminDocument(user);
-                setCurrentUser({ ...user, isAdmin: true });
-              } catch (error) {
-                console.error('Error auto-creating admin:', error);
-              }
-            } else {
-              // Not an admin, sign out immediately and clear state
-              setCurrentUser(null);
-              await signOut(auth);
-              
-              // Clear all storage
-              if (typeof window !== 'undefined') {
-                localStorage.clear();
-                sessionStorage.clear();
-                
-                // Redirect to login if not already there
-                if (window.location.pathname !== '/login') {
-                  window.location.href = '/login';
-                }
-              }
+        // Verify admin status BEFORE setting user
+        const isAdmin = await checkAdminStatus(user);
+        
+        if (!isAdmin) {
+          // If not an admin, check if this is the first admin (no admins exist)
+          const adminsExist = await checkIfAnyAdminsExist();
+          
+          if (!adminsExist) {
+            // No admins exist - automatically create admin for first user
+            try {
+              await createAdminDocument(user);
+              setCurrentUser({ ...user, isAdmin: true });
+              setLoading(false);
+            } catch (error) {
+              console.error('Error auto-creating admin:', error);
+              // If creation fails, still allow access (will retry later)
+              setCurrentUser({ ...user, isAdmin: true });
+              setLoading(false);
             }
           } else {
-            // Confirm admin status
-            setCurrentUser({ ...user, isAdmin: true });
+            // Not an admin, sign out immediately and clear state
+            setCurrentUser(null);
+            setLoading(false);
+            await signOut(auth);
+            
+            // Clear all storage
+            if (typeof window !== 'undefined') {
+              localStorage.clear();
+              sessionStorage.clear();
+              
+              // Redirect to login if not already there
+              if (window.location.pathname !== '/login') {
+                window.location.href = '/login';
+              }
+            }
           }
-        });
+        } else {
+          // Admin verified - set user with admin flag
+          setCurrentUser({ ...user, isAdmin: true });
+          setLoading(false);
+        }
       } else {
+        // No user - clear state and stop loading
         setCurrentUser(null);
         setLoading(false);
       }

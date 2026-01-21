@@ -11,6 +11,7 @@ import {
   orderBy,
   getDocs,
 } from 'firebase/firestore';
+import Pagination from '@/components/Pagination';
 
 interface Project {
   id: string;
@@ -50,6 +51,10 @@ function CustomerUploadsContent() {
   const [filterProject, setFilterProject] = useState<string>('all');
   const [filterCustomer, setFilterCustomer] = useState<string>(''); // customer/project/file search
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
 
   useEffect(() => {
     if (!db) return;
@@ -275,6 +280,7 @@ function CustomerUploadsContent() {
     }
 
     setUploads(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
   }, [allUploads, filterProject, filterCustomer]);
 
   function formatDate(date: Date): string {
@@ -408,56 +414,69 @@ function CustomerUploadsContent() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
                       File Name
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
                       Project
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
                       Customer
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Folder
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Upload Date & Time
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {uploads.map((upload, index) => (
+                  {uploads
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((upload, index) => (
                     <tr key={`${upload.filePath}-${index}`} className="hover:bg-gray-50/80">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center">
-                          <span className="mr-2 text-lg">{getFileIcon(upload.fileType)}</span>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-sm flex-shrink-0">{getFileIcon(upload.fileType)}</span>
                           <a
                             href={upload.downloadUrl}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-sm font-medium text-gray-900 hover:text-green-power-600 truncate max-w-xs"
+                            className="text-xs font-medium text-gray-900 hover:text-green-power-600 truncate"
                           >
                             {upload.fileName}
                           </a>
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{upload.projectName}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{upload.projectName}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{upload.customerNumber || 'N/A'}</div>
-                        <div className="text-xs text-gray-500">{upload.customerEmail || 'N/A'}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{upload.customerNumber || 'N/A'}</div>
+                        <div className="text-[10px] text-gray-500 truncate">{upload.customerEmail || 'N/A'}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{getFolderDisplayName(upload.folderPath)}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{getFolderDisplayName(upload.folderPath)}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{formatDate(upload.uploadDate)}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{formatDate(upload.uploadDate)}</div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(uploads.length / itemsPerPage)}
+                totalItems={uploads.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={(newItemsPerPage) => {
+                  setItemsPerPage(newItemsPerPage);
+                  setCurrentPage(1);
+                }}
+              />
             </div>
           )}
         </div>

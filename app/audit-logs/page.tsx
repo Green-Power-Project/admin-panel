@@ -14,6 +14,7 @@ import {
 } from 'firebase/firestore';
 import { getAllFolderPathsArray } from '@/lib/folderStructure';
 import { exportFilteredLogsToPDF, AuditLogEntry } from '@/lib/pdfExport';
+import Pagination from '@/components/Pagination';
 
 interface FileReadStatus {
   id: string;
@@ -54,6 +55,10 @@ function AuditLogsContent() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCustomer, setFilterCustomer] = useState<string>(''); // customer/project/file search
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
 
   useEffect(() => {
     if (!db) return;
@@ -321,6 +326,7 @@ function AuditLogsContent() {
     }
 
     setLogs(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
   }, [allLogs, filterProject, filterStatus, filterCustomer]);
 
   function handleExportPDF() {
@@ -482,32 +488,34 @@ function AuditLogsContent() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
                       File Name
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[18%]">
                       Project
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Folder
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[17%]">
                       Customer
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Date & Time Opened
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {logs.map((log, index) => (
+                  {logs
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((log, index) => (
                     <tr key={`${log.filePath}-${index}`} className="hover:bg-gray-50/80">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
                             log.isRead
                               ? 'bg-green-100 text-green-800'
                               : 'bg-yellow-100 text-yellow-800'
@@ -516,25 +524,25 @@ function AuditLogsContent() {
                           {log.isRead ? '✓ Read' : '● Unread'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs font-medium text-gray-900 truncate">
                           {log.fileName || 'Untitled file'}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{log.projectName}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{log.projectName}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">
                           {log.folderPath.split('/').pop() || log.folderPath}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{log.customerNumber}</div>
-                        <div className="text-xs text-gray-500">{log.customerEmail}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{log.customerNumber}</div>
+                        <div className="text-[10px] text-gray-500 truncate">{log.customerEmail}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">
                           {log.isRead ? log.readAt : <span className="text-gray-400">Not read yet</span>}
                         </div>
                       </td>
@@ -542,6 +550,17 @@ function AuditLogsContent() {
                   ))}
                 </tbody>
               </table>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(logs.length / itemsPerPage)}
+                totalItems={logs.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={(newItemsPerPage) => {
+                  setItemsPerPage(newItemsPerPage);
+                  setCurrentPage(1);
+                }}
+              />
             </div>
           )}
         </div>

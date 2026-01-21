@@ -16,6 +16,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { PROJECT_FOLDER_STRUCTURE, getAllFolderPathsArray } from '@/lib/folderStructure';
+import Pagination from '@/components/Pagination';
 
 interface FileReadStatus {
   id: string;
@@ -56,6 +57,10 @@ function TrackingContent() {
   const [filterStatus, setFilterStatus] = useState<string>('all'); // 'all', 'read', 'unread'
   const [filterCustomer, setFilterCustomer] = useState<string>(''); // customer name/number/email search
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
 
   useEffect(() => {
     if (!db) return;
@@ -381,6 +386,7 @@ function TrackingContent() {
     }
 
     setFiles(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
   }, [allFiles, filterProject, filterStatus, filterCustomer]);
 
   const totalFiles = files.length;
@@ -519,32 +525,34 @@ function TrackingContent() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
                       Status
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
                       File
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[18%]">
                       Project
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Folder
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[17%]">
                       Customer
                     </th>
-                    <th className="px-6 py-3 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Read At
                     </th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-100">
-                  {files.map((file, index) => (
+                  {files
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((file, index) => (
                     <tr key={`${file.filePath}-${index}`} className="hover:bg-gray-50/80">
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5 whitespace-nowrap">
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
                             file.isRead
                               ? 'bg-green-100 text-green-800'
                               : 'bg-yellow-100 text-yellow-800'
@@ -553,38 +561,49 @@ function TrackingContent() {
                           {file.isRead ? '✓ Read' : '● Unread'}
                         </span>
                       </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-gray-900 truncate max-w-xs">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs font-medium text-gray-900 truncate">
                           {file.fileName || 'Untitled file'}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">{file.projectName}</div>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">{file.projectName}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">
                           {getFolderDisplayName(file.folderPath)}
                         </div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-gray-900">
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">
                           {file.customerNumber || 'N/A'}
                         </div>
-                        <div className="text-xs text-gray-500">{file.customerEmail || 'N/A'}</div>
+                        <div className="text-[10px] text-gray-500 truncate">{file.customerEmail || 'N/A'}</div>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
+                      <td className="px-3 py-2.5">
                         {file.readStatus ? (
-                          <div className="text-sm text-gray-900">
+                          <div className="text-xs text-gray-900 truncate">
                             {formatDate(file.readStatus.readAt)}
                           </div>
                         ) : (
-                          <span className="text-sm text-gray-400">Not read yet</span>
+                          <span className="text-xs text-gray-400">Not read yet</span>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(files.length / itemsPerPage)}
+                totalItems={files.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={(newItemsPerPage) => {
+                  setItemsPerPage(newItemsPerPage);
+                  setCurrentPage(1);
+                }}
+              />
             </div>
           )}
         </div>

@@ -7,6 +7,7 @@ import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import {
+  addDoc,
   collection,
   deleteDoc,
   doc,
@@ -16,17 +17,21 @@ import {
   query,
   serverTimestamp,
   setDoc,
+  Timestamp,
   where,
 } from 'firebase/firestore';
 import { PROJECT_FOLDER_STRUCTURE, isValidFolderPath } from '@/lib/folderStructure';
 import { uploadFile, deleteFile } from '@/lib/cloudinary';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
+import Pagination from '@/components/Pagination';
+import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
 
 interface Project {
   id: string;
   name: string;
   year?: number;
+  customerId?: string;
 }
 
 interface FileMetadata {
@@ -89,6 +94,19 @@ function getDefaultFolderPath(): string {
   return visibleFolders[0]?.path ?? '';
 }
 
+function getFolderConfig(path: string) {
+  const configs: Record<string, { gradient: string; icon: string; description: string }> = {
+    '02_Photos': { gradient: 'from-purple-500 to-pink-500', icon: '📷', description: 'Progress photos and visual documentation' },
+    '03_Reports': { gradient: 'from-green-500 to-emerald-500', icon: '📄', description: 'Daily and weekly reports from the team' },
+    '04_Emails': { gradient: 'from-blue-500 to-cyan-500', icon: '✉️', description: 'Email communications and correspondence' },
+    '05_Quotations': { gradient: 'from-yellow-500 to-orange-500', icon: '💰', description: 'Quotes, estimates and pricing documents' },
+    '06_Invoices': { gradient: 'from-red-500 to-rose-500', icon: '🧾', description: 'Invoices and billing documents' },
+    '07_Delivery_Notes': { gradient: 'from-teal-500 to-cyan-500', icon: '📦', description: 'Delivery notes and material tracking' },
+    '08_General': { gradient: 'from-gray-500 to-slate-500', icon: '📋', description: 'General documents and miscellaneous files' },
+  };
+  return configs[path] || { gradient: 'from-gray-400 to-gray-500', icon: '📁', description: 'Project folder' };
+}
+
 function ProjectFilesContent() {
   const params = useParams();
   const projectId = params.projectId as string;
@@ -98,6 +116,10 @@ function ProjectFilesContent() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(25);
   const [uploadingFileName, setUploadingFileName] = useState<string>('');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState('');
@@ -351,7 +373,7 @@ function ProjectFilesContent() {
       }
 
       const folderPathFull = `projects/${activeProjectId}/${selectedFolder}`;
-      
+
       // Upload with progress tracking
       const result = await uploadFile(
         file,
@@ -376,6 +398,47 @@ function ProjectFilesContent() {
         uploadedAt: serverTimestamp(),
         uploadedBy: 'admin',
       });
+
+      // If this is a report file (PDF in 03_Reports folder), create reportApprovals document
+      const isReport = isReportFile(selectedFolder) && sanitizedFileName.toLowerCase().endsWith('.pdf');
+      if (isReport && project?.customerId) {
+        try {
+          const uploadedAt = Timestamp.now();
+          const autoApproveDate = Timestamp.fromDate(addWorkingDays(uploadedAt.toDate(), 5));
+          
+          await addDoc(collection(db, 'reportApprovals'), {
+            projectId: activeProjectId,
+            customerId: project.customerId,
+            filePath: result.public_id, // Use cloudinaryPublicId as filePath
+            status: 'pending',
+            uploadedAt: uploadedAt,
+            autoApproveDate: autoApproveDate,
+          });
+        } catch (error) {
+          console.error('Error creating reportApprovals document:', error);
+          // Don't fail the upload if approval document creation fails
+        }
+      }
+
+      // Best-effort email notification (server-side, secure)
+      try {
+        await fetch('/api/notifications/file-upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            projectId: activeProjectId,
+            filePath: result.public_id,
+            folderPath: selectedFolder,
+            fileName: sanitizedFileName,
+            isReport,
+          }),
+        });
+      } catch (notifyError) {
+        // Intentionally ignore email errors and do not surface details to the user
+        console.error('Error triggering file upload email notification:', notifyError);
+      }
 
       // Reset upload state
       setUploading(false);
@@ -630,128 +693,200 @@ function ProjectFilesContent() {
   }
 
   return (
-    <div className="px-8 py-8">
-      {/* Header */}
-      <div className="mb-8">
-        <Link
-          href="/files"
-          className="inline-flex items-center text-sm text-gray-600 hover:text-green-power-600 mb-4 transition-colors"
-        >
-          <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-          Back to Files
-        </Link>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">{project?.name}</h1>
-            {project?.year && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                </svg>
-                <span>{project.year}</span>
+    <div className="min-h-screen bg-gray-50">
+      <div className="px-6 py-6 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <Link
+            href="/files"
+            className="inline-flex items-center text-sm text-gray-600 hover:text-green-power-600 mb-6 transition-colors group"
+          >
+            <svg className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            Back to Projects
+          </Link>
+          
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-8">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900 mb-2">{project?.name}</h1>
+                {project?.year && (
+                  <div className="flex items-center gap-2 text-sm text-gray-600">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                    <span className="font-medium">Year: {project.year}</span>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
-        {/* Left Sidebar - Folder Navigation */}
-        <div className="lg:col-span-3">
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm sticky top-8">
-            <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
-              <h3 className="text-sm font-bold text-gray-900 mb-1">Folders</h3>
-              <p className="text-xs text-gray-500">Select a folder to manage files</p>
             </div>
-            <div className="p-3 max-h-[calc(100vh-250px)] overflow-y-auto">
-              <div className="space-y-1">
+          </div>
+
+          {/* Project Folders Grid - Modern Card Design */}
+          {!selectedFolder && (
+            <div>
+              <div className="mb-6">
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Project Folders</h2>
+                <p className="text-sm text-gray-600">Select a folder to view and manage files</p>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {PROJECT_FOLDER_STRUCTURE.filter((folder) => 
                   folder.path !== '00_New_Not_Viewed_Yet_' && 
                   folder.path !== '01_Customer_Uploads'
                 ).map((folder) => {
-                  // Check if any child is selected
-                  const hasSelectedChild = folder.children?.some(child => selectedFolder === child.path);
-                  // Check if parent is selected (but no child is selected)
-                  const isParentSelected = selectedFolder === folder.path && !hasSelectedChild;
+                  const config = getFolderConfig(folder.path);
+                  const hasChildren = folder.children && folder.children.length > 0;
                   
                   return (
-                    <div key={folder.path}>
-                      <button
-                        onClick={() => {
-                          // If folder has children, select the first child
-                          if (folder.children && folder.children.length > 0) {
-                            setSelectedFolder(folder.children[0].path);
-                          } else {
-                            // If no children, select the parent folder
-                            setSelectedFolder(folder.path);
-                          }
-                        }}
-                        className={`w-full text-left px-3 py-2.5 text-sm rounded-lg transition-all duration-200 flex items-center space-x-2 ${
-                          isParentSelected || hasSelectedChild
-                            ? 'bg-gradient-to-r from-green-power-500 to-green-power-600 text-white shadow-md'
-                            : 'text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <span className="text-base">{getFolderIcon(folder.path)}</span>
-                        <span className="flex-1 font-medium">{formatFolderName(folder.name)}</span>
-                        {folder.children && folder.children.length > 0 && (
-                          <svg 
-                            className={`w-4 h-4 transition-transform ${hasSelectedChild ? 'rotate-90' : ''}`}
-                            fill="none" 
-                            stroke="currentColor" 
-                            viewBox="0 0 24 24"
-                          >
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                          </svg>
-                        )}
-                      </button>
-                      {folder.children && (hasSelectedChild || isParentSelected) && (
-                        <div className="ml-4 mt-1 space-y-0.5 border-l-2 border-gray-200 pl-3">
-                          {folder.children.map((child) => (
-                            <button
-                              key={child.path}
-                              onClick={() => setSelectedFolder(child.path)}
-                              className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all duration-200 ${
-                                selectedFolder === child.path
-                                  ? 'bg-green-power-100 text-green-power-700 font-medium'
-                                  : 'text-gray-600 hover:bg-gray-50'
-                              }`}
-                            >
-                              {formatFolderName(child.name)}
-                            </button>
-                          ))}
+                    <div
+                      key={folder.path}
+                      onClick={() => {
+                        if (hasChildren) {
+                          setSelectedFolder(folder.children![0].path);
+                        } else {
+                          setSelectedFolder(folder.path);
+                        }
+                      }}
+                      className="group relative bg-white rounded-xl shadow-sm hover:shadow-lg transition-all duration-300 border border-gray-200 hover:border-gray-300 cursor-pointer overflow-hidden"
+                    >
+                      {/* Gradient accent bar */}
+                      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${config.gradient}`}></div>
+                      
+                      <div className="p-6">
+                        {/* Icon and Arrow */}
+                        <div className="flex items-start justify-between mb-4">
+                          <div className={`w-14 h-14 rounded-xl bg-gradient-to-br ${config.gradient} flex items-center justify-center shadow-md group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
+                            <span className="text-2xl">{config.icon}</span>
+                          </div>
+                          {hasChildren && (
+                            <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${config.gradient} flex items-center justify-center opacity-70 group-hover:opacity-100 transition-opacity`}>
+                              <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                              </svg>
+                            </div>
+                          )}
                         </div>
-                      )}
+                        
+                        {/* Folder Name */}
+                        <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-green-power-700 transition-colors">
+                          {formatFolderName(folder.name)}
+                        </h3>
+                        
+                        {/* Description */}
+                        <p className="text-xs text-gray-600 mb-4 leading-relaxed">{config.description}</p>
+                        
+                        {/* Subfolders Preview */}
+                        {hasChildren && (
+                          <div className="pt-4 border-t border-gray-100">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                                {folder.children!.length} {folder.children!.length === 1 ? 'subfolder' : 'subfolders'}
+                              </span>
+                            </div>
+                            <div className="space-y-2">
+                              {folder.children!.slice(0, 3).map((child) => (
+                                <div key={child.path} className="flex items-center gap-2 text-xs text-gray-700 group-hover:text-gray-900 transition-colors">
+                                  <div className={`w-1.5 h-1.5 rounded-full bg-gradient-to-r ${config.gradient}`}></div>
+                                  <span className="font-medium">{formatFolderName(child.name)}</span>
+                                </div>
+                              ))}
+                              {folder.children!.length > 3 && (
+                                <div className="text-xs text-gray-500 font-medium pt-1">
+                                  +{folder.children!.length - 3} more
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
-            <div className="px-5 py-3 border-t border-gray-200 bg-gray-50">
-              <p className="text-xs text-gray-500 flex items-center">
-                <span className="mr-2">ℹ️</span>
-                Fixed structure (read-only)
-              </p>
-            </div>
-          </div>
+          )}
         </div>
 
-        {/* Right Content Area */}
-        <div className="lg:col-span-9">
-          {!selectedFolder ? (
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-16 text-center">
-              <div className="mb-4">
-                <span className="text-6xl">📂</span>
+        {/* Folder Selection and File Management */}
+        {selectedFolder && (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left Sidebar - Folder Navigation */}
+            <div className="lg:col-span-3">
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm sticky top-6">
+                <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+                  <h3 className="text-sm font-bold text-gray-900">Folders</h3>
+                  <p className="text-xs text-gray-600 mt-1">Switch folders</p>
+                </div>
+                <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+                  <div className="space-y-1">
+                    {PROJECT_FOLDER_STRUCTURE.filter((folder) => 
+                      folder.path !== '00_New_Not_Viewed_Yet_' && 
+                      folder.path !== '01_Customer_Uploads'
+                    ).map((folder) => {
+                      const hasSelectedChild = folder.children?.some(child => selectedFolder === child.path);
+                      const isParentSelected = selectedFolder === folder.path && !hasSelectedChild;
+                      const config = getFolderConfig(folder.path);
+                      
+                      return (
+                        <div key={folder.path}>
+                          <button
+                            onClick={() => {
+                              if (folder.children && folder.children.length > 0) {
+                                setSelectedFolder(folder.children[0].path);
+                              } else {
+                                setSelectedFolder(folder.path);
+                              }
+                            }}
+                            className={`w-full text-left px-4 py-2.5 text-sm rounded-lg transition-all duration-200 flex items-center space-x-3 ${
+                              isParentSelected || hasSelectedChild
+                                ? 'bg-green-power-500 text-white shadow-md'
+                                : 'text-gray-700 hover:bg-gray-50'
+                            }`}
+                          >
+                            <span className="text-lg">{getFolderIcon(folder.path)}</span>
+                            <span className="flex-1 font-medium">{formatFolderName(folder.name)}</span>
+                            {folder.children && folder.children.length > 0 && (
+                              <svg 
+                                className={`w-4 h-4 transition-transform ${hasSelectedChild ? 'rotate-90' : ''}`}
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                              </svg>
+                            )}
+                          </button>
+                          {folder.children && (hasSelectedChild || isParentSelected) && (
+                            <div className="ml-6 mt-1.5 space-y-1 border-l-2 border-gray-200 pl-4">
+                              {folder.children.map((child) => (
+                                <button
+                                  key={child.path}
+                                  onClick={() => setSelectedFolder(child.path)}
+                                  className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                                    selectedFolder === child.path
+                                      ? 'bg-green-power-100 text-green-power-700 font-semibold'
+                                      : 'text-gray-600 hover:bg-gray-50'
+                                  }`}
+                                >
+                                  <div className={`w-1.5 h-1.5 rounded-full ${selectedFolder === child.path ? `bg-gradient-to-r ${config.gradient}` : 'bg-gray-400'}`}></div>
+                                  <span>{formatFolderName(child.name)}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Select a Folder</h3>
-              <p className="text-sm text-gray-500">
-                Choose a folder from the sidebar to view and manage files
-              </p>
             </div>
-          ) : (
-            <div className="space-y-6">
+
+            {/* Right Content Area */}
+            <div className="lg:col-span-9">
+              <div className="space-y-6">
               {/* Upload Section */}
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                 <div className="bg-gradient-to-r from-green-power-50 to-green-power-100 px-6 py-4 border-b border-green-power-200">
@@ -883,7 +1018,9 @@ function ProjectFilesContent() {
                   </div>
                 ) : (
                   <div className="divide-y divide-gray-100">
-                    {files.map((file) => (
+                    {files
+                      .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                      .map((file) => (
                       <div
                         key={file.cloudinaryPublicId}
                         className="px-6 py-4 hover:bg-gray-50 transition-colors group"
@@ -945,11 +1082,25 @@ function ProjectFilesContent() {
                     ))}
                   </div>
                 )}
+                {files.length > itemsPerPage && !loading && files.length > 0 && (
+                  <Pagination
+                    currentPage={currentPage}
+                    totalPages={Math.ceil(files.length / itemsPerPage)}
+                    totalItems={files.length}
+                    itemsPerPage={itemsPerPage}
+                    onPageChange={setCurrentPage}
+                    onItemsPerPageChange={(newItemsPerPage) => {
+                      setItemsPerPage(newItemsPerPage);
+                      setCurrentPage(1);
+                    }}
+                  />
+                )}
               </div>
             </div>
-          )}
+          </div>
         </div>
-      </div>
+      )}
+    </div>
 
       {/* Confirmation Modal */}
       <ConfirmationModal
@@ -980,4 +1131,3 @@ function ProjectFilesContent() {
     </div>
   );
 }
-

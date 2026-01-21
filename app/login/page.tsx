@@ -10,15 +10,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, currentUser } = useAuth();
+  const { login, currentUser, loading: authLoading } = useAuth();
   const router = useRouter();
 
-  // Redirect if already logged in as admin
+  // Redirect if already logged in as admin (only after loading completes)
   useEffect(() => {
-    if (currentUser && currentUser.isAdmin) {
+    if (!authLoading && currentUser && currentUser.isAdmin) {
       router.push('/dashboard');
     }
-  }, [currentUser, router]);
+  }, [currentUser, authLoading, router]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
