@@ -64,10 +64,11 @@ function TrackingContent() {
 
   useEffect(() => {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     // Real-time listener for projects
     const projectsUnsubscribe = onSnapshot(
-      query(collection(db, 'projects'), orderBy('name', 'asc')),
+      query(collection(dbInstance, 'projects'), orderBy('name', 'asc')),
       (snapshot) => {
         const projectsList: Array<{ id: string; name: string }> = [];
         snapshot.forEach((doc) => {
@@ -89,6 +90,7 @@ function TrackingContent() {
   // Real-time listeners for fileReadStatus, projects, and customers
   useEffect(() => {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     let readStatusesMap = new Map<string, FileReadStatus[]>();
     let projectsMap = new Map<string, { name: string; customerId: string }>();
@@ -96,7 +98,7 @@ function TrackingContent() {
 
     // Real-time listener for file read status
     const fileReadStatusUnsubscribe = onSnapshot(
-      collection(db, 'fileReadStatus'),
+      collection(dbInstance, 'fileReadStatus'),
       (snapshot) => {
         readStatusesMap = new Map<string, FileReadStatus[]>();
         snapshot.forEach((doc) => {
@@ -123,7 +125,7 @@ function TrackingContent() {
 
     // Real-time listener for projects
     const projectsUnsubscribe = onSnapshot(
-      collection(db, 'projects'),
+      collection(dbInstance, 'projects'),
       (snapshot) => {
         projectsMap = new Map<string, { name: string; customerId: string }>();
         snapshot.forEach((doc) => {
@@ -145,7 +147,7 @@ function TrackingContent() {
 
     // Real-time listener for customers
     const customersUnsubscribe = onSnapshot(
-      collection(db, 'customers'),
+      collection(dbInstance, 'customers'),
       (snapshot) => {
         customersMap = new Map<string, { customerNumber: string; email: string }>();
         snapshot.forEach((doc) => {
@@ -174,15 +176,18 @@ function TrackingContent() {
   }, []);
 
   const loadFileTracking = useCallback(async () => {
+    if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
+    
     // Always show loading when fetching data
     setLoading(true);
     
     try {
       // Get current data from listeners (one-time read for initial load)
       const [readStatusesSnapshot, projectsSnapshot, customersSnapshot] = await Promise.all([
-        getDocs(collection(db, 'fileReadStatus')),
-        getDocs(collection(db, 'projects')),
-        getDocs(collection(db, 'customers')),
+        getDocs(collection(dbInstance, 'fileReadStatus')),
+        getDocs(collection(dbInstance, 'projects')),
+        getDocs(collection(dbInstance, 'customers')),
       ]);
 
       const readStatusesMap = new Map<string, FileReadStatus[]>();
@@ -236,6 +241,7 @@ function TrackingContent() {
     customersMap: Map<string, { customerNumber: string; email: string }>
   ) {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
     
     // Show loading when processing data from Firestore
     setLoading(true);
@@ -253,7 +259,7 @@ function TrackingContent() {
         // Since folder paths can be nested, use the full path as a single document ID
         // Structure: files(collection) -> projects(doc) -> projectId(collection) -> folderPath(doc) -> files(collection)
         const folderPathId = folderSegments.join('__');
-        return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
+        return collection(dbInstance, 'files', 'projects', projectId, folderPathId, 'files');
       };
 
       // Get all files from all projects via Firestore metadata

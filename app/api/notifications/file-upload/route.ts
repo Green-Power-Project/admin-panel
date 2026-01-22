@@ -190,7 +190,7 @@ export async function POST(request: NextRequest) {
     // Different email content based on recipient type
     let subject: string;
     let emailContent: string;
-    let fromName: string;
+    let fromName: string = 'Green Power'; // Default value
     let replyTo: string | undefined;
 
     if (isCustomerUpload) {

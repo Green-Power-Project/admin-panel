@@ -41,10 +41,13 @@ function NewProjectContent() {
   }, []);
 
   async function loadCustomers() {
+    if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
+    
     setLoadingCustomers(true);
     try {
       const customersSnapshot = await getDocs(
-        query(collection(db, 'customers'), orderBy('customerNumber', 'asc'))
+        query(collection(dbInstance, 'customers'), orderBy('customerNumber', 'asc'))
       );
       const customersList: Customer[] = [];
       
@@ -71,6 +74,13 @@ function NewProjectContent() {
     setError('');
     setLoading(true);
 
+    if (!db) {
+      setError('Database not initialized');
+      setLoading(false);
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+
     if (!customerId) {
       setError('Please select a customer');
       setLoading(false);
@@ -91,7 +101,7 @@ function NewProjectContent() {
       }
 
       // Create project document in Firestore
-      const projectRef = await addDoc(collection(db, 'projects'), projectData);
+      const projectRef = await addDoc(collection(dbInstance, 'projects'), projectData);
       const projectId = projectRef.id;
 
       // Create folder structure in Firebase Storage

@@ -62,10 +62,11 @@ function AuditLogsContent() {
 
   useEffect(() => {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     // Real-time listener for projects
     const projectsUnsubscribe = onSnapshot(
-      query(collection(db, 'projects'), orderBy('name', 'asc')),
+      query(collection(dbInstance, 'projects'), orderBy('name', 'asc')),
       (snapshot) => {
         const projectsList: Array<{ id: string; name: string }> = [];
         snapshot.forEach((doc) => {
@@ -87,6 +88,7 @@ function AuditLogsContent() {
   // Real-time listeners for fileReadStatus, projects, and customers
   useEffect(() => {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     let readStatusesMap = new Map<string, FileReadStatus[]>();
     let projectsMap = new Map<string, { name: string; customerId: string }>();
@@ -94,7 +96,7 @@ function AuditLogsContent() {
 
     // Real-time listener for file read status
     const fileReadStatusUnsubscribe = onSnapshot(
-      collection(db, 'fileReadStatus'),
+      collection(dbInstance, 'fileReadStatus'),
       (snapshot) => {
         readStatusesMap = new Map<string, FileReadStatus[]>();
         snapshot.forEach((doc) => {
@@ -121,7 +123,7 @@ function AuditLogsContent() {
 
     // Real-time listener for projects
     const projectsUnsubscribe = onSnapshot(
-      collection(db, 'projects'),
+      collection(dbInstance, 'projects'),
       (snapshot) => {
         projectsMap = new Map<string, { name: string; customerId: string }>();
         snapshot.forEach((doc) => {
@@ -143,7 +145,7 @@ function AuditLogsContent() {
 
     // Real-time listener for customers
     const customersUnsubscribe = onSnapshot(
-      collection(db, 'customers'),
+      collection(dbInstance, 'customers'),
       (snapshot) => {
         customersMap = new Map<string, { customerNumber: string; email: string }>();
         snapshot.forEach((doc) => {
@@ -178,6 +180,7 @@ function AuditLogsContent() {
     customersMap: Map<string, { customerNumber: string; email: string }>
   ) {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
     
     // Show loading when processing data from Firestore
     setLoading(true);
@@ -195,7 +198,7 @@ function AuditLogsContent() {
         // Since folder paths can be nested, use the full path as a single document ID
         // Structure: files(collection) -> projects(doc) -> projectId(collection) -> folderPath(doc) -> files(collection)
         const folderPathId = folderSegments.join('__');
-        return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
+        return collection(dbInstance, 'files', 'projects', projectId, folderPathId, 'files');
       };
 
       // Get all files from all projects via Firestore metadata
@@ -570,7 +573,7 @@ function AuditLogsContent() {
         <p className="text-xs text-blue-800 font-semibold mb-1">📋 Audit Log Information</p>
         <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
           <li>Each record shows: File name, Customer, Project, Folder, Date & Time opened</li>
-          <li>Unread files show "Not read yet" in the Date & Time column</li>
+          <li>Unread files show &quot;Not read yet&quot; in the Date & Time column</li>
           <li>Export PDF includes all visible records with current filters applied</li>
           <li>PDF export includes summary statistics and formatted table</li>
         </ul>

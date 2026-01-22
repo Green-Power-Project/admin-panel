@@ -57,6 +57,7 @@ function CustomerDetailContent() {
 
   useEffect(() => {
     if (!customerId || !db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     // Check if this customer page has been visited before in this session
     const storageKey = `customer-${customerId}-visited`;
@@ -76,7 +77,7 @@ function CustomerDetailContent() {
 
     // Real-time listener for customer document - query by uid field since document ID is auto-generated
     const customerQuery = query(
-      collection(db, 'customers'),
+      collection(dbInstance, 'customers'),
       where('uid', '==', customerId)
     );
 
@@ -119,7 +120,7 @@ function CustomerDetailContent() {
     // Use the same approach as customer list page: listen to all projects and filter by customerId
     // This matches projects.customerId with customers.uid (customerId from URL is the uid)
     const projectsUnsubscribe = onSnapshot(
-      collection(db, 'projects'),
+      collection(dbInstance, 'projects'),
       (snapshot) => {
         const projectsList: Project[] = [];
         
@@ -159,6 +160,12 @@ function CustomerDetailContent() {
   }, [customerId]);
 
   async function handleSave() {
+    if (!db) {
+      setError('Database not initialized');
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+    
     setSaving(true);
     setError('');
 
@@ -172,7 +179,7 @@ function CustomerDetailContent() {
       // Check if customer number is already taken by another customer
       if (customerNumber.trim() !== customer?.customerNumber) {
         const existingQuery = query(
-          collection(db, 'customers'),
+          collection(dbInstance, 'customers'),
           where('customerNumber', '==', customerNumber.trim())
         );
         const existingSnapshot = await getDocs(existingQuery);
@@ -186,7 +193,7 @@ function CustomerDetailContent() {
 
       // Find customer document by uid field (since document ID is auto-generated)
       const customerQuery = query(
-        collection(db, 'customers'),
+        collection(dbInstance, 'customers'),
         where('uid', '==', customerId)
       );
       const customerSnapshot = await getDocs(customerQuery);
@@ -194,7 +201,7 @@ function CustomerDetailContent() {
       if (!customerSnapshot.empty) {
         // Customer document exists - update it
         const customerDoc = customerSnapshot.docs[0];
-        await updateDoc(doc(db, 'customers', customerDoc.id), {
+        await updateDoc(doc(dbInstance, 'customers', customerDoc.id), {
           customerNumber: customerNumber.trim(),
           enabled,
           updatedAt: new Date(),
@@ -202,7 +209,7 @@ function CustomerDetailContent() {
       } else {
         // Customer document doesn't exist - create it
         // Use setDoc with customerId as document ID for consistency
-        await setDoc(doc(db, 'customers', customerId), {
+        await setDoc(doc(dbInstance, 'customers', customerId), {
           uid: customerId,
           email: customer?.email || 'N/A',
           customerNumber: customerNumber.trim(),
@@ -425,7 +432,7 @@ function CustomerDetailContent() {
               </svg>
             </div>
             <p className="text-base font-medium text-gray-700 mb-1">No projects assigned</p>
-            <p className="text-sm text-gray-500 mb-4">This customer doesn't have any projects yet</p>
+            <p className="text-sm text-gray-500 mb-4">This customer doesn&apos;t have any projects yet</p>
             <Link
               href="/projects/new"
               className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-power-600 to-green-power-700 rounded-lg hover:from-green-power-700 hover:to-green-power-800 transition-all shadow-sm"

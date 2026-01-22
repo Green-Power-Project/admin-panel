@@ -58,10 +58,11 @@ function CustomerUploadsContent() {
 
   useEffect(() => {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     // Real-time listener for projects
     const projectsUnsubscribe = onSnapshot(
-      query(collection(db, 'projects'), orderBy('name', 'asc')),
+      query(collection(dbInstance, 'projects'), orderBy('name', 'asc')),
       (snapshot) => {
         const projectsList: Array<{ id: string; name: string }> = [];
         snapshot.forEach((doc) => {
@@ -83,13 +84,14 @@ function CustomerUploadsContent() {
   // Real-time listeners for projects and customers
   useEffect(() => {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     let projectsMap = new Map<string, { name: string; customerId: string }>();
     let customersMap = new Map<string, { customerNumber: string; email: string }>();
 
     // Real-time listener for projects
     const projectsUnsubscribe = onSnapshot(
-      collection(db, 'projects'),
+      collection(dbInstance, 'projects'),
       (snapshot) => {
         projectsMap = new Map<string, { name: string; customerId: string }>();
         snapshot.forEach((doc) => {
@@ -111,7 +113,7 @@ function CustomerUploadsContent() {
 
     // Real-time listener for customers
     const customersUnsubscribe = onSnapshot(
-      collection(db, 'customers'),
+      collection(dbInstance, 'customers'),
       (snapshot) => {
         customersMap = new Map<string, { customerNumber: string; email: string }>();
         snapshot.forEach((doc) => {
@@ -144,6 +146,7 @@ function CustomerUploadsContent() {
     customersMap: Map<string, { customerNumber: string; email: string }>
   ) {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
     
     // Show loading when processing data from Firestore
     setLoading(true);
@@ -161,7 +164,7 @@ function CustomerUploadsContent() {
         // Since folder paths can be nested, use the full path as a single document ID
         // Structure: files(collection) -> projects(doc) -> projectId(collection) -> folderPath(doc) -> files(collection)
         const folderPathId = folderSegments.join('__');
-        return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
+        return collection(dbInstance, 'files', 'projects', projectId, folderPathId, 'files');
       };
 
       // Get all files from 01_Customer_Uploads folder in all projects via Firestore metadata

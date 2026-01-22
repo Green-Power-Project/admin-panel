@@ -29,9 +29,15 @@ export async function isReportApproved(
   customerId: string,
   filePath: string
 ): Promise<boolean> {
+  if (!db) {
+    console.error('Firestore database is not initialized.');
+    return false;
+  }
+  const dbInstance = db; // Store for TypeScript narrowing
+  
   try {
     const q = query(
-      collection(db, 'reportApprovals'),
+      collection(dbInstance, 'reportApprovals'),
       where('projectId', '==', projectId),
       where('customerId', '==', customerId),
       where('filePath', '==', filePath),
@@ -53,9 +59,15 @@ export async function getReportApprovalStatus(
   customerId: string,
   filePath: string
 ): Promise<ReportStatus | null> {
+  if (!db) {
+    console.error('Firestore database is not initialized.');
+    return null;
+  }
+  const dbInstance = db; // Store for TypeScript narrowing
+  
   try {
     const q = query(
-      collection(db, 'reportApprovals'),
+      collection(dbInstance, 'reportApprovals'),
       where('projectId', '==', projectId),
       where('customerId', '==', customerId),
       where('filePath', '==', filePath)

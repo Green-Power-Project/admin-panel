@@ -51,6 +51,9 @@ function getProjectFolderRef(projectId: string, folderSegments: string[]) {
   if (folderSegments.length === 0) {
     throw new Error('Folder segments must not be empty');
   }
+  if (!db) {
+    throw new Error('Firestore database is not initialized');
+  }
   // Firestore requires odd number of segments for collections
   // Since folder paths can be nested (e.g., "01_Customer_Uploads/Photos"), we need to treat
   // the full path as a single document ID to maintain valid collection references
@@ -168,6 +171,7 @@ function ProjectFilesContent() {
 
   useEffect(() => {
     if (!projectId || !db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     // Check if this project files page has been visited before in this session
     const storageKey = `files-${projectId}-visited`;
@@ -187,7 +191,7 @@ function ProjectFilesContent() {
 
     // Real-time listener for project document
     const unsubscribe = onSnapshot(
-      doc(db, 'projects', projectId),
+      doc(dbInstance, 'projects', projectId),
       (projectDoc) => {
         if (projectDoc.exists()) {
           setProject({ id: projectDoc.id, ...projectDoc.data() } as Project);
@@ -401,12 +405,13 @@ function ProjectFilesContent() {
 
       // If this is a report file (PDF in 03_Reports folder), create reportApprovals document
       const isReport = isReportFile(selectedFolder) && sanitizedFileName.toLowerCase().endsWith('.pdf');
-      if (isReport && project?.customerId) {
+      if (isReport && project?.customerId && db) {
+        const dbInstance = db; // Store for TypeScript narrowing
         try {
           const uploadedAt = Timestamp.now();
           const autoApproveDate = Timestamp.fromDate(addWorkingDays(uploadedAt.toDate(), 5));
           
-          await addDoc(collection(db, 'reportApprovals'), {
+          await addDoc(collection(dbInstance, 'reportApprovals'), {
             projectId: activeProjectId,
             customerId: project.customerId,
             filePath: result.public_id, // Use cloudinaryPublicId as filePath

@@ -53,6 +53,7 @@ function ProjectsContent() {
 
   useEffect(() => {
     if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     // Show loader whenever data is being fetched
     setLoading(true);
@@ -60,7 +61,7 @@ function ProjectsContent() {
 
     // Real-time listener for customers
     const customersUnsubscribe = onSnapshot(
-      collection(db, 'customers'),
+      collection(dbInstance, 'customers'),
       (customersSnapshot) => {
         customersMap = new Map<string, { customerNumber: string; email: string }>();
         
@@ -91,7 +92,7 @@ function ProjectsContent() {
 
     // Real-time listener for projects
     const projectsUnsubscribe = onSnapshot(
-      query(collection(db, 'projects'), orderBy('name', 'asc')),
+      query(collection(dbInstance, 'projects'), orderBy('name', 'asc')),
       (projectsSnapshot) => {
         const projectsList: Project[] = [];
         
@@ -132,13 +133,23 @@ function ProjectsContent() {
 
   async function confirmDelete() {
     if (!deleteProjectId) return;
+    if (!db) {
+      setAlertData({
+        title: 'Delete Failed',
+        message: 'Database not initialized',
+        type: 'error',
+      });
+      setShowAlert(true);
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
     
     const projectId = deleteProjectId;
     setShowDeleteConfirm(false);
     setDeleting(projectId);
     
     try {
-      await deleteDoc(doc(db, 'projects', projectId));
+      await deleteDoc(doc(dbInstance, 'projects', projectId));
       // No need to reload - real-time listener will update automatically
     } catch (error) {
       console.error('Error deleting project:', error);

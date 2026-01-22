@@ -48,10 +48,11 @@ function EditProjectContent() {
 
   useEffect(() => {
     if (!projectId || !db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
 
     // Load project
     const unsubscribe = onSnapshot(
-      doc(db, 'projects', projectId),
+      doc(dbInstance, 'projects', projectId),
       (projectDoc) => {
         if (projectDoc.exists()) {
           const projectData = { id: projectDoc.id, ...projectDoc.data() } as Project;
@@ -81,10 +82,13 @@ function EditProjectContent() {
   }, [projectId]);
 
   async function loadCustomers() {
+    if (!db) return;
+    const dbInstance = db; // Store for TypeScript narrowing
+    
     setLoadingCustomers(true);
     try {
       const customersSnapshot = await getDocs(
-        query(collection(db, 'customers'), orderBy('customerNumber', 'asc'))
+        query(collection(dbInstance, 'customers'), orderBy('customerNumber', 'asc'))
       );
       const customersList: Customer[] = [];
       
@@ -111,6 +115,13 @@ function EditProjectContent() {
     setError('');
     setSaving(true);
 
+    if (!db) {
+      setError('Database not initialized');
+      setSaving(false);
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+
     if (!customerId) {
       setError('Customer ID is required');
       setSaving(false);
@@ -132,7 +143,7 @@ function EditProjectContent() {
         updateData.year = null;
       }
 
-      await updateDoc(doc(db, 'projects', projectId), updateData);
+      await updateDoc(doc(dbInstance, 'projects', projectId), updateData);
       router.push(`/projects/${projectId}`);
     } catch (err: any) {
       console.error('Error updating project:', err);

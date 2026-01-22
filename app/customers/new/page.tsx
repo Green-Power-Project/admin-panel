@@ -36,6 +36,12 @@ function NewCustomerContent() {
     e.preventDefault();
     setError('');
 
+    if (!db) {
+      setError('Database not initialized');
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+
     // Validation
     if (!customerNumber.trim()) {
       setError('Customer Number is required');
@@ -57,7 +63,7 @@ function NewCustomerContent() {
     try {
       // Check if customer number already exists
       const existingCustomerQuery = query(
-        collection(db, 'customers'),
+        collection(dbInstance, 'customers'),
         where('customerNumber', '==', customerNumber.trim())
       );
       const existingSnapshot = await getDocs(existingCustomerQuery);
@@ -72,7 +78,7 @@ function NewCustomerContent() {
       const uid = await createCustomerAccount(email, password);
 
       // Create customer document in Firestore
-      await addDoc(collection(db, 'customers'), {
+      await addDoc(collection(dbInstance, 'customers'), {
         uid,
         email: email.trim(),
         customerNumber: customerNumber.trim(),

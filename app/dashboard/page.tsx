@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
@@ -70,151 +70,6 @@ function DashboardContent() {
   const [unreadFiles, setUnreadFiles] = useState<UnreadFile[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    if (!db) return;
-
-    // Check if this page has been visited before in this session
-    const hasVisited = typeof window !== 'undefined' && sessionStorage.getItem('dashboard-visited') === 'true';
-    
-    // Only show loading on first visit
-    if (!hasVisited) {
-      setLoading(true);
-      if (typeof window !== 'undefined') {
-        sessionStorage.setItem('dashboard-visited', 'true');
-      }
-    } else {
-      // On subsequent visits (navigating back), don't show loading
-      // Real-time listener will populate data quickly from cache
-      setLoading(false);
-    }
-
-    // Helper function to update customer project counts
-    const updateCustomerProjectCounts = (customersMap: Map<string, Customer>, projectsList: Project[]) => {
-      customersMap.forEach((customer) => {
-        customer.projectCount = 0;
-        customer.projectIds = [];
-      });
-
-      projectsList.forEach((project) => {
-        if (project.customerId && customersMap.has(project.customerId)) {
-          const customer = customersMap.get(project.customerId)!;
-          customer.projectCount++;
-          customer.projectIds.push(project.id);
-        }
-      });
-    };
-
-    // Real-time listener for customers
-    const customersUnsubscribe = onSnapshot(
-      query(collection(db, 'customers'), orderBy('customerNumber', 'asc')),
-      (customersSnapshot) => {
-        const customerMap = new Map<string, Customer>();
-
-        customersSnapshot.forEach((doc) => {
-          const data = doc.data();
-          customerMap.set(data.uid, {
-            uid: data.uid,
-            customerNumber: data.customerNumber || 'N/A',
-            email: data.email || 'N/A',
-            enabled: data.enabled !== false,
-            projectCount: 0,
-            projectIds: [],
-          });
-        });
-
-        // Update customer project counts with current projects
-        updateCustomerProjectCounts(customerMap, projects);
-
-        setCustomers(Array.from(customerMap.values()));
-        setStats((prev) => ({
-          ...prev,
-          totalCustomers: customerMap.size,
-        }));
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error listening to customers:', error);
-        setLoading(false);
-      }
-    );
-
-    // Real-time listener for projects
-    const projectsUnsubscribe = onSnapshot(
-      query(collection(db, 'projects'), orderBy('name', 'asc')),
-      (projectsSnapshot) => {
-        const projectsList: Project[] = [];
-
-        projectsSnapshot.forEach((doc) => {
-          const projectData = { id: doc.id, ...doc.data() } as Project;
-          projectsList.push(projectData);
-        });
-
-        setProjects(projectsList);
-        setStats((prev) => ({
-          ...prev,
-          totalProjects: projectsList.length,
-        }));
-
-        // Update customer project counts when projects change
-        setCustomers((prevCustomers) => {
-          const customerMap = new Map<string, Customer>();
-          prevCustomers.forEach((customer) => {
-            customerMap.set(customer.uid, { ...customer, projectCount: 0, projectIds: [] });
-          });
-          updateCustomerProjectCounts(customerMap, projectsList);
-          return Array.from(customerMap.values());
-        });
-
-        // Load unread files when projects change
-        loadUnreadFiles(projectsList);
-      },
-      (error) => {
-        console.error('Error listening to projects:', error);
-      }
-    );
-
-    // Real-time listener for report approvals
-    const approvalsUnsubscribe = onSnapshot(
-      collection(db, 'reportApprovals'),
-      (approvalsSnapshot) => {
-        setStats((prev) => ({
-          ...prev,
-          approvedReports: approvalsSnapshot.size,
-        }));
-      },
-      (error) => {
-        console.error('Error listening to report approvals:', error);
-      }
-    );
-
-    // Cleanup listeners on unmount
-    return () => {
-      customersUnsubscribe();
-      projectsUnsubscribe();
-      approvalsUnsubscribe();
-    };
-  }, []); // Only run once on mount
-
-  // Separate effect to handle file read status listener when projects are loaded
-  useEffect(() => {
-    if (!db || projects.length === 0) return;
-
-    const fileReadStatusUnsubscribe = onSnapshot(
-      collection(db, 'fileReadStatus'),
-      () => {
-        // When read status changes, recalculate unread files
-        loadUnreadFiles(projects);
-      },
-      (error) => {
-        console.error('Error listening to file read status:', error);
-      }
-    );
-
-    return () => {
-      fileReadStatusUnsubscribe();
-    };
-  }, [projects.length]);
-
   function getFolderSegments(folderPath: string): string[] {
     return folderPath.split('/').filter(Boolean);
   }
@@ -227,10 +82,13 @@ function DashboardContent() {
     // Since folder paths can be nested, use the full path as a single document ID
     // Structure: files(collection) -> projects(doc) -> projectId(collection) -> folderPath(doc) -> files(collection)
     const folderPathId = folderSegments.join('__');
+    if (!db) {
+      throw new Error('Firestore database is not initialized');
+    }
     return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
   }
 
-  async function loadUnreadFiles(projectsList: Project[]) {
+  const loadUnreadFiles = useCallback(async (projectsList: Project[]) => {
     if (!db || projectsList.length === 0) return;
     
     try {
@@ -302,7 +160,154 @@ function DashboardContent() {
     } catch (error) {
       console.error('Error loading unread files:', error);
     }
-  }
+  }, []); // db is an outer scope value, doesn't need to be in dependencies
+
+  useEffect(() => {
+    if (!db) return;
+
+    // Check if this page has been visited before in this session
+    const hasVisited = typeof window !== 'undefined' && sessionStorage.getItem('dashboard-visited') === 'true';
+    
+    // Only show loading on first visit
+    if (!hasVisited) {
+      setLoading(true);
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('dashboard-visited', 'true');
+      }
+    } else {
+      // On subsequent visits (navigating back), don't show loading
+      // Real-time listener will populate data quickly from cache
+      setLoading(false);
+    }
+
+    // Helper function to update customer project counts
+    const updateCustomerProjectCounts = (customersMap: Map<string, Customer>, projectsList: Project[]) => {
+      customersMap.forEach((customer) => {
+        customer.projectCount = 0;
+        customer.projectIds = [];
+      });
+
+      projectsList.forEach((project) => {
+        if (project.customerId && customersMap.has(project.customerId)) {
+          const customer = customersMap.get(project.customerId)!;
+          customer.projectCount++;
+          customer.projectIds.push(project.id);
+        }
+      });
+    };
+
+    // Real-time listener for customers
+    const customersUnsubscribe = onSnapshot(
+      query(collection(db, 'customers'), orderBy('customerNumber', 'asc')),
+      (customersSnapshot) => {
+        const customerMap = new Map<string, Customer>();
+
+        customersSnapshot.forEach((doc) => {
+          const data = doc.data();
+          customerMap.set(data.uid, {
+            uid: data.uid,
+            customerNumber: data.customerNumber || 'N/A',
+            email: data.email || 'N/A',
+            enabled: data.enabled !== false,
+            projectCount: 0,
+            projectIds: [],
+          });
+        });
+
+        // Update customer project counts with current projects from state
+        // Note: projects state is used here, but we rely on the projects listener to update it
+        updateCustomerProjectCounts(customerMap, projects);
+
+        setCustomers(Array.from(customerMap.values()));
+        setStats((prev) => ({
+          ...prev,
+          totalCustomers: customerMap.size,
+        }));
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error listening to customers:', error);
+        setLoading(false);
+      }
+    );
+
+    // Real-time listener for projects
+    const projectsUnsubscribe = onSnapshot(
+      query(collection(db, 'projects'), orderBy('name', 'asc')),
+      (projectsSnapshot) => {
+        const projectsList: Project[] = [];
+
+        projectsSnapshot.forEach((doc) => {
+          const projectData = { id: doc.id, ...doc.data() } as Project;
+          projectsList.push(projectData);
+        });
+
+        setProjects(projectsList);
+        setStats((prev) => ({
+          ...prev,
+          totalProjects: projectsList.length,
+        }));
+
+        // Update customer project counts when projects change
+        setCustomers((prevCustomers) => {
+          const customerMap = new Map<string, Customer>();
+          prevCustomers.forEach((customer) => {
+            customerMap.set(customer.uid, { ...customer, projectCount: 0, projectIds: [] });
+          });
+          updateCustomerProjectCounts(customerMap, projectsList);
+          return Array.from(customerMap.values());
+        });
+
+        // Load unread files when projects change
+        loadUnreadFiles(projectsList);
+      },
+      (error) => {
+        console.error('Error listening to projects:', error);
+      }
+    );
+
+    // Real-time listener for report approvals
+    const approvalsUnsubscribe = onSnapshot(
+      collection(db, 'reportApprovals'),
+      (approvalsSnapshot) => {
+        setStats((prev) => ({
+          ...prev,
+          approvedReports: approvalsSnapshot.size,
+        }));
+      },
+      (error) => {
+        console.error('Error listening to report approvals:', error);
+      }
+    );
+
+    // Cleanup listeners on unmount
+    return () => {
+      customersUnsubscribe();
+      projectsUnsubscribe();
+      approvalsUnsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadUnreadFiles]); // projects is used in callback but adding it would cause re-subscriptions
+
+  // Separate effect to handle file read status listener when projects are loaded
+  useEffect(() => {
+    if (!db || projects.length === 0) return;
+
+    const fileReadStatusUnsubscribe = onSnapshot(
+      collection(db, 'fileReadStatus'),
+      () => {
+        // When read status changes, recalculate unread files
+        loadUnreadFiles(projects);
+      },
+      (error) => {
+        console.error('Error listening to file read status:', error);
+      }
+    );
+
+    return () => {
+      fileReadStatusUnsubscribe();
+    };
+  }, [projects, loadUnreadFiles]);
 
   return (
     <div className="px-8 py-8">

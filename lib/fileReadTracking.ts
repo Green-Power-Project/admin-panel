@@ -17,9 +17,15 @@ export async function isFileRead(
   customerId: string,
   filePath: string
 ): Promise<boolean> {
+  if (!db) {
+    console.error('Firestore database is not initialized.');
+    return false;
+  }
+  const dbInstance = db; // Store for TypeScript narrowing
+  
   try {
     const q = query(
-      collection(db, 'fileReadStatus'),
+      collection(dbInstance, 'fileReadStatus'),
       where('projectId', '==', projectId),
       where('customerId', '==', customerId),
       where('filePath', '==', filePath)
@@ -37,9 +43,15 @@ export async function isFileRead(
  * Returns the read status record if file has been read
  */
 export async function getFileReadStatus(filePath: string): Promise<FileReadStatus | null> {
+  if (!db) {
+    console.error('Firestore database is not initialized.');
+    return null;
+  }
+  const dbInstance = db; // Store for TypeScript narrowing
+  
   try {
     const q = query(
-      collection(db, 'fileReadStatus'),
+      collection(dbInstance, 'fileReadStatus'),
       where('filePath', '==', filePath)
     );
     const querySnapshot = await getDocs(q);
@@ -64,9 +76,15 @@ export async function getFileReadStatus(filePath: string): Promise<FileReadStatu
  * Get all read statuses for a file (in case multiple customers have access)
  */
 export async function getAllFileReadStatuses(filePath: string): Promise<FileReadStatus[]> {
+  if (!db) {
+    console.error('Firestore database is not initialized.');
+    return [];
+  }
+  const dbInstance = db; // Store for TypeScript narrowing
+  
   try {
     const q = query(
-      collection(db, 'fileReadStatus'),
+      collection(dbInstance, 'fileReadStatus'),
       where('filePath', '==', filePath)
     );
     const querySnapshot = await getDocs(q);

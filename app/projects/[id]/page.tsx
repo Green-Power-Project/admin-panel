@@ -67,8 +67,9 @@ function ProjectDetailContent() {
     }
 
     // Real-time listener for project document
+    const dbInstance = db; // Store for TypeScript narrowing
     const unsubscribe = onSnapshot(
-      doc(db, 'projects', projectId),
+      doc(dbInstance, 'projects', projectId),
       (projectDoc) => {
         if (projectDoc.exists()) {
           const projectData = { id: projectDoc.id, ...projectDoc.data() } as Project;
@@ -96,6 +97,12 @@ function ProjectDetailContent() {
   }, [projectId]);
 
   async function handleSave() {
+    if (!db) {
+      setError('Database not initialized');
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+    
     setSaving(true);
     setError('');
     try {
@@ -113,7 +120,7 @@ function ProjectDetailContent() {
         updateData.year = null;
       }
 
-      await updateDoc(doc(db, 'projects', projectId), updateData);
+      await updateDoc(doc(dbInstance, 'projects', projectId), updateData);
       setProject({ ...project!, ...updateData });
       setEditing(false);
     } catch (err: any) {
@@ -129,10 +136,21 @@ function ProjectDetailContent() {
   }
 
   async function confirmDelete() {
+    if (!db) {
+      setAlertData({
+        title: 'Delete Failed',
+        message: 'Database not initialized',
+        type: 'error',
+      });
+      setShowAlert(true);
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+    
     setShowDeleteConfirm(false);
     try {
       await deleteFolder(`projects/${projectId}`);
-      await deleteDoc(doc(db, 'projects', projectId));
+      await deleteDoc(doc(dbInstance, 'projects', projectId));
       router.push('/projects');
     } catch (error) {
       console.error('Error deleting project:', error);

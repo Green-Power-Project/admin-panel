@@ -45,17 +45,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Firestore is not initialized');
       return false;
     }
+    const dbInstance = db; // Store for TypeScript narrowing
 
     try {
       // Cache-first approach: check cache first for instant response
-      const adminsSnapshot = await getDocs(collection(db, 'admins'));
+      const adminsSnapshot = await getDocs(collection(dbInstance, 'admins'));
       if (!adminsSnapshot.empty) {
         return true;
       }
       
       // If cache is empty, try server (non-blocking, don't wait for retries)
       try {
-        const serverSnapshot = await getDocsFromServer(collection(db, 'admins'));
+        const serverSnapshot = await getDocsFromServer(collection(dbInstance, 'admins'));
         return !serverSnapshot.empty;
       } catch (serverError) {
         // If server fails, trust cache result (empty = no admins)
@@ -73,17 +74,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error('Firestore is not initialized');
       return false;
     }
+    const dbInstance = db; // Store for TypeScript narrowing
 
     try {
       // Cache-first approach: check cache first for instant response
-      const adminDoc = await getDoc(doc(db, 'admins', user.uid));
+      const adminDoc = await getDoc(doc(dbInstance, 'admins', user.uid));
       if (adminDoc.exists()) {
         return true;
       }
       
       // If cache says doesn't exist, try server (non-blocking)
       try {
-        const serverDoc = await getDocFromServer(doc(db, 'admins', user.uid));
+        const serverDoc = await getDocFromServer(doc(dbInstance, 'admins', user.uid));
         return serverDoc.exists();
       } catch (serverError) {
         // If server fails, trust cache result
@@ -96,8 +98,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function createAdminDocument(user: User): Promise<void> {
+    if (!db) {
+      throw new Error('Firestore is not initialized');
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+    
     try {
-      await setDoc(doc(db, 'admins', user.uid), {
+      await setDoc(doc(dbInstance, 'admins', user.uid), {
         email: user.email || '',
         createdAt: new Date().toISOString(),
         autoCreated: true, // Mark as auto-created for first admin
@@ -109,8 +116,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function login(email: string, password: string): Promise<void> {
+    if (!auth) {
+      throw new Error('Firebase Auth is not initialized');
+    }
+    const authInstance = auth; // Store for TypeScript narrowing
+    
     // First, authenticate with Firebase
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
+    const userCredential = await signInWithEmailAndPassword(authInstance, email, password);
     const user = userCredential.user;
     
     // Check if user is already an admin (with retry logic)
@@ -137,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         // Admins exist but this user is not one - deny access
-        await signOut(auth);
+        await signOut(authInstance);
         throw new Error('Access denied. Admin privileges required.');
       }
     }
@@ -147,12 +159,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout(): Promise<void> {
+    if (!auth) {
+      throw new Error('Firebase Auth is not initialized');
+    }
+    const authInstance = auth; // Store for TypeScript narrowing
+    
     try {
       // Clear user state first
       setCurrentUser(null);
       
       // Sign out from Firebase Auth
-      await signOut(auth);
+      await signOut(authInstance);
       
       // Clear all local storage and session storage
       if (typeof window !== 'undefined') {
@@ -182,16 +199,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function createCustomerAccount(email: string, password: string): Promise<string> {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    if (!auth) {
+      throw new Error('Firebase Auth is not initialized');
+    }
+    const authInstance = auth; // Store for TypeScript narrowing
+    const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
     return userCredential.user.uid;
   }
 
   function resetPassword(email: string) {
-    return sendPasswordResetEmail(auth, email);
+    if (!auth) {
+      throw new Error('Firebase Auth is not initialized');
+    }
+    const authInstance = auth; // Store for TypeScript narrowing
+    return sendPasswordResetEmail(authInstance, email);
   }
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    if (!auth) {
+      console.error('Firebase Auth is not initialized. Cannot set up auth state listener.');
+      setLoading(false);
+      return;
+    }
+    const authInstance = auth; // Store for TypeScript narrowing
+    const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
       if (user) {
         // Keep loading true while verifying admin status
         setLoading(true);
@@ -219,7 +250,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Not an admin, sign out immediately and clear state
             setCurrentUser(null);
             setLoading(false);
-            await signOut(auth);
+            await signOut(authInstance);
             
             // Clear all storage
             if (typeof window !== 'undefined') {

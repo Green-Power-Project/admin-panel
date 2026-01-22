@@ -181,7 +181,7 @@ function FilesContent() {
               </div>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No projects found</h3>
               <p className="text-sm text-gray-500 mb-6">
-                No projects match your search for "<span className="font-medium">{searchQuery}</span>"
+                No projects match your search for &quot;<span className="font-medium">{searchQuery}</span>&quot;
               </p>
               <button
                 onClick={() => setSearchQuery('')}
