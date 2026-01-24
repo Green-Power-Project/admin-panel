@@ -169,7 +169,7 @@ function NewProjectContent() {
                       .filter((customer) => customer.enabled)
                       .map((customer) => (
                         <option key={customer.uid} value={customer.uid}>
-                          {customer.customerNumber} - {customer.email}
+                          {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)} - {customer.email}
                         </option>
                       ))}
                   </select>

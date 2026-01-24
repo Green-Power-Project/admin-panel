@@ -541,7 +541,11 @@ function AuditLogsContent() {
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
-                        <div className="text-xs text-gray-900 truncate">{log.customerNumber}</div>
+                        <div className="text-xs text-gray-900 truncate">
+                          {log.customerNumber 
+                            ? log.customerNumber.charAt(0).toUpperCase() + log.customerNumber.slice(1)
+                            : 'N/A'}
+                        </div>
                         <div className="text-[10px] text-gray-500 truncate">{log.customerEmail}</div>
                       </td>
                       <td className="px-3 py-2.5">

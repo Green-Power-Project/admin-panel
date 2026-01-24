@@ -220,7 +220,11 @@ function EditProjectContent() {
                 ) : (
                   <div className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm bg-gray-50 text-gray-700">
                     {customerId && customers.find(c => c.uid === customerId) ? (
-                      `${customers.find(c => c.uid === customerId)?.customerNumber} - ${customers.find(c => c.uid === customerId)?.email}`
+                      `${(() => {
+                        const cust = customers.find(c => c.uid === customerId);
+                        const num = cust?.customerNumber || '';
+                        return num ? num.charAt(0).toUpperCase() + num.slice(1) : '';
+                      })()} - ${customers.find(c => c.uid === customerId)?.email}`
                     ) : (
                       'Loading...'
                     )}

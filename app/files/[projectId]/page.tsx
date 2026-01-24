@@ -24,6 +24,7 @@ import { PROJECT_FOLDER_STRUCTURE, isValidFolderPath } from '@/lib/folderStructu
 import { uploadFile, deleteFile } from '@/lib/cloudinary';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
+import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
 import Pagination from '@/components/Pagination';
 import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
 
@@ -135,6 +136,8 @@ function ProjectFilesContent() {
   const [deleteFileData, setDeleteFileData] = useState<{ folderPath: string; publicId: string; fileName: string } | null>(null);
   const [showAlert, setShowAlert] = useState(false);
   const [alertData, setAlertData] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+  const [showUploadPreview, setShowUploadPreview] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const clearSuccessMessage = () => {
     setUploadSuccess('');
@@ -321,11 +324,14 @@ function ProjectFilesContent() {
     return null;
   }
 
-  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !selectedFolder) {
       if (!file) {
         setUploadError('Please select a file to upload.');
+      }
+      if (e.target) {
+        e.target.value = '';
       }
       return;
     }
@@ -335,33 +341,56 @@ function ProjectFilesContent() {
     
     if (!isValidFolderPath(selectedFolder)) {
       setUploadError('Invalid folder path. Files can only be uploaded to predefined folders.');
-      e.target.value = '';
+      if (e.target) {
+        e.target.value = '';
+      }
       return;
     }
 
     // Prevent admin uploads to Customer Uploads folders
     if (isCustomerUploadsFolder(selectedFolder)) {
       setUploadError('Admin cannot upload files to Customer Uploads folders. These folders are reserved for customer uploads only.');
-      e.target.value = '';
+      if (e.target) {
+        e.target.value = '';
+      }
       return;
     }
 
     const validationError = validateFile(file);
     if (validationError) {
       setUploadError(validationError);
-      e.target.value = '';
+      if (e.target) {
+        e.target.value = '';
+      }
       return;
     }
 
+    // Store file and show preview modal
+    setSelectedFile(file);
+    setShowUploadPreview(true);
+    // Reset input so same file can be selected again
+    if (e.target) {
+      e.target.value = '';
+    }
+  }
+
+  async function confirmUpload() {
+    if (!selectedFile || !selectedFolder) {
+      setShowUploadPreview(false);
+      setSelectedFile(null);
+      return;
+    }
+
+    setShowUploadPreview(false);
     setUploading(true);
     setUploadProgress(0);
-    setUploadingFileName(file.name);
+    setUploadingFileName(selectedFile.name);
     setUploadError('');
     clearSuccessMessage();
     
     try {
-      const fileExtension = file.name.split('.').pop();
-      const fileNameWithoutExt = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+      const fileExtension = selectedFile.name.split('.').pop();
+      const fileNameWithoutExt = selectedFile.name.substring(0, selectedFile.name.lastIndexOf('.')) || selectedFile.name;
       const sanitizedBaseName = fileNameWithoutExt
         .replace(/\s+/g, '_')
         .replace(/[^a-zA-Z0-9._-]/g, '');
@@ -373,6 +402,7 @@ function ProjectFilesContent() {
         setUploading(false);
         setUploadProgress(0);
         setUploadingFileName('');
+        setSelectedFile(null);
         return;
       }
 
@@ -380,7 +410,7 @@ function ProjectFilesContent() {
 
       // Upload with progress tracking
       const result = await uploadFile(
-        file,
+        selectedFile,
         folderPathFull,
         sanitizedFileName,
         (progress) => {
@@ -388,7 +418,6 @@ function ProjectFilesContent() {
         }
       );
 
-      e.target.value = '';
       setUploadError('');
 
       // Save to Firestore (this happens after upload completes)
@@ -449,6 +478,7 @@ function ProjectFilesContent() {
       setUploading(false);
       setUploadProgress(0);
       setUploadingFileName('');
+      setSelectedFile(null);
       
       scheduleSuccessMessage(`${sanitizedFileName} uploaded successfully.`);
     } catch (error: any) {
@@ -457,7 +487,13 @@ function ProjectFilesContent() {
       setUploading(false);
       setUploadProgress(0);
       setUploadingFileName('');
+      setSelectedFile(null);
     }
+  }
+
+  function cancelUpload() {
+    setShowUploadPreview(false);
+    setSelectedFile(null);
   }
 
   function handleDeleteClick(folderPath: string, publicId: string, fileName: string) {
@@ -1132,6 +1168,15 @@ function ProjectFilesContent() {
           setShowAlert(false);
           setAlertData(null);
         }}
+      />
+
+      {/* File Upload Preview Modal */}
+      <FileUploadPreviewModal
+        isOpen={showUploadPreview}
+        file={selectedFile}
+        folderPath={selectedFolder}
+        onConfirm={confirmUpload}
+        onCancel={cancelUpload}
       />
     </div>
   );

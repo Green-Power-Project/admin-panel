@@ -5,6 +5,11 @@ import { AuthProvider } from '@/contexts/AuthContext';
 export const metadata: Metadata = {
   title: 'Green Power - Admin Panel',
   description: 'Green Power Admin Panel - Manage customers, projects, and files',
+  icons: {
+    icon: '/logo.png',
+    shortcut: '/logo.png',
+    apple: '/logo.png',
+  },
 };
 
 export const viewport: Viewport = {
@@ -21,9 +26,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        <link rel="icon" href="/favicon.ico" />
-      </head>
       <body>
         <AuthProvider>{children}</AuthProvider>
       </body>

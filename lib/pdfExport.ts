@@ -99,7 +99,9 @@ export function exportAuditLogsToPDF(logs: AuditLogEntry[], title: string = 'Fil
     xPosition += colWidths[1];
 
     // Customer
-    const customer = log.customerNumber || 'N/A';
+    const customer = log.customerNumber 
+      ? log.customerNumber.charAt(0).toUpperCase() + log.customerNumber.slice(1)
+      : 'N/A';
     doc.text(customer, xPosition, yPosition);
     xPosition += colWidths[2];
 
@@ -120,14 +122,6 @@ export function exportAuditLogsToPDF(logs: AuditLogEntry[], title: string = 'Fil
     doc.text(readAt, xPosition, yPosition);
 
     yPosition += lineHeight;
-
-    // Add a subtle line between rows (every 5 rows)
-    if ((index + 1) % 5 === 0 && index < logs.length - 1) {
-      doc.setLineWidth(0.1);
-      doc.setDrawColor(200, 200, 200);
-      doc.line(margin, yPosition - 1, pageWidth - margin, yPosition - 1);
-      yPosition += 1;
-    }
   });
 
   // Footer

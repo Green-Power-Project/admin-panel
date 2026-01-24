@@ -5,19 +5,24 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function Home() {
-  const { currentUser, loading } = useAuth();
   const router = useRouter();
+  const { currentUser, loading } = useAuth();
 
   useEffect(() => {
-    if (!loading) {
-      // Only redirect admin users to dashboard
-      if (currentUser && currentUser.isAdmin) {
-        router.push('/dashboard');
-      } else {
-        // Non-admin or not logged in, go to login
-        router.push('/login');
+    // Add a small delay to prevent rapid redirects
+    const timer = setTimeout(() => {
+      if (!loading) {
+        // Only redirect admin users to dashboard
+        if (currentUser && currentUser.isAdmin) {
+          router.push('/dashboard');
+        } else {
+          // Non-admin or not logged in, go to login
+          router.push('/login');
+        }
       }
-    }
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, [currentUser, loading, router]);
 
   return (

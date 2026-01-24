@@ -57,6 +57,15 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
       <div className="w-full max-w-md">
         <div className="text-center mb-10">
+          <div className="flex justify-center mb-4">
+            <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
+              <img 
+                src="/logo.png" 
+                alt="Green Power Logo" 
+                className="w-full h-full object-contain p-2"
+              />
+            </div>
+          </div>
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight mb-1">
             Green Power
           </h1>

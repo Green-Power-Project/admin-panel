@@ -27,6 +27,8 @@ interface Project {
 
 interface CustomerData {
   uid: string;
+  name?: string;
+  mobileNumber?: string;
   email: string;
   customerNumber: string;
   enabled: boolean;
@@ -50,6 +52,8 @@ function CustomerDetailContent() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -91,17 +95,23 @@ function CustomerDetailContent() {
           const actualCustomerUid = data.uid || customerId; // Use the uid from the document
           const customerData: CustomerData = {
             uid: actualCustomerUid,
+            name: data.name || '',
+            mobileNumber: data.mobileNumber || '',
             email: data.email || 'N/A',
             customerNumber: data.customerNumber || 'N/A',
             enabled: data.enabled !== false,
           };
           setCustomer(customerData);
+          setName(customerData.name || '');
+          setMobileNumber(customerData.mobileNumber || '');
           setCustomerNumber(customerData.customerNumber);
           setEnabled(customerData.enabled);
         } else {
           // Customer document doesn't exist - try to get from Firebase Auth or set defaults
           setCustomer({
             uid: customerId,
+            name: '',
+            mobileNumber: '',
             email: 'N/A',
             customerNumber: 'N/A',
             enabled: true,
@@ -202,6 +212,8 @@ function CustomerDetailContent() {
         // Customer document exists - update it
         const customerDoc = customerSnapshot.docs[0];
         await updateDoc(doc(dbInstance, 'customers', customerDoc.id), {
+          name: name.trim() ? name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase() : '',
+          mobileNumber: mobileNumber.trim() || '',
           customerNumber: customerNumber.trim(),
           enabled,
           updatedAt: new Date(),
@@ -211,6 +223,8 @@ function CustomerDetailContent() {
         // Use setDoc with customerId as document ID for consistency
         await setDoc(doc(dbInstance, 'customers', customerId), {
           uid: customerId,
+          name: name.trim() ? name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase() : '',
+          mobileNumber: mobileNumber.trim() || '',
           email: customer?.email || 'N/A',
           customerNumber: customerNumber.trim(),
           enabled,
@@ -221,6 +235,8 @@ function CustomerDetailContent() {
 
       setCustomer({
         ...customer!,
+        name: name.trim() ? name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase() : '',
+        mobileNumber: mobileNumber.trim() || '',
         customerNumber: customerNumber.trim(),
         enabled,
       });
@@ -263,14 +279,28 @@ function CustomerDetailContent() {
               <div className="flex items-center gap-4 flex-1 min-w-0">
                 <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg flex-shrink-0">
                   <span className="text-white font-bold text-xl">
-                    {customer?.customerNumber?.charAt(customer.customerNumber.length - 1) || 'C'}
+                    {customer?.name 
+                      ? customer.name.charAt(0).toUpperCase()
+                      : customer?.customerNumber?.charAt(0).toUpperCase() || 'C'}
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
                   <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-                    {customer?.customerNumber || 'Customer'}
+                    {customer?.name 
+                      ? customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()
+                      : customer?.customerNumber 
+                        ? customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)
+                        : 'Customer'}
                   </h1>
                   <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
+                    {customer?.mobileNumber && (
+                      <span className="flex items-center gap-1.5">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                        </svg>
+                        {customer.mobileNumber}
+                      </span>
+                    )}
                     <span className="flex items-center gap-1.5">
                       <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -329,6 +359,30 @@ function CustomerDetailContent() {
             <div className="space-y-5">
               <div>
                 <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Customer Name
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 transition-all"
+                  placeholder="Enter customer full name"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
+                  Mobile Number
+                </label>
+                <input
+                  type="tel"
+                  value={mobileNumber}
+                  onChange={(e) => setMobileNumber(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 transition-all"
+                  placeholder="e.g., +1234567890"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-gray-700 mb-2">
                   Customer Number <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -336,7 +390,7 @@ function CustomerDetailContent() {
                   value={customerNumber}
                   onChange={(e) => setCustomerNumber(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 transition-all"
-                  placeholder="e.g., CUST-001"
+                  placeholder="e.g., Cust-001"
                 />
               </div>
               <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50">
@@ -358,6 +412,8 @@ function CustomerDetailContent() {
                 <button
                   onClick={() => {
                     setEditing(false);
+                    setName(customer?.name || '');
+                    setMobileNumber(customer?.mobileNumber || '');
                     setCustomerNumber(customer?.customerNumber || '');
                     setEnabled(customer?.enabled ?? true);
                     setError('');
@@ -384,12 +440,30 @@ function CustomerDetailContent() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {customer?.name && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Customer Name</p>
+                  <p className="text-lg font-bold text-gray-900">
+                    {customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()}
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Customer Number</p>
                 <p className="text-lg font-bold text-gray-900">
-                  {customer?.customerNumber || 'N/A'}
+                  {customer?.customerNumber 
+                    ? customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)
+                    : 'N/A'}
                 </p>
               </div>
+              {customer?.mobileNumber && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mobile Number</p>
+                  <p className="text-lg font-medium text-gray-900">
+                    {customer.mobileNumber}
+                  </p>
+                </div>
+              )}
               <div className="space-y-2">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</p>
                 <p className="text-lg font-medium text-gray-900 break-words">

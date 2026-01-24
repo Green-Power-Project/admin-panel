@@ -19,6 +19,7 @@ const navigation: NavItem[] = [
   { name: 'Approvals', href: '/approvals', icon: '✅' },
   { name: 'Audit Logs', href: '/audit-logs', icon: '📋' },
   { name: 'Customer Uploads', href: '/customer-uploads', icon: '📥' },
+  { name: 'Profile', href: '/profile', icon: '⚙️' },
 ];
 
 export default function Sidebar() {
@@ -30,8 +31,12 @@ export default function Sidebar() {
       {/* Logo Section */}
       <div className="flex items-center px-6 py-5 border-b border-green-power-600/30">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-lg">
-            <span className="text-2xl">🌿</span>
+          <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-lg overflow-hidden">
+            <img 
+              src="/logo.png" 
+              alt="Green Power Logo" 
+              className="w-full h-full object-contain p-1"
+            />
           </div>
           <div>
             <h1 className="text-lg font-bold text-white">Green Power</h1>

@@ -21,7 +21,8 @@ export default function NewCustomerPage() {
 
 function NewCustomerContent() {
   const router = useRouter();
-  const { createCustomerAccount } = useAuth();
+  const [name, setName] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
   const [password, setPassword] = useState('');
@@ -31,6 +32,26 @@ function NewCustomerContent() {
   const [enabled, setEnabled] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [generatingNumber, setGeneratingNumber] = useState(false);
+
+  // Auto-generate customer number based on existing customers count
+  async function generateCustomerNumber(): Promise<string> {
+    if (!db) {
+      throw new Error('Database not initialized');
+    }
+    const dbInstance = db;
+    
+    setGeneratingNumber(true);
+    try {
+      const customersSnapshot = await getDocs(collection(dbInstance, 'customers'));
+      const count = customersSnapshot.size;
+      // Generate customer number as Cust-001, Cust-002, etc. (starts with capital C)
+      const nextNumber = String(count + 1).padStart(3, '0');
+      return `Cust-${nextNumber}`;
+    } finally {
+      setGeneratingNumber(false);
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -43,8 +64,13 @@ function NewCustomerContent() {
     const dbInstance = db; // Store for TypeScript narrowing
 
     // Validation
-    if (!customerNumber.trim()) {
-      setError('Customer Number is required');
+    if (!name.trim()) {
+      setError('Customer Name is required');
+      return;
+    }
+
+    if (!email.trim()) {
+      setError('Email is required');
       return;
     }
 
@@ -61,32 +87,35 @@ function NewCustomerContent() {
     setLoading(true);
 
     try {
-      // Check if customer number already exists
-      const existingCustomerQuery = query(
-        collection(dbInstance, 'customers'),
-        where('customerNumber', '==', customerNumber.trim())
-      );
-      const existingSnapshot = await getDocs(existingCustomerQuery);
-      
-      if (!existingSnapshot.empty) {
-        setError('Customer Number already exists. Please use a different number.');
-        setLoading(false);
-        return;
-      }
+      // Auto-generate customer number
+      const generatedCustomerNumber = await generateCustomerNumber();
+      setCustomerNumber(generatedCustomerNumber);
 
-      // Create Firebase Auth account
-      const uid = await createCustomerAccount(email, password);
-
-      // Create customer document in Firestore
-      await addDoc(collection(dbInstance, 'customers'), {
-        uid,
-        email: email.trim(),
-        customerNumber: customerNumber.trim(),
-        enabled,
-        createdAt: new Date(),
+      // Create customer account and document using Admin SDK (doesn't affect client auth)
+      const createResponse = await fetch('/api/customers/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase(),
+          mobileNumber: mobileNumber.trim() || '',
+          email: email.trim(),
+          password: password,
+          customerNumber: generatedCustomerNumber,
+          enabled,
+        }),
       });
 
-      router.push(`/customers/${uid}`);
+      if (!createResponse.ok) {
+        const errorData = await createResponse.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create customer account');
+      }
+
+      const result = await createResponse.json();
+      
+      // Navigate back to customer list
+      router.push('/customers');
     } catch (err: any) {
       console.error('Error creating customer:', err);
       const errorCode = err?.code || '';
@@ -126,21 +155,32 @@ function NewCustomerContent() {
               )}
 
               <div>
-                <label htmlFor="customerNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Customer Number <span className="text-red-500">*</span>
+                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Customer Name <span className="text-red-500">*</span>
                 </label>
                 <input
-                  id="customerNumber"
+                  id="name"
                   type="text"
-                  value={customerNumber}
-                  onChange={(e) => setCustomerNumber(e.target.value)}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                  placeholder="e.g., CUST-001"
+                  placeholder="Enter customer full name"
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  Unique identifier for this customer
-                </p>
+              </div>
+
+              <div>
+                <label htmlFor="mobileNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Mobile Number
+                </label>
+                <input
+                  id="mobileNumber"
+                  type="tel"
+                  value={mobileNumber}
+                  onChange={(e) => setMobileNumber(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  placeholder="e.g., +1234567890"
+                />
               </div>
 
               <div>
@@ -156,6 +196,23 @@ function NewCustomerContent() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
                   placeholder="customer@example.com"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="customerNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Customer Number
+                </label>
+                <input
+                  id="customerNumber"
+                  type="text"
+                  value={customerNumber || (generatingNumber ? 'Generating...' : '')}
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
+                  placeholder="Auto-generated"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Customer number will be auto-generated (e.g., Cust-001, Cust-002)
+                </p>
               </div>
 
               <div>

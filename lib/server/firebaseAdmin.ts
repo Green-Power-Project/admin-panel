@@ -40,3 +40,7 @@ export function getAdminDb() {
   return getFirestore(adminApp);
 }
 
+
+export function getAdminApp() {
+  return getFirebaseAdminApp();
+}

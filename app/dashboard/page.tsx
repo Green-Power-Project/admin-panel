@@ -364,10 +364,11 @@ function DashboardContent() {
               {[1, 2, 3].map((i) => (
                 <div key={i} className="bg-white rounded-xl shadow-lg overflow-hidden animate-pulse">
                   <div className="px-5 py-4 border-b border-gray-200">
-                    <div className="h-4 bg-gray-200 rounded w-24"></div>
+                    <div className="h-4 bg-gray-200 rounded w-24 mb-2"></div>
+                    <div className="h-3 bg-gray-100 rounded w-16"></div>
                   </div>
                   <div className="divide-y divide-gray-200">
-                    {[1, 2, 3, 4, 5].map((j) => (
+                    {[1, 2].map((j) => (
                       <div key={j} className="px-5 py-3">
                         <div className="h-4 bg-gray-200 rounded w-32 mb-2"></div>
                         <div className="h-3 bg-gray-100 rounded w-20"></div>
@@ -380,8 +381,11 @@ function DashboardContent() {
           ) : (
             <>
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900">Customers</h3>
+                <div className="px-5 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-blue-200 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Customers</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">Total: {stats.totalCustomers}</p>
+                  </div>
                   <Link
                     href="/customers"
                     className="text-xs text-green-power-600 hover:text-green-power-700 font-semibold"
@@ -401,7 +405,7 @@ function DashboardContent() {
                       </Link>
                     </div>
                   ) : (
-                    customers.slice(0, 5).map((customer) => (
+                    customers.slice(0, 2).map((customer) => (
                       <Link
                         key={customer.uid}
                         href={`/customers/${customer.uid}`}
@@ -411,7 +415,7 @@ function DashboardContent() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2">
                               <p className="text-sm font-medium text-gray-900 truncate">
-                                {customer.customerNumber}
+                                {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)}
                               </p>
                               <span
                                 className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
@@ -433,22 +437,15 @@ function DashboardContent() {
                     ))
                   )}
                 </div>
-                {customers.length > 5 && (
-                  <div className="px-5 py-3 border-t border-gray-200">
-                    <Link
-                      href="/customers"
-                      className="text-xs text-gray-600 hover:text-gray-900 font-medium"
-                    >
-                      View all {customers.length} customers →
-                    </Link>
-                  </div>
-                )}
               </div>
 
               {/* Projects List */}
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900">Projects</h3>
+                <div className="px-5 py-4 bg-gradient-to-r from-purple-50 to-pink-50 border-b-2 border-purple-200 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Projects</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">Total: {stats.totalProjects}</p>
+                  </div>
                   <Link
                     href="/projects"
                     className="text-xs text-green-power-600 hover:text-green-power-700 font-semibold"
@@ -468,7 +465,7 @@ function DashboardContent() {
                       </Link>
                     </div>
                   ) : (
-                    projects.slice(0, 5).map((project) => (
+                    projects.slice(0, 2).map((project) => (
                       <Link
                         key={project.id}
                         href={`/projects/${project.id}`}
@@ -489,22 +486,15 @@ function DashboardContent() {
                     ))
                   )}
                 </div>
-                {projects.length > 5 && (
-                  <div className="px-5 py-3 border-t border-gray-200">
-                    <Link
-                      href="/projects"
-                      className="text-xs text-gray-600 hover:text-gray-900 font-medium"
-                    >
-                      View all {projects.length} projects →
-                    </Link>
-                  </div>
-                )}
               </div>
 
               {/* Unread Files Overview */}
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                <div className="px-5 py-4 border-b border-gray-200 flex items-center justify-between">
-                  <h3 className="text-sm font-semibold text-gray-900">Unread Files</h3>
+                <div className="px-5 py-4 bg-gradient-to-r from-amber-50 to-orange-50 border-b-2 border-amber-200 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-900">Unread Files</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">Total: {stats.totalUnreadFiles}</p>
+                  </div>
                   <Link
                     href="/tracking"
                     className="text-xs text-green-power-600 hover:text-green-power-700 font-semibold"
@@ -524,7 +514,7 @@ function DashboardContent() {
                       </Link>
                     </div>
                   ) : (
-                    unreadFiles.slice(0, 5).map((file, index) => (
+                    unreadFiles.slice(0, 2).map((file, index) => (
                       <Link
                         key={`${file.projectId}-${file.filePath}-${index}`}
                         href={`/files/${file.projectId}`}
@@ -545,16 +535,6 @@ function DashboardContent() {
                     ))
                   )}
                 </div>
-                {unreadFiles.length > 5 && (
-                  <div className="px-5 py-3 border-t border-gray-200">
-                    <Link
-                      href="/tracking"
-                      className="text-xs text-gray-600 hover:text-gray-900 font-medium"
-                    >
-                      View all {unreadFiles.length} unread files →
-                    </Link>
-                  </div>
-                )}
               </div>
             </>
           )}

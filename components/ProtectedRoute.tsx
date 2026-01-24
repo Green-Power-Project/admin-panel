@@ -5,7 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 
 export function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { currentUser, loading } = useAuth();
+  const { currentUser, loading, isLoggingOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
@@ -106,7 +106,8 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   // Block access if not authenticated or not admin
-  if (!currentUser || !currentUser.isAdmin) {
+  // But don't show access denied if user is logging out (to prevent flash of error message)
+  if ((!currentUser || !currentUser.isAdmin) && !isLoggingOut) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="text-center">
@@ -123,6 +124,11 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
         </div>
       </div>
     );
+  }
+
+  // If logging out, just show loading or nothing (redirect will happen)
+  if (isLoggingOut) {
+    return null;
   }
 
   return <>{children}</>;

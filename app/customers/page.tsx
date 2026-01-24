@@ -16,6 +16,7 @@ import Pagination from '@/components/Pagination';
 
 interface Customer {
   uid: string;
+  name?: string;
   email: string;
   customerNumber: string;
   enabled: boolean;
@@ -34,7 +35,9 @@ export default function CustomersPage() {
 
 function CustomersContent() {
   const [customers, setCustomers] = useState<Customer[]>([]);
+  const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterSearch, setFilterSearch] = useState<string>('');
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -57,6 +60,7 @@ function CustomersContent() {
         const data = doc.data();
         customersList.push({
           uid: data.uid,
+          name: data.name || '',
           email: data.email || 'N/A',
           customerNumber: data.customerNumber || 'N/A',
           enabled: data.enabled !== false, // Default to true if not set
@@ -110,71 +114,148 @@ function CustomersContent() {
     };
   }, []);
 
+  // Filter customers based on search query
+  useEffect(() => {
+    let filtered = [...customers];
+
+    const term = filterSearch.trim().toLowerCase();
+    if (term) {
+      filtered = filtered.filter((customer) => {
+        const name = customer.name?.toLowerCase() || '';
+        const customerNumber = customer.customerNumber.toLowerCase();
+        const email = customer.email.toLowerCase();
+        return (
+          name.includes(term) ||
+          customerNumber.includes(term) ||
+          email.includes(term)
+        );
+      });
+    }
+
+    setFilteredCustomers(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [customers, filterSearch]);
+
+  const totalCustomers = filteredCustomers.length;
+
   return (
-    <div className="px-8 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Customers</h2>
-            <p className="text-sm text-gray-500 mt-1">Manage customer accounts</p>
+    <div className="px-8 py-8 space-y-6">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Customers</h2>
+              <p className="text-xs md:text-sm text-gray-600 mt-1">
+                Manage customer accounts
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-sm font-semibold text-gray-900">{totalCustomers}</p>
+              </div>
+              <Link
+                href="/customers/new"
+                className="px-4 py-2 bg-green-power-600 text-white text-sm font-medium rounded-lg hover:bg-green-power-700 transition-colors"
+              >
+                + New Customer
+              </Link>
+            </div>
           </div>
-          <Link
-            href="/customers/new"
-            className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600"
-          >
-            + New Customer
-          </Link>
         </div>
 
-        {loading ? (
-          <div className="bg-white border border-gray-200 rounded-sm overflow-hidden animate-pulse">
-            <div className="px-6 py-3 bg-gray-50">
-              <div className="h-4 bg-gray-200 rounded w-32"></div>
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              Filter by Customer / Email / Customer Number
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                  />
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="Search by customer name, number, or email"
+                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
+              />
             </div>
-            <div className="divide-y divide-gray-200">
+          </div>
+        </div>
+
+        <div className="px-6 py-4">
+          {loading ? (
+            <div className="space-y-3">
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="px-6 py-4">
-                  <div className="h-4 bg-gray-200 rounded w-40 mb-2"></div>
-                  <div className="h-3 bg-gray-100 rounded w-56"></div>
+                <div
+                  key={i}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 animate-pulse"
+                >
+                  <div className="h-5 w-32 rounded-full bg-gray-200" />
+                  <div className="h-3 w-40 rounded bg-gray-200" />
+                  <div className="h-3 w-32 rounded bg-gray-200" />
+                  <div className="h-3 w-28 rounded bg-gray-200" />
+                  <div className="h-3 w-20 rounded bg-gray-200" />
                 </div>
               ))}
             </div>
-          </div>
-        ) : customers.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-            <p className="text-sm text-gray-500">No customers found.</p>
-            <Link
-              href="/customers/new"
-              className="mt-4 inline-block text-sm text-green-power-600 hover:text-green-power-700 font-medium"
-            >
-              Create your first customer account →
-            </Link>
-          </div>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                <tr>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[25%]">
-                    Customer Number
-                  </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[30%]">
-                    Email
-                  </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[15%]">
-                    Status
-                  </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[15%]">
-                    Projects
-                  </th>
-                  <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[10%]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {customers
-                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                  .map((customer) => (
+          ) : filteredCustomers.length === 0 ? (
+            <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
+              <p className="text-sm font-medium text-gray-700">
+                No customers found for the selected filters.
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {filterSearch ? 'Try adjusting your search query.' : 'Create your first customer account to get started.'}
+              </p>
+              {!filterSearch && (
+                <Link
+                  href="/customers/new"
+                  className="mt-4 inline-block text-sm text-green-power-600 hover:text-green-power-700 font-medium"
+                >
+                  Create your first customer account →
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
+                      Customer Number
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
+                      Email
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
+                      Status
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
+                      Projects
+                    </th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {filteredCustomers
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((customer) => (
                   <tr 
                     key={customer.uid} 
                     className="hover:bg-green-power-50/30 transition-colors group"
@@ -183,12 +264,19 @@ function CustomersContent() {
                       <Link href={`/customers/${customer.uid}`} className="flex items-center gap-2 group/link">
                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow-sm group-hover/link:shadow-md transition-shadow">
                           <span className="text-white font-semibold text-xs">
-                            {customer.customerNumber.charAt(customer.customerNumber.length - 1)}
+                            {customer.name 
+                              ? customer.name.charAt(0).toUpperCase()
+                              : customer.customerNumber.charAt(0).toUpperCase()}
                           </span>
                         </div>
                         <div className="min-w-0">
-                          <div className="text-xs font-semibold text-gray-900 group-hover/link:text-green-power-700 transition-colors truncate">
-                            {customer.customerNumber}
+                          {customer.name && (
+                            <div className="text-xs font-semibold text-gray-900 group-hover/link:text-green-power-700 transition-colors truncate">
+                              {customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()}
+                            </div>
+                          )}
+                          <div className={`text-xs ${customer.name ? 'text-gray-500' : 'font-semibold text-gray-900'} group-hover/link:text-green-power-700 transition-colors truncate`}>
+                            {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)}
                           </div>
                         </div>
                       </Link>
@@ -241,21 +329,23 @@ function CustomersContent() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-            <Pagination
-              currentPage={currentPage}
-              totalPages={Math.ceil(customers.length / itemsPerPage)}
-              totalItems={customers.length}
-              itemsPerPage={itemsPerPage}
-              onPageChange={setCurrentPage}
-              onItemsPerPageChange={(newItemsPerPage) => {
-                setItemsPerPage(newItemsPerPage);
-                setCurrentPage(1);
-              }}
-            />
-          </div>
-        )}
+                </tbody>
+              </table>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(filteredCustomers.length / itemsPerPage)}
+                totalItems={filteredCustomers.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={(newItemsPerPage) => {
+                  setItemsPerPage(newItemsPerPage);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

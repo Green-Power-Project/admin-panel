@@ -482,7 +482,9 @@ function ApprovalsContent() {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="text-xs text-gray-900 truncate">
-                          {approval.customerNumber || 'N/A'}
+                          {approval.customerNumber 
+                            ? approval.customerNumber.charAt(0).toUpperCase() + approval.customerNumber.slice(1)
+                            : 'N/A'}
                         </div>
                         <div className="text-[10px] text-gray-500 truncate">{approval.customerEmail || 'N/A'}</div>
                       </td>

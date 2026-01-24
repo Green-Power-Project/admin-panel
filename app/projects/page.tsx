@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
@@ -38,8 +38,10 @@ export default function ProjectsPage() {
 
 function ProjectsContent() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [filterSearch, setFilterSearch] = useState<string>('');
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
@@ -126,6 +128,30 @@ function ProjectsContent() {
     };
   }, []);
 
+  // Filter projects based on search query
+  useEffect(() => {
+    let filtered = [...projects];
+
+    const term = filterSearch.trim().toLowerCase();
+    if (term) {
+      filtered = filtered.filter((project) => {
+        const name = project.name.toLowerCase();
+        const customerNumber = project.customerNumber?.toLowerCase() || '';
+        const customerEmail = project.customerEmail?.toLowerCase() || '';
+        const year = project.year?.toString() || '';
+        return (
+          name.includes(term) ||
+          customerNumber.includes(term) ||
+          customerEmail.includes(term) ||
+          year.includes(term)
+        );
+      });
+    }
+
+    setFilteredProjects(filtered);
+    setCurrentPage(1); // Reset to first page when filters change
+  }, [projects, filterSearch]);
+
   function handleDeleteClick(projectId: string) {
     setDeleteProjectId(projectId);
     setShowDeleteConfirm(true);
@@ -165,68 +191,123 @@ function ProjectsContent() {
     }
   }
 
+  const totalProjects = (filteredProjects && filteredProjects.length) || 0;
+
   return (
-    <div className="px-8 py-8">
-        <div className="mb-6 flex items-center justify-between">
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">Projects</h2>
-            <p className="text-sm text-gray-500 mt-1">Manage all projects</p>
+    <div className="px-8 py-8 space-y-6">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Projects</h2>
+              <p className="text-xs md:text-sm text-gray-600 mt-1">
+                Manage all projects
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-sm font-semibold text-gray-900">{totalProjects}</p>
+              </div>
+              <Link
+                href="/projects/new"
+                className="px-4 py-2 bg-green-power-600 text-white text-sm font-medium rounded-lg hover:bg-green-power-700 transition-colors"
+              >
+                + New Project
+              </Link>
+            </div>
           </div>
-          <Link
-            href="/projects/new"
-            className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600"
-          >
-            + New Project
-          </Link>
         </div>
 
-        {loading ? (
-          <div className="bg-white border border-gray-200 rounded-sm overflow-hidden animate-pulse">
-            <div className="px-6 py-3 bg-gray-50">
-              <div className="h-4 bg-gray-200 rounded w-32"></div>
+        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1.5">
+              Filter by Project / Customer / Email / Year
+            </label>
+            <div className="relative">
+              <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z"
+                  />
+                </svg>
+              </span>
+              <input
+                type="text"
+                value={filterSearch}
+                onChange={(e) => setFilterSearch(e.target.value)}
+                placeholder="Search by project name, customer number, email, or year"
+                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
+              />
             </div>
-            <div className="divide-y divide-gray-200">
+          </div>
+        </div>
+
+        <div className="px-6 py-4">
+          {loading ? (
+            <div className="space-y-3">
               {[1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="px-6 py-4">
-                  <div className="h-4 bg-gray-200 rounded w-48 mb-2"></div>
-                  <div className="h-3 bg-gray-100 rounded w-32"></div>
+                <div
+                  key={i}
+                  className="flex items-center justify-between gap-4 rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 animate-pulse"
+                >
+                  <div className="h-5 w-32 rounded-full bg-gray-200" />
+                  <div className="h-3 w-40 rounded bg-gray-200" />
+                  <div className="h-3 w-32 rounded bg-gray-200" />
+                  <div className="h-3 w-28 rounded bg-gray-200" />
+                  <div className="h-3 w-20 rounded bg-gray-200" />
                 </div>
               ))}
             </div>
-          </div>
-        ) : projects.length === 0 ? (
-          <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
-            <p className="text-sm text-gray-500">No projects found.</p>
-            <Link
-              href="/projects/new"
-              className="mt-4 inline-block text-sm text-green-power-600 hover:text-green-power-700 font-medium"
-            >
-              Create your first project →
-            </Link>
-          </div>
-        ) : (
-          <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                <tr>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[30%]">
-                    Project Name
-                  </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[10%]">
-                    Year
-                  </th>
-                  <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[25%]">
-                    Customer
-                  </th>
-                  <th className="px-3 py-2.5 text-right text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[15%]">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {projects
-                  .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-                  .map((project) => (
+          ) : filteredProjects.length === 0 ? (
+            <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
+              <p className="text-sm font-medium text-gray-700">
+                No projects found for the selected filters.
+              </p>
+              <p className="mt-1 text-xs text-gray-500">
+                {filterSearch ? 'Try adjusting your search query.' : 'Create your first project to get started.'}
+              </p>
+              {!filterSearch && (
+                <Link
+                  href="/projects/new"
+                  className="mt-4 inline-block text-sm text-green-power-600 hover:text-green-power-700 font-medium"
+                >
+                  Create your first project →
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
+                      Project Name
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                      Year
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
+                      Customer
+                    </th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-100">
+                  {filteredProjects
+                    .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+                    .map((project) => (
                   <tr 
                     key={project.id} 
                     className="hover:bg-green-power-50/30 transition-colors group"
@@ -261,7 +342,9 @@ function ProjectsContent() {
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="text-xs font-medium text-gray-900 truncate">
-                        {project.customerNumber || 'N/A'}
+                        {project.customerNumber 
+                          ? project.customerNumber.charAt(0).toUpperCase() + project.customerNumber.slice(1)
+                          : 'N/A'}
                       </div>
                       {project.customerEmail && (
                         <div className="text-[10px] text-gray-500 mt-0.5 truncate">{project.customerEmail}</div>
@@ -311,19 +394,21 @@ function ProjectsContent() {
                 ))}
               </tbody>
             </table>
-            <Pagination
-              currentPage={currentPage}
-              totalPages={Math.ceil(projects.length / itemsPerPage)}
-              totalItems={projects.length}
-              itemsPerPage={itemsPerPage}
-              onPageChange={setCurrentPage}
-              onItemsPerPageChange={(newItemsPerPage) => {
-                setItemsPerPage(newItemsPerPage);
-                setCurrentPage(1); // Reset to first page when changing items per page
-              }}
-            />
-          </div>
-        )}
+              <Pagination
+                currentPage={currentPage}
+                totalPages={Math.ceil(filteredProjects.length / itemsPerPage)}
+                totalItems={filteredProjects.length}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={(newItemsPerPage) => {
+                  setItemsPerPage(newItemsPerPage);
+                  setCurrentPage(1);
+                }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Confirmation Modal */}
       <ConfirmationModal

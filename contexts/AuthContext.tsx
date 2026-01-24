@@ -20,9 +20,11 @@ interface AdminUser extends User {
 interface AuthContextType {
   currentUser: AdminUser | null;
   loading: boolean;
+  isLoggingOut: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   createCustomerAccount: (email: string, password: string) => Promise<string>;
+  signOutCustomerAfterCreation: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
 }
 
@@ -39,6 +41,8 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isCreatingCustomer, setIsCreatingCustomer] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   async function checkIfAnyAdminsExist(): Promise<boolean> {
     if (!db) {
@@ -165,6 +169,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const authInstance = auth; // Store for TypeScript narrowing
     
     try {
+      // Set logging out flag to prevent access denied message
+      setIsLoggingOut(true);
+      
       // Clear user state first
       setCurrentUser(null);
       
@@ -195,6 +202,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         sessionStorage.clear();
       }
       throw error;
+    } finally {
+      // Reset logging out flag after a short delay to allow redirect
+      setTimeout(() => setIsLoggingOut(false), 100);
     }
   }
 
@@ -203,8 +213,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error('Firebase Auth is not initialized');
     }
     const authInstance = auth; // Store for TypeScript narrowing
-    const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
-    return userCredential.user.uid;
+    
+    // Set flag in sessionStorage to prevent auth state handler from signing out
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('creatingCustomer', 'true');
+    }
+    setIsCreatingCustomer(true);
+    
+    try {
+      const userCredential = await createUserWithEmailAndPassword(authInstance, email, password);
+      const newCustomerUid = userCredential.user.uid;
+      
+      // Return the UID immediately - the caller will write to Firestore
+      // Then we'll sign out the customer after Firestore write completes
+      return newCustomerUid;
+    } finally {
+      // Don't clear the flag yet - we'll clear it after Firestore write
+    }
+  }
+
+  async function signOutCustomerAfterCreation(): Promise<void> {
+    if (!auth) {
+      return;
+    }
+    const authInstance = auth;
+    
+    try {
+      // Sign out the customer user
+      await signOut(authInstance);
+      
+      // Wait for auth state to update
+      await new Promise(resolve => setTimeout(resolve, 200));
+    } finally {
+      setIsCreatingCustomer(false);
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('creatingCustomer');
+      }
+    }
   }
 
   function resetPassword(email: string) {
@@ -223,53 +268,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const authInstance = auth; // Store for TypeScript narrowing
     const unsubscribe = onAuthStateChanged(authInstance, async (user) => {
-      if (user) {
-        // Keep loading true while verifying admin status
-        setLoading(true);
-        
-        // Verify admin status BEFORE setting user
-        const isAdmin = await checkAdminStatus(user);
-        
-        if (!isAdmin) {
-          // If not an admin, check if this is the first admin (no admins exist)
-          const adminsExist = await checkIfAnyAdminsExist();
+      try {
+        if (user) {
+          // Keep loading true while verifying admin status
+          setLoading(true);
           
-          if (!adminsExist) {
-            // No admins exist - automatically create admin for first user
-            try {
-              await createAdminDocument(user);
-              setCurrentUser({ ...user, isAdmin: true });
-              setLoading(false);
-            } catch (error) {
-              console.error('Error auto-creating admin:', error);
-              // If creation fails, still allow access (will retry later)
-              setCurrentUser({ ...user, isAdmin: true });
-              setLoading(false);
-            }
-          } else {
-            // Not an admin, sign out immediately and clear state
-            setCurrentUser(null);
-            setLoading(false);
-            await signOut(authInstance);
+          // Verify admin status BEFORE setting user
+          const isAdmin = await checkAdminStatus(user);
+          
+          if (!isAdmin) {
+            // If not an admin, check if this is the first admin (no admins exist)
+            const adminsExist = await checkIfAnyAdminsExist();
             
-            // Clear all storage
-            if (typeof window !== 'undefined') {
-              localStorage.clear();
-              sessionStorage.clear();
+            if (!adminsExist) {
+              // No admins exist - automatically create admin for first user
+              try {
+                await createAdminDocument(user);
+                setCurrentUser({ ...user, isAdmin: true });
+                setLoading(false);
+              } catch (error) {
+                console.error('Error auto-creating admin:', error);
+                // If creation fails, still allow access (will retry later)
+                setCurrentUser({ ...user, isAdmin: true });
+                setLoading(false);
+              }
+            } else {
+              // Not an admin - but check if we're in the middle of creating a customer
+              // If so, don't sign out (the createCustomerAccount function will handle it)
+              const creatingCustomer = typeof window !== 'undefined' && sessionStorage.getItem('creatingCustomer') === 'true';
               
-              // Redirect to login if not already there
-              if (window.location.pathname !== '/login') {
-                window.location.href = '/login';
+              if (isCreatingCustomer || creatingCustomer) {
+                // Just clear the user state, don't sign out yet
+                // The createCustomerAccount function will sign out the customer
+                setCurrentUser(null);
+                setLoading(false);
+                return;
+              }
+              
+              // Not an admin and not creating customer - sign out immediately and clear state
+              setCurrentUser(null);
+              setLoading(false);
+              try {
+                await signOut(authInstance);
+              } catch (signOutError) {
+                console.error('Error signing out:', signOutError);
+              }
+              
+              // Clear all storage
+              if (typeof window !== 'undefined') {
+                localStorage.clear();
+                sessionStorage.clear();
               }
             }
+          } else {
+            // Admin verified - set user with admin flag
+            setCurrentUser({ ...user, isAdmin: true });
+            setLoading(false);
           }
         } else {
-          // Admin verified - set user with admin flag
-          setCurrentUser({ ...user, isAdmin: true });
+          // No user - clear state and stop loading
+          setCurrentUser(null);
           setLoading(false);
         }
-      } else {
-        // No user - clear state and stop loading
+      } catch (error) {
+        // Catch any errors in the auth state change handler
+        console.error('Error in auth state change handler:', error);
         setCurrentUser(null);
         setLoading(false);
       }
@@ -281,9 +344,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value: AuthContextType = {
     currentUser,
     loading,
+    isLoggingOut,
     login,
     logout,
     createCustomerAccount,
+    signOutCustomerAfterCreation,
     resetPassword,
   };
 
