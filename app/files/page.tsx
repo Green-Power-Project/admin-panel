@@ -272,7 +272,7 @@ function FilesContent() {
               {filteredProjects.map((project, index) => (
                 <Link
                   key={project.id}
-                  href={`/files/${project.id}`}
+                  href={`/files/${project.id}?from=files`}
                   className="group bg-white border-2 border-gray-200 rounded-xl overflow-hidden hover:border-green-power-400 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 flex flex-col h-full"
                 >
                   {/* Card Header with Icon */}

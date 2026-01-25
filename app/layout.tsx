@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
-import { AuthProvider } from '@/contexts/AuthContext';
+import Providers from './providers';
 
 export const metadata: Metadata = {
   title: 'Green Power - Admin Panel',
@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { db } from '@/lib/firebase';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { translateFolderPath } from '@/lib/translations';
 import {
   collection,
   onSnapshot,
@@ -45,6 +47,7 @@ export default function CustomerUploadsPage() {
 }
 
 function CustomerUploadsContent() {
+  const { t } = useLanguage();
   const [allUploads, setAllUploads] = useState<CustomerUpload[]>([]);
   const [uploads, setUploads] = useState<CustomerUpload[]>([]);
   const [loading, setLoading] = useState(true);
@@ -304,8 +307,7 @@ function CustomerUploadsContent() {
   }
 
   function getFolderDisplayName(folderPath: string): string {
-    if (folderPath === '01_Customer_Uploads') return 'Customer Uploads';
-    return folderPath.split('/').pop() || folderPath;
+    return translateFolderPath(folderPath, t);
   }
 
   const totalUploads = uploads.length;

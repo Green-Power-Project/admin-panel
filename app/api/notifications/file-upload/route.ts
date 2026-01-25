@@ -78,7 +78,7 @@ export async function POST(request: NextRequest) {
     const isCustomerUpload = folderPath.startsWith('01_Customer_Uploads');
     console.log('[file-upload-notification] Upload type:', isCustomerUpload ? 'CUSTOMER UPLOAD (notify admin)' : 'ADMIN UPLOAD (notify customer)');
 
-    // Look up project to get customerId and name
+    // Look up project to get customerId, name, and projectNumber
     const projectDoc = await db.collection('projects').doc(projectId).get();
     if (!projectDoc.exists) {
       console.log('[file-upload-notification] Project not found:', projectId);
@@ -87,8 +87,9 @@ export async function POST(request: NextRequest) {
 
     const projectData = projectDoc.data() || {};
     const projectName: string = projectData.name || 'Unknown Project';
+    const projectNumber: string = projectData.projectNumber || '';
     const customerId: string | undefined = projectData.customerId;
-    console.log('[file-upload-notification] Project found:', { projectName, customerId });
+    console.log('[file-upload-notification] Project found:', { projectName, projectNumber, customerId });
 
     if (!customerId) {
       console.log('[file-upload-notification] Customer ID missing from project');
@@ -161,6 +162,12 @@ export async function POST(request: NextRequest) {
       return withCors(NextResponse.json({ success: false }, { status: 200 }));
     }
 
+    // For customer notifications, ensure customer has email stored in system
+    if (recipientType === 'customer' && !customerEmail) {
+      console.log('[file-upload-notification] Customer does not have email stored in system - skipping email notification');
+      return withCors(NextResponse.json({ success: false, skipped: true, reason: 'no_email' }, { status: 200 }));
+    }
+
     const EMAIL_USER = process.env.EMAIL_USER;
     const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
     const PORTAL_URL = process.env.PORTAL_URL || 'https://your-portal-url.com';
@@ -228,6 +235,11 @@ export async function POST(request: NextRequest) {
         ? `
           <p>Hello,</p>
           <p>A new <strong>Work Report</strong> has been uploaded to your project and requires your review.</p>
+          <div style="background-color: #e8f5e9; padding: 15px; margin: 15px 0; border-left: 4px solid #5d7a5d; border-radius: 4px;">
+            <p style="margin: 5px 0; font-weight: bold; color: #2e7d32;">Your Login Information:</p>
+            ${customerNumber ? `<p style="margin: 5px 0;"><strong>Customer Number:</strong> ${customerNumber}</p>` : ''}
+            ${projectNumber ? `<p style="margin: 5px 0;"><strong>Project Number:</strong> ${projectNumber}</p>` : ''}
+          </div>
           <div class="file-info">
             <p><strong>Project:</strong> ${projectName}</p>
             <p><strong>Report:</strong> ${fileName}</p>
@@ -235,18 +247,27 @@ export async function POST(request: NextRequest) {
           </div>
           <p><strong>Important:</strong> Please review and approve this report within 5 working days. If no objection is received, the report will be automatically approved.</p>
           <p>Please log in to your customer portal to view and approve the report.</p>
-          <a href="${PORTAL_URL}" class="button">Review & Approve Report</a>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="${PORTAL_URL}/login" style="display: inline-block; padding: 12px 24px; background-color: #5d7a5d; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">Review & Approve Report</a>
+          </div>
         `
         : `
           <p>Hello,</p>
           <p>A new file has been uploaded to your project.</p>
+          <div style="background-color: #e8f5e9; padding: 15px; margin: 15px 0; border-left: 4px solid #5d7a5d; border-radius: 4px;">
+            <p style="margin: 5px 0; font-weight: bold; color: #2e7d32;">Your Login Information:</p>
+            ${customerNumber ? `<p style="margin: 5px 0;"><strong>Customer Number:</strong> ${customerNumber}</p>` : ''}
+            ${projectNumber ? `<p style="margin: 5px 0;"><strong>Project Number:</strong> ${projectNumber}</p>` : ''}
+          </div>
           <div class="file-info">
             <p><strong>Project:</strong> ${projectName}</p>
             <p><strong>Folder:</strong> ${folderName}</p>
             <p><strong>File Name:</strong> ${fileName}</p>
           </div>
           <p>Please log in to your customer portal to view and download the file.</p>
-          <a href="${PORTAL_URL}" class="button">Access Customer Portal</a>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="${PORTAL_URL}/login" style="display: inline-block; padding: 12px 24px; background-color: #5d7a5d; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">Access Customer Portal</a>
+          </div>
         `;
     }
 
@@ -290,8 +311,8 @@ export async function POST(request: NextRequest) {
       text: isCustomerUpload
         ? `Hello,\n\nI have uploaded a new file to my project.\n\nCustomer Information:\n${customerName ? `Name: ${customerName}\n` : ''}${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${customerEmail ? `Email: ${customerEmail}\n` : ''}\nProject: ${projectName}\nFolder: ${folderName}\nFile Name: ${fileName}\n\nPlease review the uploaded file in the admin panel.\n\nThis email was sent from the Customer Portal.\n\n${process.env.ADMIN_PANEL_URL || 'http://localhost:3000'}`
         : isReport
-        ? `A new work report has been uploaded for project ${projectName}.\nReport: ${fileName}\nFolder: ${folderName}\nPlease log in to your customer portal to review and approve it.\n\n${PORTAL_URL}`
-        : `A new file has been uploaded for project ${projectName}.\nFile: ${fileName}\nFolder: ${folderName}\nPlease log in to your customer portal to view it.\n\n${PORTAL_URL}`,
+        ? `A new work report has been uploaded for project ${projectName}.\n\nYour Login Information:\n${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${projectNumber ? `Project Number: ${projectNumber}\n` : ''}\nReport: ${fileName}\nFolder: ${folderName}\n\nPlease log in to your customer portal to review and approve it.\n\nPortal Link: ${PORTAL_URL}/login`
+        : `A new file has been uploaded for project ${projectName}.\n\nYour Login Information:\n${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${projectNumber ? `Project Number: ${projectNumber}\n` : ''}\nFile: ${fileName}\nFolder: ${folderName}\n\nPlease log in to your customer portal to view it.\n\nPortal Link: ${PORTAL_URL}/login`,
     };
 
     console.log('[file-upload-notification] ========================================');

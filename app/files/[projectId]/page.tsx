@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { translateFolderPath } from '@/lib/translations';
 import {
   addDoc,
   collection,
@@ -113,7 +115,13 @@ function getFolderConfig(path: string) {
 
 function ProjectFilesContent() {
   const params = useParams();
+  const searchParams = useSearchParams();
   const projectId = params.projectId as string;
+  const { t } = useLanguage();
+  const fromSource = searchParams.get('from');
+  const fromProject = fromSource === 'project';
+  const fromDashboard = fromSource === 'dashboard';
+  const fromFiles = fromSource === 'files';
   const [project, setProject] = useState<Project | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string>('');
   const [files, setFiles] = useState<FileMetadata[]>([]);
@@ -710,9 +718,9 @@ function ProjectFilesContent() {
     return '📁';
   }
 
-  // Format folder name (remove numbering and underscores)
-  function formatFolderName(name: string): string {
-    return name.replace(/^\d+_/, '').replace(/_/g, ' ');
+  // Format folder name using translations
+  function formatFolderName(nameOrPath: string): string {
+    return translateFolderPath(nameOrPath, t);
   }
 
   /**
@@ -739,13 +747,27 @@ function ProjectFilesContent() {
         {/* Header */}
         <div className="mb-8">
           <Link
-            href="/files"
+            href={
+              fromProject 
+                ? `/projects/${projectId}` 
+                : fromDashboard 
+                  ? '/dashboard' 
+                  : fromFiles 
+                    ? '/files' 
+                    : '/files'
+            }
             className="inline-flex items-center text-sm text-gray-600 hover:text-green-power-600 mb-6 transition-colors group"
           >
             <svg className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            Back to Projects
+            {fromProject 
+              ? 'Back to Project' 
+              : fromDashboard 
+                ? 'Back to Dashboard' 
+                : fromFiles 
+                  ? 'Back to Files' 
+                  : 'Back to Projects'}
           </Link>
           
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 mb-8">
@@ -812,7 +834,7 @@ function ProjectFilesContent() {
                         
                         {/* Folder Name */}
                         <h3 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-green-power-700 transition-colors">
-                          {formatFolderName(folder.name)}
+                          {formatFolderName(folder.path)}
                         </h3>
                         
                         {/* Description */}
@@ -830,7 +852,7 @@ function ProjectFilesContent() {
                               {folder.children!.slice(0, 3).map((child) => (
                                 <div key={child.path} className="flex items-center gap-2 text-xs text-gray-700 group-hover:text-gray-900 transition-colors">
                                   <div className={`w-1.5 h-1.5 rounded-full bg-gradient-to-r ${config.gradient}`}></div>
-                                  <span className="font-medium">{formatFolderName(child.name)}</span>
+                                  <span className="font-medium">{formatFolderName(child.path)}</span>
                                 </div>
                               ))}
                               {folder.children!.length > 3 && (
@@ -887,7 +909,7 @@ function ProjectFilesContent() {
                             }`}
                           >
                             <span className="text-lg">{getFolderIcon(folder.path)}</span>
-                            <span className="flex-1 font-medium">{formatFolderName(folder.name)}</span>
+                            <span className="flex-1 font-medium">{formatFolderName(folder.path)}</span>
                             {folder.children && folder.children.length > 0 && (
                               <svg 
                                 className={`w-4 h-4 transition-transform ${hasSelectedChild ? 'rotate-90' : ''}`}
@@ -912,7 +934,7 @@ function ProjectFilesContent() {
                                   }`}
                                 >
                                   <div className={`w-1.5 h-1.5 rounded-full ${selectedFolder === child.path ? `bg-gradient-to-r ${config.gradient}` : 'bg-gray-400'}`}></div>
-                                  <span>{formatFolderName(child.name)}</span>
+                                  <span>{formatFolderName(child.path)}</span>
                                 </button>
                               ))}
                             </div>

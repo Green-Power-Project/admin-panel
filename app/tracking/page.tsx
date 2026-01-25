@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { db } from '@/lib/firebase';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { translateFolderPath, translateStatus } from '@/lib/translations';
 import {
   collection,
   onSnapshot,
@@ -50,6 +52,7 @@ export default function TrackingPage() {
 }
 
 function TrackingContent() {
+  const { t } = useLanguage();
   const [allFiles, setAllFiles] = useState<FileTrackingInfo[]>([]);
   const [files, setFiles] = useState<FileTrackingInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -358,7 +361,7 @@ function TrackingContent() {
   }
 
   function getFolderDisplayName(folderPath: string): string {
-    return folderPath.split('/').pop() || folderPath;
+    return translateFolderPath(folderPath, t);
   }
 
   // Fast in-memory filtering for instant UI response
@@ -564,7 +567,7 @@ function TrackingContent() {
                               : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
-                          {file.isRead ? '✓ Read' : '● Unread'}
+                          {file.isRead ? `✓ ${translateStatus('read', t)}` : `● ${translateStatus('unread', t)}`}
                         </span>
                       </td>
                       <td className="px-3 py-2.5">

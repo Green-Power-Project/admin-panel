@@ -32,6 +32,7 @@ interface CustomerData {
   email: string;
   customerNumber: string;
   enabled: boolean;
+  canViewAllProjects?: boolean;
 }
 
 export default function CustomerDetailPage() {
@@ -56,6 +57,7 @@ function CustomerDetailContent() {
   const [mobileNumber, setMobileNumber] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
   const [enabled, setEnabled] = useState(true);
+  const [canViewAllProjects, setCanViewAllProjects] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -105,7 +107,8 @@ function CustomerDetailContent() {
           setName(customerData.name || '');
           setMobileNumber(customerData.mobileNumber || '');
           setCustomerNumber(customerData.customerNumber);
-          setEnabled(customerData.enabled);
+          setEnabled(customerData.enabled !== false);
+          setCanViewAllProjects(customerData.canViewAllProjects === true);
         } else {
           // Customer document doesn't exist - try to get from Firebase Auth or set defaults
           setCustomer({
@@ -216,6 +219,7 @@ function CustomerDetailContent() {
           mobileNumber: mobileNumber.trim() || '',
           customerNumber: customerNumber.trim(),
           enabled,
+          canViewAllProjects,
           updatedAt: new Date(),
         });
       } else {
@@ -228,6 +232,7 @@ function CustomerDetailContent() {
           email: customer?.email || 'N/A',
           customerNumber: customerNumber.trim(),
           enabled,
+          canViewAllProjects,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
@@ -239,6 +244,7 @@ function CustomerDetailContent() {
         mobileNumber: mobileNumber.trim() || '',
         customerNumber: customerNumber.trim(),
         enabled,
+        canViewAllProjects,
       });
       setEditing(false);
     } catch (err: any) {
@@ -266,295 +272,346 @@ function CustomerDetailContent() {
         </Link>
       </div>
 
-      {/* Header Card */}
+      {/* Single Combined Card */}
       {loading ? (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 p-8 animate-pulse">
           <div className="h-8 bg-gray-200 rounded w-64 mb-3"></div>
           <div className="h-4 bg-gray-100 rounded w-48"></div>
         </div>
       ) : (
-        <div className="bg-gradient-to-r from-blue-50 via-white to-emerald-50 rounded-2xl shadow-sm border border-gray-100 mb-6 overflow-hidden">
-          <div className="px-6 py-6 border-b border-gray-100">
-            <div className="flex items-start justify-between">
-              <div className="flex items-center gap-4 flex-1 min-w-0">
-                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center shadow-lg flex-shrink-0">
-                  <span className="text-white font-bold text-xl">
-                    {customer?.name 
-                      ? customer.name.charAt(0).toUpperCase()
-                      : customer?.customerNumber?.charAt(0).toUpperCase() || 'C'}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-1">
-                    {customer?.name 
-                      ? customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()
-                      : customer?.customerNumber 
-                        ? customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)
-                        : 'Customer'}
-                  </h1>
-                  <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
-                    {customer?.mobileNumber && (
-                      <span className="flex items-center gap-1.5">
-                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                        </svg>
-                        {customer.mobileNumber}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1.5">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      {customer?.email || 'N/A'}
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                      <div className={`w-2 h-2 rounded-full ${customer?.enabled ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                      <span className={`font-semibold ${customer?.enabled ? 'text-green-700' : 'text-red-700'}`}>
-                        {customer?.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-2 font-mono">ID: {customerId}</p>
-                </div>
-              </div>
-              {!editing && (
+        <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden relative">
+          {/* Gradient Header Bar */}
+          <div className="h-2 bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500"></div>
+          
+          {/* Customer Info Section */}
+          <div className="px-8 py-8 border-b border-gray-200">
+            {/* Edit Button */}
+            {!editing && (
+              <div className="absolute top-8 right-8">
                 <button
                   onClick={() => setEditing(true)}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors shadow-sm"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
                   Edit
                 </button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+              </div>
+            )}
 
-      {error && (
-        <div className="mb-6 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
-          <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-            </svg>
-          </div>
-          <p className="text-sm text-red-700 font-medium">{error}</p>
-        </div>
-      )}
-
-      {/* Customer Information Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 mb-6 overflow-hidden">
-        <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-50/50 border-b border-gray-100">
-          <h3 className="text-lg font-semibold text-gray-900">Customer Information</h3>
-        </div>
-        <div className="p-6">
-          {loading ? (
-            <div className="space-y-4 animate-pulse">
-              <div className="h-10 bg-gray-100 rounded-lg"></div>
-              <div className="h-10 bg-gray-100 rounded-lg"></div>
-            </div>
-          ) : editing ? (
-            <div className="space-y-5">
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Customer Name
-                </label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 transition-all"
-                  placeholder="Enter customer full name"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Mobile Number
-                </label>
-                <input
-                  type="tel"
-                  value={mobileNumber}
-                  onChange={(e) => setMobileNumber(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 transition-all"
-                  placeholder="e.g., +1234567890"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold text-gray-700 mb-2">
-                  Customer Number <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={customerNumber}
-                  onChange={(e) => setCustomerNumber(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 transition-all"
-                  placeholder="e.g., Cust-001"
-                />
-              </div>
-              <div className="flex items-center gap-3 p-4 rounded-lg border border-gray-200 bg-gray-50">
-                <input
-                  id="enabled"
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                  className="h-5 w-5 text-green-power-500 focus:ring-green-power-500 border-gray-300 rounded cursor-pointer"
-                />
-                <label htmlFor="enabled" className="block text-sm font-medium text-gray-700 cursor-pointer">
-                  Enable customer access
-                </label>
-              </div>
-              <p className="text-xs text-gray-500">
-                Disabled customers cannot log in to the portal
-              </p>
-              <div className="flex items-center gap-3 pt-2">
-                <button
-                  onClick={() => {
-                    setEditing(false);
-                    setName(customer?.name || '');
-                    setMobileNumber(customer?.mobileNumber || '');
-                    setCustomerNumber(customer?.customerNumber || '');
-                    setEnabled(customer?.enabled ?? true);
-                    setError('');
-                  }}
-                  className="px-4 py-2 text-sm font-semibold text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-power-600 to-green-power-700 rounded-lg hover:from-green-power-700 hover:to-green-power-800 disabled:opacity-50 transition-all shadow-sm"
-                >
-                  {saving ? (
-                    <span className="flex items-center gap-2">
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      Saving...
-                    </span>
-                  ) : (
-                    'Save Changes'
-                  )}
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {customer?.name && (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Customer Name</p>
-                  <p className="text-lg font-bold text-gray-900">
-                    {customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()}
-                  </p>
+            {editing ? (
+              /* Edit Form */
+              <div className="space-y-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-bold text-gray-900">Edit Customer</h2>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setEditing(false);
+                        setName(customer?.name || '');
+                        setMobileNumber(customer?.mobileNumber || '');
+                        setCustomerNumber(customer?.customerNumber || '');
+                        setEnabled(customer?.enabled !== false);
+                        setCanViewAllProjects(customer?.canViewAllProjects === true);
+                        setError('');
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSave}
+                      disabled={saving}
+                      className="px-4 py-2 text-sm font-semibold text-white bg-green-power-600 rounded-lg hover:bg-green-power-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      {saving ? 'Saving...' : 'Save Changes'}
+                    </button>
+                  </div>
                 </div>
-              )}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Customer Number</p>
-                <p className="text-lg font-bold text-gray-900">
-                  {customer?.customerNumber 
-                    ? customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)
-                    : 'N/A'}
-                </p>
-              </div>
-              {customer?.mobileNumber && (
-                <div className="space-y-2">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Mobile Number</p>
-                  <p className="text-lg font-medium text-gray-900">
-                    {customer.mobileNumber}
-                  </p>
-                </div>
-              )}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Email</p>
-                <p className="text-lg font-medium text-gray-900 break-words">
-                  {customer?.email || 'N/A'}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Status</p>
-                <span
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold ${
-                    customer?.enabled
-                      ? 'bg-green-100 text-green-700 border border-green-200'
-                      : 'bg-red-100 text-red-700 border border-red-200'
-                  }`}
-                >
-                  <div className={`w-2.5 h-2.5 rounded-full ${customer?.enabled ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                  {customer?.enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Assigned Projects Card */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-4 bg-gradient-to-r from-gray-50 to-gray-50/50 border-b border-gray-100">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Assigned Projects</h3>
-            <span className="px-3 py-1 rounded-full bg-gray-100 text-xs font-semibold text-gray-700">
-              {projects.length} {projects.length === 1 ? 'project' : 'projects'}
-            </span>
-          </div>
-        </div>
-        {projects.length === 0 ? (
-          <div className="p-12 text-center">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gray-100 mb-4">
-              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-              </svg>
-            </div>
-            <p className="text-base font-medium text-gray-700 mb-1">No projects assigned</p>
-            <p className="text-sm text-gray-500 mb-4">This customer doesn&apos;t have any projects yet</p>
-            <Link
-              href="/projects/new"
-              className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-power-600 to-green-power-700 rounded-lg hover:from-green-power-700 hover:to-green-power-800 transition-all shadow-sm"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              Assign a Project
-            </Link>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {projects.map((project) => (
-              <Link
-                key={project.id}
-                href={`/projects/${project.id}`}
-                className="block px-6 py-4 hover:bg-gray-50 transition-colors group"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4 flex-1 min-w-0">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-power-500 to-green-power-600 flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow-md transition-shadow">
-                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
-                      </svg>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Customer Name
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
+                      placeholder="Enter customer name"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Customer Number
+                    </label>
+                    <input
+                      type="text"
+                      value={customerNumber}
+                      onChange={(e) => setCustomerNumber(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
+                      placeholder="Enter customer number"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Mobile Number
+                    </label>
+                    <input
+                      type="text"
+                      value={mobileNumber}
+                      onChange={(e) => setMobileNumber(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
+                      placeholder="Enter mobile number"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      value={customer?.email || ''}
+                      disabled
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
+                      placeholder="Email (read-only)"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Email cannot be changed</p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Status
+                    </label>
+                    <div className="flex items-center gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="status"
+                          checked={enabled}
+                          onChange={() => setEnabled(true)}
+                          className="w-4 h-4 text-green-power-600 focus:ring-green-power-500"
+                        />
+                        <span className="text-sm text-gray-700">Enabled</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="status"
+                          checked={!enabled}
+                          onChange={() => setEnabled(false)}
+                          className="w-4 h-4 text-red-600 focus:ring-red-500"
+                        />
+                        <span className="text-sm text-gray-700">Disabled</span>
+                      </label>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-base font-semibold text-gray-900 group-hover:text-green-power-700 transition-colors">
-                        {project.name}
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-3 cursor-pointer group">
+                      <div className="relative">
+                        <input
+                          type="checkbox"
+                          checked={canViewAllProjects}
+                          onChange={(e) => setCanViewAllProjects(e.target.checked)}
+                          className="sr-only"
+                        />
+                        <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${
+                          canViewAllProjects ? 'bg-green-power-600' : 'bg-gray-300'
+                        }`}>
+                          <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform duration-200 ${
+                            canViewAllProjects ? 'translate-x-5' : 'translate-x-0'
+                          }`} style={{ marginTop: '2px', marginLeft: '2px' }}></div>
+                        </div>
                       </div>
-                      {project.year && (
-                        <div className="flex items-center gap-2 text-sm text-gray-500 mt-1">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      <div className="flex-1">
+                        <span className="text-sm font-medium text-gray-700 block">
+                          Allow customer to view all projects
+                        </span>
+                        <span className="text-xs text-gray-500 mt-0.5 block">
+                          If enabled, customer can see all projects for their customer number. If disabled, customer can only see the specific project they logged in with.
+                        </span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* View Mode */
+              <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                {/* Left Section - Customer Info */}
+                <div className="flex items-start gap-6 flex-1 min-w-0">
+                  {/* Avatar */}
+                  <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 via-cyan-500 to-emerald-500 flex items-center justify-center shadow-xl flex-shrink-0 ring-4 ring-white">
+                    <span className="text-white font-bold text-3xl">
+                      {customer?.name 
+                        ? customer.name.charAt(0).toUpperCase()
+                        : customer?.customerNumber?.charAt(0).toUpperCase() || 'C'}
+                    </span>
+                  </div>
+                  
+                  {/* Customer Details */}
+                  <div className="flex-1 min-w-0">
+                    <div className="mb-3">
+                      <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+                        {customer?.name 
+                          ? customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()
+                          : 'Customer'}
+                      </h1>
+                      <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
+                        <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Customer Number</span>
+                        <span className="text-sm font-bold text-blue-700">
+                          {customer?.customerNumber 
+                            ? customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)
+                            : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                    
+                    {/* Contact Information */}
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center gap-3 text-sm">
+                        <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                           </svg>
-                          Year: {project.year}
+                        </div>
+                        <span className="text-gray-700 font-medium">{customer?.email || 'N/A'}</span>
+                      </div>
+                      
+                      {customer?.mobileNumber && (
+                        <div className="flex items-center gap-3 text-sm">
+                          <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
+                            <svg className="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                          </div>
+                          <span className="text-gray-700 font-medium">{customer.mobileNumber}</span>
                         </div>
                       )}
                     </div>
+                    
+                    {/* Status Badge */}
+                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 bg-white">
+                      <div className={`w-3 h-3 rounded-full ${customer?.enabled ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
+                      <span className={`text-sm font-bold ${customer?.enabled ? 'text-green-700' : 'text-red-700'}`}>
+                        {customer?.enabled ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
                   </div>
-                  <svg className="w-5 h-5 text-gray-400 group-hover:text-green-power-600 group-hover:translate-x-1 transition-all" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </div>
+                
+                {/* Right Section - Quick Stats */}
+                <div className="flex flex-col sm:flex-row lg:flex-col gap-4 lg:min-w-[200px]">
+                  <div className="px-6 py-4 rounded-xl bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200">
+                    <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Total Projects</div>
+                    <div className="text-3xl font-bold text-blue-700">{projects.length}</div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {error && (
+            <div className="mx-8 my-6 p-4 rounded-xl bg-red-50 border border-red-200 flex items-start gap-3">
+              <div className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <p className="text-sm text-red-700 font-medium">{error}</p>
+            </div>
+          )}
+
+          {/* Assigned Projects Section */}
+          <div className="px-8 py-6">
+            <div className="flex items-center justify-between mb-6">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900 mb-1">Assigned Projects</h3>
+                <p className="text-sm text-gray-600">Manage and view all projects for this customer</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
+                  <span className="text-sm font-bold text-blue-700">{projects.length}</span>
+                  <span className="text-xs text-blue-600 ml-1">{projects.length === 1 ? 'project' : 'projects'}</span>
+                </span>
+                <Link
+                  href="/projects/new"
+                  className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-gradient-to-r from-green-power-600 to-green-power-700 rounded-lg hover:from-green-power-700 hover:to-green-power-800 transition-all shadow-sm"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  New Project
+                </Link>
+              </div>
+            </div>
+            
+            {projects.length === 0 ? (
+              <div className="py-12 text-center">
+                <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 mb-6 shadow-inner">
+                  <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
                 </div>
-              </Link>
-            ))}
+                <p className="text-lg font-semibold text-gray-900 mb-2">No projects assigned</p>
+                <p className="text-sm text-gray-600 mb-6 max-w-md mx-auto">This customer doesn&apos;t have any projects yet. Create a new project to get started.</p>
+                <Link
+                  href="/projects/new"
+                  className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-power-600 to-green-power-700 rounded-xl hover:from-green-power-700 hover:to-green-power-800 transition-all shadow-md hover:shadow-lg"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create First Project
+                </Link>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {projects.map((project) => (
+                  <Link
+                    key={project.id}
+                    href={`/projects/${project.id}`}
+                    className="group relative bg-gradient-to-br from-white to-gray-50 rounded-xl border-2 border-gray-200 hover:border-green-power-300 p-6 transition-all duration-300 hover:shadow-lg hover:-translate-y-1"
+                  >
+                    {/* Gradient accent bar */}
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-green-power-500 to-emerald-500 rounded-t-xl"></div>
+                    
+                    <div className="flex items-start gap-4">
+                      <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-green-power-500 to-emerald-600 flex items-center justify-center flex-shrink-0 shadow-md group-hover:scale-110 group-hover:rotate-3 transition-all duration-300">
+                        <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                        </svg>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-green-power-700 transition-colors line-clamp-1">
+                          {project.name}
+                        </h4>
+                        {project.year && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                            <span className="font-medium">{project.year}</span>
+                          </div>
+                        )}
+                      </div>
+                      <svg className="w-5 h-5 text-gray-400 group-hover:text-green-power-600 group-hover:translate-x-1 transition-all flex-shrink-0 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

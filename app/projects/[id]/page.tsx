@@ -1,16 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
-import { PROJECT_FOLDER_STRUCTURE } from '@/lib/folderStructure';
+import { PROJECT_FOLDER_STRUCTURE, Folder } from '@/lib/folderStructure';
 import { deleteFolder } from '@/lib/cloudinary';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { translateFolderPath } from '@/lib/translations';
 
 interface Project {
   id: string;
@@ -26,6 +28,222 @@ export default function ProjectDetailPage() {
         <ProjectDetailContent />
       </AdminLayout>
     </ProtectedRoute>
+  );
+}
+
+const folderConfig: Record<string, { description: string; icon: string; gradient: string; color: string; subfolderBg: string }> = {
+  '02_Photos': {
+    description: 'Progress photos and visual documentation',
+    icon: '📸',
+    gradient: 'from-purple-500 to-pink-500',
+    color: 'text-purple-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
+  '03_Reports': {
+    description: 'Daily and weekly reports from the team',
+    icon: '📊',
+    gradient: 'from-green-500 to-emerald-500',
+    color: 'text-green-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
+  '04_Emails': {
+    description: 'Email communications and correspondence',
+    icon: '📧',
+    gradient: 'from-indigo-500 to-blue-500',
+    color: 'text-indigo-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
+  '05_Quotations': {
+    description: 'Quotes, estimates and pricing documents',
+    icon: '💰',
+    gradient: 'from-yellow-500 to-amber-500',
+    color: 'text-yellow-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
+  '06_Invoices': {
+    description: 'Invoices and billing documents',
+    icon: '🧾',
+    gradient: 'from-red-500 to-rose-500',
+    color: 'text-red-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
+  '07_Delivery_Notes': {
+    description: 'Delivery notes and material tracking',
+    icon: '🚚',
+    gradient: 'from-teal-500 to-cyan-500',
+    color: 'text-teal-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
+  '08_General': {
+    description: 'General documents and miscellaneous files',
+    icon: '📁',
+    gradient: 'from-slate-500 to-gray-600',
+    color: 'text-slate-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
+};
+
+function ChildList({ childrenFolders, projectId, accentColor, subfolderBg }: { childrenFolders: Folder[]; projectId: string; accentColor: string; subfolderBg: string }) {
+  const { t } = useLanguage();
+  const router = useRouter();
+
+  const handleSubfolderClick = (folderPath: string) => {
+    router.push(`/files/${projectId}?folder=${encodeURIComponent(folderPath)}&from=project`);
+  };
+
+  return (
+    <div className="max-h-[240px] overflow-y-auto space-y-2 pt-2 pr-1 custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-300">
+      {childrenFolders.map((child, idx) => {
+        return (
+          <div
+            key={child.path}
+            onClick={() => handleSubfolderClick(child.path)}
+            className={`group rounded-lg px-4 py-3 border ${subfolderBg} hover:shadow-md transition-all duration-200 cursor-pointer`}
+            style={{ animationDelay: `${idx * 50}ms` }}
+          >
+            <div className="flex items-center gap-3">
+              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${accentColor} flex items-center justify-center group-hover:scale-110 transition-transform duration-200 shadow-sm`}>
+                <span className="text-base">📄</span>
+              </div>
+              <div className="flex-1 text-sm font-semibold text-gray-800 group-hover:text-gray-900 transition-colors duration-200">
+                {translateFolderPath(child.path, t)}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FolderCard({ folder, projectId }: { folder: Folder; projectId: string }) {
+  const { t } = useLanguage();
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const hasChildren = folder.children && folder.children.length > 0;
+  const baseConfig = folderConfig[folder.path] || {
+    description: 'Folder contents',
+    icon: '📁',
+    gradient: 'from-gray-500 to-gray-600',
+    color: 'text-gray-600',
+    subfolderBg: 'bg-gray-50 border-gray-200',
+  };
+  const config = {
+    ...baseConfig,
+    description: t(`folders.${folder.path}.description`) || baseConfig.description,
+  };
+
+  const handleCardClick = () => {
+    if (hasChildren) {
+      setOpen((v) => !v);
+    } else {
+      router.push(`/files/${projectId}?folder=${encodeURIComponent(folder.path)}&from=project`);
+    }
+  };
+
+  return (
+    <div className="group relative overflow-hidden rounded-2xl bg-white shadow-lg hover:shadow-2xl transition-all duration-300 border border-gray-100 hover:border-green-power-200 hover:-translate-y-1">
+      {/* Gradient accent bar */}
+      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${config.gradient}`}></div>
+      
+      {/* Animated background gradient on hover */}
+      <div className={`absolute inset-0 bg-gradient-to-br ${config.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
+      
+      <div className="relative">
+        <button
+          onClick={handleCardClick}
+          className="w-full flex items-center justify-between px-6 py-5 text-left hover:bg-gradient-to-r hover:from-transparent hover:to-gray-50/50 transition-all duration-200"
+        >
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            {/* Icon with gradient background */}
+            <div className={`flex-shrink-0 w-14 h-14 rounded-xl bg-gradient-to-br ${config.gradient} flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
+              <span className="text-2xl filter drop-shadow-sm">{config.icon}</span>
+            </div>
+            
+            <div className="flex-1 min-w-0">
+              <div className="text-lg font-bold text-gray-900 mb-1 group-hover:text-green-power-700 transition-colors duration-200">
+                {translateFolderPath(folder.path, t)}
+              </div>
+              <div className="text-xs text-gray-500 font-medium">{t(`folders.${folder.path}.description`) || config.description}</div>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+            {hasChildren && (
+              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${config.gradient} flex items-center justify-center transition-transform duration-300 ${open ? 'rotate-180' : ''}`}>
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            )}
+            {!hasChildren && (
+              <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${config.gradient} flex items-center justify-center transition-transform duration-300`}>
+                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                </svg>
+              </div>
+            )}
+          </div>
+        </button>
+        
+        {/* Smooth accordion animation */}
+        <div 
+          className={`overflow-hidden transition-all duration-300 ease-in-out ${
+            open ? 'max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+          }`}
+        >
+          {hasChildren && (
+            <div className="px-6 pb-6 border-t border-gray-100">
+              <ChildList childrenFolders={folder.children!} projectId={projectId} accentColor={config.gradient} subfolderBg={config.subfolderBg} />
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProjectFoldersSection({ projectId, loading }: { projectId: string; loading: boolean }) {
+  const { t } = useLanguage();
+  const folders = useMemo(() => PROJECT_FOLDER_STRUCTURE.filter(
+    (folder) => folder.path !== '00_New_Not_Viewed_Yet_' && folder.path !== '01_Customer_Uploads'
+  ), []);
+
+  if (loading) {
+    return (
+      <div className="mb-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Project Folders</h2>
+          <p className="text-sm text-gray-600">Click on any folder to manage files</p>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 animate-pulse">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="h-32 bg-gray-100 rounded-2xl"></div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="mb-6">
+        <h2 className="text-2xl font-bold text-gray-900 mb-2">Project Folders</h2>
+        <p className="text-sm text-gray-600">Click on any folder to manage files</p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {folders.map((folder, idx) => (
+          <div
+            key={folder.path}
+            style={{ animationDelay: `${idx * 100}ms` }}
+            className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+          >
+            <FolderCard folder={folder} projectId={projectId} />
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -292,114 +510,8 @@ function ProjectDetailContent() {
           </div>
         )}
 
-        {/* Folder Structure - Grid Layout */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Project Folders</h2>
-              <p className="text-sm text-gray-600 mt-1">Click on any folder to manage files</p>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-pulse">
-              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => (
-                <div key={i} className="h-32 bg-gray-100 rounded-lg"></div>
-              ))}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {PROJECT_FOLDER_STRUCTURE.map((folder) => {
-                const getFolderIcon = (path: string) => {
-                  if (path === '00_New_Not_Viewed_Yet_') return '🔔';
-                  if (path.startsWith('01_')) return '📤';
-                  if (path.startsWith('02_')) return '📷';
-                  if (path.startsWith('03_')) return '📄';
-                  if (path.startsWith('04_')) return '✉️';
-                  if (path.startsWith('05_')) return '💰';
-                  if (path.startsWith('06_')) return '🧾';
-                  if (path.startsWith('07_')) return '📦';
-                  if (path.startsWith('08_')) return '📋';
-                  return '📁';
-                };
-
-                const getFolderColor = (path: string) => {
-                  if (path === '00_New_Not_Viewed_Yet_') return 'from-orange-50 to-orange-100 border-orange-200';
-                  if (path.startsWith('01_')) return 'from-blue-50 to-blue-100 border-blue-200';
-                  if (path.startsWith('02_')) return 'from-purple-50 to-purple-100 border-purple-200';
-                  if (path.startsWith('03_')) return 'from-green-power-50 to-green-power-100 border-green-power-200';
-                  if (path.startsWith('04_')) return 'from-yellow-50 to-yellow-100 border-yellow-200';
-                  if (path.startsWith('05_')) return 'from-indigo-50 to-indigo-100 border-indigo-200';
-                  if (path.startsWith('06_')) return 'from-pink-50 to-pink-100 border-pink-200';
-                  if (path.startsWith('07_')) return 'from-teal-50 to-teal-100 border-teal-200';
-                  if (path.startsWith('08_')) return 'from-gray-50 to-gray-100 border-gray-200';
-                  return 'from-gray-50 to-gray-100 border-gray-200';
-                };
-
-                return (
-                  <div
-                    key={folder.path}
-                    className={`bg-gradient-to-br ${getFolderColor(folder.path)} rounded-xl p-5 border-2 hover:shadow-lg transition-all duration-200 cursor-pointer group`}
-                  >
-                    <Link href={`/files/${projectId}?folder=${encodeURIComponent(folder.path)}`} className="block">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex items-center space-x-3">
-                          <span className="text-3xl">{getFolderIcon(folder.path)}</span>
-                          <div>
-                            <h3 className="font-semibold text-gray-900 text-sm leading-tight group-hover:text-green-power-700 transition-colors">
-                              {folder.name.replace(/^\d+_/, '').replace(/_/g, ' ')}
-                            </h3>
-                            {folder.children && (
-                              <p className="text-xs text-gray-600 mt-1">
-                                {folder.children.length} {folder.children.length === 1 ? 'subfolder' : 'subfolders'}
-                              </p>
-                            )}
-                          </div>
-                        </div>
-                        <span className="text-gray-400 group-hover:text-green-power-600 transition-colors">→</span>
-                      </div>
-
-                      {folder.children && folder.children.length > 0 && (
-                        <div className="mt-4 pt-4 border-t-2 border-white/60">
-                          <div className="grid grid-cols-1 gap-2">
-                            {folder.children.slice(0, 3).map((child, idx) => (
-                              <Link
-                                key={child.path}
-                                href={`/files/${projectId}?folder=${encodeURIComponent(child.path)}`}
-                                onClick={(e) => e.stopPropagation()}
-                                className="flex items-center justify-between px-3 py-2.5 text-xs font-medium text-gray-800 bg-white/80 hover:bg-white hover:shadow-sm rounded-lg border border-white/40 transition-all duration-200 group"
-                              >
-                                <span className="flex items-center space-x-2">
-                                  <span className="w-1.5 h-1.5 bg-gray-400 rounded-full group-hover:bg-green-power-500 transition-colors"></span>
-                                  <span className="group-hover:text-green-power-700 transition-colors">{child.name.replace(/_/g, ' ')}</span>
-                                </span>
-                                <span className="text-gray-300 group-hover:text-green-power-500 transition-colors text-[10px]">→</span>
-                              </Link>
-                            ))}
-                            {folder.children.length > 3 && (
-                              <div className="px-3 py-2 text-xs text-gray-600 bg-white/50 rounded-lg border border-white/30 text-center font-medium">
-                                +{folder.children.length - 3} more subfolder{folder.children.length - 3 > 1 ? 's' : ''}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </Link>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <p className="text-xs text-blue-800 flex items-start">
-              <span className="mr-2 mt-0.5">ℹ️</span>
-              <span>
-                <strong>Note:</strong> Folder structure is predefined and identical for all projects. Click on any folder card to upload or manage files within that folder.
-              </span>
-            </p>
-          </div>
-        </div>
+        {/* Folder Structure - Customer Panel Style */}
+        <ProjectFoldersSection projectId={projectId} loading={loading} />
 
       {/* Confirmation Modal */}
       <ConfirmationModal

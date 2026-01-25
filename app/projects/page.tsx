@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -27,9 +28,10 @@ interface Project {
 }
 
 export default function ProjectsPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="Projects">
+      <AdminLayout title={t('navigation.projects')}>
         <ProjectsContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -37,6 +39,7 @@ export default function ProjectsPage() {
 }
 
 function ProjectsContent() {
+  const { t } = useLanguage();
   const [projects, setProjects] = useState<Project[]>([]);
   const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -199,21 +202,21 @@ function ProjectsContent() {
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Projects</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('projects.title')}</h2>
               <p className="text-xs md:text-sm text-gray-600 mt-1">
-                Manage all projects
+                {t('projects.description')}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
-                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('common.total')}</p>
                 <p className="text-sm font-semibold text-gray-900">{totalProjects}</p>
               </div>
               <Link
                 href="/projects/new"
                 className="px-4 py-2 bg-green-power-600 text-white text-sm font-medium rounded-lg hover:bg-green-power-700 transition-colors"
               >
-                + New Project
+                + {t('projects.newProject')}
               </Link>
             </div>
           </div>
@@ -222,7 +225,7 @@ function ProjectsContent() {
         <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1.5">
-              Filter by Project / Customer / Email / Year
+              {t('projects.filterLabel')}
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
@@ -245,7 +248,7 @@ function ProjectsContent() {
                 type="text"
                 value={filterSearch}
                 onChange={(e) => setFilterSearch(e.target.value)}
-                placeholder="Search by project name, customer number, email, or year"
+                placeholder={t('projects.searchPlaceholder')}
                 className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
               />
             </div>

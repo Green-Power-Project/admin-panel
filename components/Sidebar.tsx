@@ -3,28 +3,30 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface NavItem {
-  name: string;
+  nameKey: string;
   href: string;
   icon: string;
 }
 
 const navigation: NavItem[] = [
-  { name: 'Dashboard', href: '/dashboard', icon: '📊' },
-  { name: 'Projects', href: '/projects', icon: '📁' },
-  { name: 'Customers', href: '/customers', icon: '👥' },
-  { name: 'Files', href: '/files', icon: '📤' },
-  { name: 'Tracking', href: '/tracking', icon: '👁️' },
-  { name: 'Approvals', href: '/approvals', icon: '✅' },
-  { name: 'Audit Logs', href: '/audit-logs', icon: '📋' },
-  { name: 'Customer Uploads', href: '/customer-uploads', icon: '📥' },
-  { name: 'Profile', href: '/profile', icon: '⚙️' },
+  { nameKey: 'navigation.dashboard', href: '/dashboard', icon: '📊' },
+  { nameKey: 'navigation.projects', href: '/projects', icon: '📁' },
+  { nameKey: 'navigation.customers', href: '/customers', icon: '👥' },
+  { nameKey: 'navigation.files', href: '/files', icon: '📤' },
+  { nameKey: 'navigation.tracking', href: '/tracking', icon: '👁️' },
+  { nameKey: 'navigation.approvals', href: '/approvals', icon: '✅' },
+  { nameKey: 'navigation.auditLogs', href: '/audit-logs', icon: '📋' },
+  { nameKey: 'navigation.customerUploads', href: '/customer-uploads', icon: '📥' },
+  { nameKey: 'navigation.profile', href: '/profile', icon: '⚙️' },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
   const { currentUser } = useAuth();
+  const { t } = useLanguage();
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-b from-green-power-700 to-green-power-800 text-white w-64 fixed left-0 top-0 z-40 shadow-2xl">
@@ -40,7 +42,7 @@ export default function Sidebar() {
           </div>
           <div>
             <h1 className="text-lg font-bold text-white">Green Power</h1>
-            <p className="text-xs text-green-power-200">Admin Panel</p>
+            <p className="text-xs text-green-power-200">{t('navigation.adminPanel')}</p>
           </div>
         </div>
       </div>
@@ -51,7 +53,7 @@ export default function Sidebar() {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
           return (
             <Link
-              key={item.name}
+              key={item.nameKey}
               href={item.href}
               prefetch={true}
               className={`
@@ -64,7 +66,7 @@ export default function Sidebar() {
               `}
             >
               <span className="text-xl">{item.icon}</span>
-              <span className="text-sm">{item.name}</span>
+              <span className="text-sm">{t(item.nameKey)}</span>
             </Link>
           );
         })}
@@ -82,7 +84,7 @@ export default function Sidebar() {
             <p className="text-xs font-medium text-white truncate">
               {currentUser?.email || 'Admin'}
             </p>
-            <p className="text-xs text-green-power-200">Administrator</p>
+            <p className="text-xs text-green-power-200">{t('navigation.administrator')}</p>
           </div>
         </div>
       </div>

@@ -20,6 +20,7 @@ interface Project {
   name: string;
   year?: number;
   customerId: string;
+  projectNumber?: string;
 }
 
 export default function EditProjectPage() {
@@ -208,6 +209,22 @@ function EditProjectContent() {
                   {error}
                 </div>
               )}
+
+              <div>
+                <label htmlFor="projectNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Project Number
+                </label>
+                <input
+                  id="projectNumber"
+                  type="text"
+                  value={project?.projectNumber || ''}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Project number is auto-generated and cannot be changed.
+                </p>
+              </div>
 
               <div>
                 <label htmlFor="customerId" className="block text-sm font-medium text-gray-700 mb-1.5">

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { db } from '@/lib/firebase';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { translateFolderPath, translateStatus } from '@/lib/translations';
 import {
   collection,
   onSnapshot,
@@ -48,6 +50,7 @@ export default function AuditLogsPage() {
 }
 
 function AuditLogsContent() {
+  const { t } = useLanguage();
   const [allLogs, setAllLogs] = useState<AuditLogData[]>([]);
   const [logs, setLogs] = useState<AuditLogData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -524,7 +527,7 @@ function AuditLogsContent() {
                               : 'bg-yellow-100 text-yellow-800'
                           }`}
                         >
-                          {log.isRead ? '✓ Read' : '● Unread'}
+                          {log.isRead ? `✓ ${translateStatus('read', t)}` : `● ${translateStatus('unread', t)}`}
                         </span>
                       </td>
                       <td className="px-3 py-2.5">
@@ -537,7 +540,7 @@ function AuditLogsContent() {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="text-xs text-gray-900 truncate">
-                          {log.folderPath.split('/').pop() || log.folderPath}
+                          {translateFolderPath(log.folderPath, t)}
                         </div>
                       </td>
                       <td className="px-3 py-2.5">

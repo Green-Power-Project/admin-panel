@@ -3,6 +3,7 @@
 import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -11,6 +12,7 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, currentUser, loading: authLoading } = useAuth();
+  const { t } = useLanguage();
   const router = useRouter();
 
   // Redirect if already logged in as admin (only after loading completes)
@@ -36,17 +38,17 @@ export default function LoginPage() {
       
       // Handle admin access denial
       if (errorMessage.includes('Access denied') || errorMessage.includes('Admin privileges')) {
-        setError('Access denied. This account does not have admin privileges.');
+        setError(t('login.accessDenied'));
       } else if (errorCode === 'auth/invalid-credential' || 
           errorCode === 'auth/user-not-found' || 
           errorCode === 'auth/wrong-password') {
-        setError('Invalid email or password. Please check your credentials and try again.');
+        setError(t('login.invalidCredentials'));
       } else if (errorCode === 'auth/too-many-requests') {
-        setError('Too many failed login attempts. Please try again later.');
+        setError(t('login.tooManyRequests'));
       } else if (errorCode === 'auth/network-request-failed') {
-        setError('Network error. Please check your connection and try again.');
+        setError(t('login.networkError'));
       } else {
-        setError(errorMessage || 'Unable to sign in. Please try again.');
+        setError(errorMessage || t('login.signInError'));
       }
     } finally {
       setLoading(false);
@@ -69,12 +71,12 @@ export default function LoginPage() {
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight mb-1">
             Green Power
           </h1>
-          <p className="text-sm text-gray-500 font-normal">Admin Panel</p>
+          <p className="text-sm text-gray-500 font-normal">{t('login.adminPanel')}</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-sm shadow-sm">
           <div className="px-8 py-10">
-            <h2 className="text-lg font-semibold text-gray-900 mb-6">Admin Sign In</h2>
+            <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('login.title')}</h2>
 
             <form onSubmit={handleSubmit} className="space-y-5">
               {error && (
@@ -85,7 +87,7 @@ export default function LoginPage() {
 
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Email address
+                  {t('login.email')}
                 </label>
                 <input
                   id="email"
@@ -100,7 +102,7 @@ export default function LoginPage() {
 
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Password
+                  {t('login.password')}
                 </label>
                 <div className="relative">
                   <input
@@ -110,7 +112,7 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                    placeholder="Enter your password"
+                    placeholder={t('login.enterPassword')}
                   />
                   <button
                     type="button"
@@ -136,14 +138,14 @@ export default function LoginPage() {
                 disabled={loading}
                 className="w-full bg-green-power-500 text-white py-2.5 px-4 rounded-sm text-sm font-medium hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {loading ? 'Signing in...' : 'Sign in'}
+                {loading ? t('login.signingIn') : t('login.signIn')}
               </button>
             </form>
           </div>
         </div>
 
         <p className="mt-6 text-center text-xs text-gray-500">
-          © {new Date().getFullYear()} Green Power. All rights reserved.
+          {t('login.copyright', { year: new Date().getFullYear() })}
         </p>
       </div>
     </div>

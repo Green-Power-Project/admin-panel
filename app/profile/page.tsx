@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
 import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
 import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 'firebase/auth';
@@ -22,6 +23,7 @@ export default function ProfilePage() {
 
 function ProfileContent() {
   const { currentUser } = useAuth();
+  const { language, setLanguage, t } = useLanguage();
   const [name, setName] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -54,7 +56,7 @@ function ProfileContent() {
 
     } catch (error) {
       console.error('Error loading profile:', error);
-      setError('Failed to load profile information');
+      setError(t('profile.loadingProfile'));
     } finally {
       setLoading(false);
     }
@@ -87,11 +89,11 @@ function ProfileContent() {
         });
       }
 
-      setSuccess('Name updated successfully');
+      setSuccess(t('profile.nameUpdated'));
       setTimeout(() => setSuccess(''), 3000);
     } catch (error: any) {
       console.error('Error updating name:', error);
-      setError(error.message || 'Failed to update name');
+      setError(error.message || t('profile.nameUpdateFailed'));
     } finally {
       setSaving(false);
     }
@@ -118,13 +120,13 @@ function ProfileContent() {
     }
 
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match');
+      setError(t('profile.passwordMismatch'));
       setSaving(false);
       return;
     }
 
     if (newPassword.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(t('profile.passwordTooShort'));
       setSaving(false);
       return;
     }
@@ -146,7 +148,7 @@ function ProfileContent() {
       // Update password using the authenticated user
       await updatePassword(authUser, newPassword);
 
-      setSuccess('Password updated successfully');
+      setSuccess(t('profile.passwordUpdated'));
       setShowPasswordSection(false);
       setCurrentPassword('');
       setNewPassword('');
@@ -158,11 +160,11 @@ function ProfileContent() {
     } catch (error: any) {
       console.error('Error updating password:', error);
       if (error.code === 'auth/wrong-password') {
-        setError('Current password is incorrect');
+        setError(t('profile.invalidPassword'));
       } else if (error.code === 'auth/weak-password') {
-        setError('Password is too weak');
+        setError(t('profile.passwordTooShort'));
       } else {
-        setError(error.message || 'Failed to update password');
+        setError(error.message || t('profile.passwordUpdateFailed'));
       }
     } finally {
       setSaving(false);
@@ -189,8 +191,8 @@ function ProfileContent() {
       <div className="max-w-5xl mx-auto">
         {/* Header Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Profile Settings</h1>
-          <p className="text-sm text-gray-600">Manage your account information and security settings</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t('profile.title')}</h1>
+          <p className="text-sm text-gray-600">{t('profile.languageDescription')}</p>
         </div>
 
         {/* Alert Messages */}
@@ -235,6 +237,57 @@ function ProfileContent() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Main Settings */}
           <div className="lg:col-span-2 space-y-6">
+            {/* Language Section */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="px-6 py-4 bg-gradient-to-r from-purple-50 to-pink-50 border-b-2 border-purple-200">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">{t('profile.language')}</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">{t('profile.languageDescription')}</p>
+                  </div>
+                </div>
+              </div>
+              <div className="p-6">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-2xl">{language === 'en' ? '🇬🇧' : '🇩🇪'}</span>
+                      <span className="text-sm font-medium text-gray-700">
+                        {language === 'en' ? t('profile.english') : t('profile.german')}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setLanguage('en')}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        language === 'en'
+                          ? 'bg-green-power-600 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      🇬🇧 {t('profile.english')}
+                    </button>
+                    <button
+                      onClick={() => setLanguage('de')}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                        language === 'de'
+                          ? 'bg-green-power-600 text-white shadow-md'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      🇩🇪 {t('profile.german')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Name Section */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
               <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-blue-200">
@@ -244,14 +297,14 @@ function ProfileContent() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
-                  <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
+                  <h3 className="text-lg font-semibold text-gray-900">{t('profile.nameSection')}</h3>
                 </div>
               </div>
               <div className="p-6">
                 <form onSubmit={handleSaveName} className="space-y-5">
                   <div>
                     <label htmlFor="name" className="block text-sm font-semibold text-gray-700 mb-2">
-                      Full Name
+                      {t('common.name')}
                     </label>
                     <input
                       id="name"
@@ -259,9 +312,9 @@ function ProfileContent() {
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 transition-all"
-                      placeholder="Enter your full name"
+                      placeholder={t('profile.nameSection')}
                     />
-                    <p className="mt-2 text-xs text-gray-500">This name will be displayed in your profile</p>
+                    <p className="mt-2 text-xs text-gray-500">{t('profile.nameDescription')}</p>
                   </div>
                   <div className="flex justify-end pt-2">
                     <button
@@ -272,10 +325,10 @@ function ProfileContent() {
                       {saving ? (
                         <span className="flex items-center gap-2">
                           <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                          Saving...
+                          {t('common.saving')}
                         </span>
                       ) : (
-                        'Save Changes'
+                        t('profile.updateName')
                       )}
                     </button>
                   </div>
@@ -293,7 +346,7 @@ function ProfileContent() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
                     </div>
-                    <h3 className="text-lg font-semibold text-gray-900">Password</h3>
+                    <h3 className="text-lg font-semibold text-gray-900">{t('profile.passwordSection')}</h3>
                   </div>
                   <button
                     onClick={() => {
@@ -309,7 +362,7 @@ function ProfileContent() {
                     }}
                     className="px-4 py-2 text-sm font-semibold text-amber-600 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors"
                   >
-                    {showPasswordSection ? 'Cancel' : 'Change'}
+                    {showPasswordSection ? t('common.cancel') : t('profile.changePassword')}
                   </button>
                 </div>
               </div>
@@ -318,7 +371,7 @@ function ProfileContent() {
                   <form onSubmit={handleChangePassword} className="space-y-5">
                     <div>
                       <label htmlFor="currentPassword" className="block text-sm font-semibold text-gray-700 mb-2">
-                        Current Password <span className="text-red-500">*</span>
+                        {t('profile.currentPassword')} <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -327,13 +380,14 @@ function ProfileContent() {
                           value={currentPassword}
                           onChange={(e) => setCurrentPassword(e.target.value)}
                           className="w-full px-4 py-3 pr-12 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                          placeholder="Enter your current password"
+                          placeholder={t('profile.currentPassword')}
                           required
                         />
                         <button
                           type="button"
                           onClick={() => setShowCurrentPassword(!showCurrentPassword)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          title={showCurrentPassword ? t('profile.hidePassword') : t('profile.showPassword')}
                         >
                           {showCurrentPassword ? (
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -350,7 +404,7 @@ function ProfileContent() {
                     </div>
                     <div>
                       <label htmlFor="newPassword" className="block text-sm font-semibold text-gray-700 mb-2">
-                        New Password <span className="text-red-500">*</span>
+                        {t('profile.newPassword')} <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -359,7 +413,7 @@ function ProfileContent() {
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
                           className="w-full px-4 py-3 pr-12 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                          placeholder="Enter new password (min 6 characters)"
+                          placeholder={t('profile.newPassword')}
                           required
                           minLength={6}
                         />
@@ -367,6 +421,7 @@ function ProfileContent() {
                           type="button"
                           onClick={() => setShowNewPassword(!showNewPassword)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          title={showNewPassword ? t('profile.hidePassword') : t('profile.showPassword')}
                         >
                           {showNewPassword ? (
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -383,7 +438,7 @@ function ProfileContent() {
                     </div>
                     <div>
                       <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-700 mb-2">
-                        Confirm New Password <span className="text-red-500">*</span>
+                        {t('profile.confirmPassword')} <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
                         <input
@@ -392,7 +447,7 @@ function ProfileContent() {
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           className="w-full px-4 py-3 pr-12 border-2 border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 transition-all"
-                          placeholder="Confirm new password"
+                          placeholder={t('profile.confirmPassword')}
                           required
                           minLength={6}
                         />
@@ -400,6 +455,7 @@ function ProfileContent() {
                           type="button"
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                           className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                          title={showConfirmPassword ? t('profile.hidePassword') : t('profile.showPassword')}
                         >
                           {showConfirmPassword ? (
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -423,10 +479,10 @@ function ProfileContent() {
                         {saving ? (
                           <span className="flex items-center gap-2">
                             <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                            Updating...
+                            {t('common.saving')}
                           </span>
                         ) : (
-                          'Update Password'
+                          t('profile.changePassword')
                         )}
                       </button>
                     </div>

@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { db } from '@/lib/firebase';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { translateStatus } from '@/lib/translations';
 import {
   collection,
   onSnapshot,
@@ -52,6 +54,7 @@ export default function ApprovalsPage() {
 }
 
 function ApprovalsContent() {
+  const { t } = useLanguage();
   const [allApprovals, setAllApprovals] = useState<ReportApprovalDisplay[]>([]);
   const [approvals, setApprovals] = useState<ReportApprovalDisplay[]>([]);
   const [loading, setLoading] = useState(true);
@@ -278,9 +281,9 @@ function ApprovalsContent() {
   }
 
   function getStatusLabel(status: string): string {
-    if (status === 'approved') return '✓ Approved';
-    if (status === 'auto-approved') return '✓ Auto-Approved';
-    if (status === 'pending') return '● Pending';
+    if (status === 'approved') return `✓ ${translateStatus('approved', t)}`;
+    if (status === 'auto-approved') return `✓ ${translateStatus('autoApproved', t)}`;
+    if (status === 'pending') return `● ${translateStatus('pending', t)}`;
     return status;
   }
 

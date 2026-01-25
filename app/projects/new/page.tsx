@@ -6,7 +6,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, orderBy } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { createProjectFolderStructure } from '@/lib/projectUtils';
 
 interface Customer {
@@ -31,14 +31,35 @@ function NewProjectContent() {
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
   const [customerId, setCustomerId] = useState('');
+  const [projectNumber, setProjectNumber] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [generatingNumber, setGeneratingNumber] = useState(false);
 
   useEffect(() => {
     loadCustomers();
   }, []);
+
+  // Auto-generate project number based on existing projects count
+  async function generateProjectNumber(): Promise<string> {
+    if (!db) return 'PROJ-001';
+    const dbInstance = db;
+
+    setGeneratingNumber(true);
+    try {
+      const projectsSnapshot = await getDocs(collection(dbInstance, 'projects'));
+      const count = projectsSnapshot.size;
+      const nextNumber = String(count + 1).padStart(3, '0');
+      return `PROJ-${nextNumber}`;
+    } catch (error) {
+      console.error('Error generating project number:', error);
+      return 'PROJ-001';
+    } finally {
+      setGeneratingNumber(false);
+    }
+  }
 
   async function loadCustomers() {
     if (!db) return;
@@ -88,9 +109,14 @@ function NewProjectContent() {
     }
 
     try {
+      // Auto-generate project number
+      const generatedProjectNumber = await generateProjectNumber();
+      setProjectNumber(generatedProjectNumber);
+
       const projectData: any = {
         name: name.trim(),
         customerId: customerId.trim(),
+        projectNumber: generatedProjectNumber,
       };
 
       if (year) {
@@ -110,6 +136,46 @@ function NewProjectContent() {
       } catch (folderError) {
         console.error('Error creating folder structure:', folderError);
         // Continue even if folder creation fails - folders will be created when files are uploaded
+      }
+
+      // Send welcome email to customer with project details
+      try {
+        // Fetch customer details
+        const customerQuery = query(
+          collection(dbInstance, 'customers'),
+          where('uid', '==', customerId.trim())
+        );
+        const customerSnapshot = await getDocs(customerQuery);
+        
+        if (!customerSnapshot.empty) {
+          const customerDoc = customerSnapshot.docs[0];
+          const customerData = customerDoc.data();
+          
+          const welcomeResponse = await fetch('/api/notifications/welcome-project', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              projectId,
+              projectNumber: generatedProjectNumber,
+              projectName: name.trim(),
+              customerId: customerId.trim(),
+              customerNumber: customerData.customerNumber || '',
+              customerName: customerData.name || '',
+              customerEmail: customerData.email || '',
+            }),
+          });
+          
+          if (welcomeResponse.ok) {
+            console.log('[project-create] Welcome email sent successfully');
+          } else {
+            console.warn('[project-create] Failed to send welcome email');
+          }
+        }
+      } catch (emailError) {
+        console.error('[project-create] Error sending welcome email:', emailError);
+        // Don't fail project creation if email fails
       }
 
       router.push(`/projects/${projectId}`);
@@ -176,6 +242,23 @@ function NewProjectContent() {
                 )}
                 <p className="mt-1 text-xs text-gray-500">
                   Only enabled customers are shown. One project belongs to one customer.
+                </p>
+              </div>
+
+              <div>
+                <label htmlFor="projectNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Project Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="projectNumber"
+                  type="text"
+                  value={projectNumber}
+                  readOnly
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
+                  placeholder="Auto-generated"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Project number will be auto-generated when you create the project.
                 </p>
               </div>
 

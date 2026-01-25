@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
+import { useLanguage } from '@/contexts/LanguageContext';
+import { translateFolderPath } from '@/lib/translations';
 import { db } from '@/lib/firebase';
 import {
   collection,
@@ -59,6 +61,7 @@ export default function DashboardPage() {
 }
 
 function DashboardContent() {
+  const { t } = useLanguage();
   const [stats, setStats] = useState<DashboardStats>({
     totalProjects: 0,
     totalCustomers: 0,
@@ -312,8 +315,8 @@ function DashboardContent() {
   return (
     <div className="px-8 py-8">
         <div className="mb-8">
-          <h2 className="text-3xl font-bold text-gray-900 mb-2">Dashboard</h2>
-          <p className="text-sm text-gray-600">Overview of customers, projects, and files</p>
+          <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('dashboard.title')}</h2>
+          <p className="text-sm text-gray-600">{t('dashboard.overview')}</p>
         </div>
 
         {/* Statistics Cards */}
@@ -330,25 +333,25 @@ function DashboardContent() {
           ) : (
             <>
               <StatCard
-                title="Total Projects"
+                title={t('dashboard.totalProjects')}
                 value={stats.totalProjects}
                 icon="📁"
                 link="/projects"
               />
               <StatCard
-                title="Total Customers"
+                title={t('dashboard.totalCustomers')}
                 value={stats.totalCustomers}
                 icon="👥"
                 link="/customers"
               />
               <StatCard
-                title="Unread Files"
+                title={t('dashboard.unreadFiles')}
                 value={stats.totalUnreadFiles}
                 icon="🔔"
                 link="/tracking"
               />
               <StatCard
-                title="Approved Reports"
+                title={t('dashboard.approvedReports')}
                 value={stats.approvedReports}
                 icon="✅"
                 link="/approvals"
@@ -383,25 +386,25 @@ function DashboardContent() {
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                 <div className="px-5 py-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-b-2 border-blue-200 flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900">Customers</h3>
-                    <p className="text-xs text-gray-600 mt-0.5">Total: {stats.totalCustomers}</p>
+                    <h3 className="text-sm font-semibold text-gray-900">{t('dashboard.recentCustomers')}</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">{t('common.total')}: {stats.totalCustomers}</p>
                   </div>
                   <Link
                     href="/customers"
                     className="text-xs text-green-power-600 hover:text-green-power-700 font-semibold"
                   >
-                    View all →
+                    {t('dashboard.viewAll')} →
                   </Link>
                 </div>
                 <div className="divide-y divide-gray-200">
                   {customers.length === 0 ? (
                     <div className="px-5 py-8 text-center">
-                      <p className="text-sm text-gray-500">No customers found</p>
+                      <p className="text-sm text-gray-500">{t('common.noResults')}</p>
                       <Link
                         href="/customers/new"
                         className="mt-2 inline-block text-xs text-green-power-600 hover:text-green-power-700"
                       >
-                        Create customer →
+                        {t('common.create')} {t('navigation.customers').toLowerCase()} →
                       </Link>
                     </div>
                   ) : (
@@ -428,7 +431,7 @@ function DashboardContent() {
                               </span>
                             </div>
                             <p className="text-xs text-gray-500 mt-0.5">
-                              {customer.projectCount} {customer.projectCount === 1 ? 'project' : 'projects'}
+                              {customer.projectCount} {customer.projectCount === 1 ? t('dashboard.totalProjects').toLowerCase().replace('total ', '') : t('dashboard.totalProjects').toLowerCase().replace('total ', '')}
                             </p>
                           </div>
                           <span className="text-gray-400">→</span>
@@ -443,25 +446,25 @@ function DashboardContent() {
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                 <div className="px-5 py-4 bg-gradient-to-r from-purple-50 to-pink-50 border-b-2 border-purple-200 flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900">Projects</h3>
-                    <p className="text-xs text-gray-600 mt-0.5">Total: {stats.totalProjects}</p>
+                    <h3 className="text-sm font-semibold text-gray-900">{t('dashboard.recentProjects')}</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">{t('common.total')}: {stats.totalProjects}</p>
                   </div>
                   <Link
                     href="/projects"
                     className="text-xs text-green-power-600 hover:text-green-power-700 font-semibold"
                   >
-                    View all →
+                    {t('dashboard.viewAll')} →
                   </Link>
                 </div>
                 <div className="divide-y divide-gray-200">
                   {projects.length === 0 ? (
                     <div className="px-5 py-8 text-center">
-                      <p className="text-sm text-gray-500">No projects found</p>
+                      <p className="text-sm text-gray-500">{t('common.noResults')}</p>
                       <Link
                         href="/projects/new"
                         className="mt-2 inline-block text-xs text-green-power-600 hover:text-green-power-700"
                       >
-                        Create project →
+                        {t('common.create')} {t('navigation.projects').toLowerCase()} →
                       </Link>
                     </div>
                   ) : (
@@ -505,19 +508,19 @@ function DashboardContent() {
                 <div className="divide-y divide-gray-200">
                   {unreadFiles.length === 0 ? (
                     <div className="px-5 py-8 text-center">
-                      <p className="text-sm text-gray-500">No unread files</p>
+                      <p className="text-sm text-gray-500">{t('common.noResults')}</p>
                       <Link
                         href="/files"
                         className="mt-2 inline-block text-xs text-green-power-600 hover:text-green-power-700"
                       >
-                        Upload files →
+                        {t('common.upload')} {t('navigation.files').toLowerCase()} →
                       </Link>
                     </div>
                   ) : (
                     unreadFiles.slice(0, 2).map((file, index) => (
                       <Link
                         key={`${file.projectId}-${file.filePath}-${index}`}
-                        href={`/files/${file.projectId}`}
+                        href={`/files/${file.projectId}?from=dashboard`}
                         className="block px-5 py-3 hover:bg-gray-50 transition-colors"
                       >
                         <div className="flex items-start justify-between">
@@ -526,7 +529,7 @@ function DashboardContent() {
                               {file.fileName}
                             </p>
                             <p className="text-xs text-gray-500 mt-0.5 truncate">
-                              {file.projectName} • {file.folderPath}
+                              {file.projectName} • {translateFolderPath(file.folderPath, t)}
                             </p>
                           </div>
                           <span className="text-gray-400 ml-2">→</span>
@@ -552,21 +555,21 @@ function DashboardContent() {
                 className="flex items-center px-5 py-3 text-sm font-medium text-white bg-gradient-to-r from-green-power-600 to-green-power-700 hover:from-green-power-700 hover:to-green-power-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
               >
                 <span className="mr-3 text-lg">➕</span>
-                <span>Create New Project</span>
+                <span>{t('common.create')} {t('common.new')} {t('navigation.projects')}</span>
               </Link>
               <Link
                 href="/customers/new"
                 className="flex items-center px-5 py-3 text-sm font-medium text-white bg-gradient-to-r from-green-power-600 to-green-power-700 hover:from-green-power-700 hover:to-green-power-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
               >
                 <span className="mr-3 text-lg">👤</span>
-                <span>Create Customer Account</span>
+                <span>{t('common.create')} {t('navigation.customers')} {t('common.name').toLowerCase()}</span>
               </Link>
               <Link
                 href="/files"
                 className="flex items-center px-5 py-3 text-sm font-medium text-white bg-gradient-to-r from-green-power-600 to-green-power-700 hover:from-green-power-700 hover:to-green-power-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
               >
                 <span className="mr-3 text-lg">📤</span>
-                <span>Upload Files</span>
+                <span>{t('common.upload')} {t('navigation.files')}</span>
               </Link>
             </div>
           </div>

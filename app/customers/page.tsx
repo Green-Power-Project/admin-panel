@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
@@ -11,8 +12,13 @@ import {
   query,
   orderBy,
   where,
+  doc,
+  deleteDoc,
+  getDocs,
 } from 'firebase/firestore';
 import Pagination from '@/components/Pagination';
+import ConfirmationModal from '@/components/ConfirmationModal';
+import AlertModal from '@/components/AlertModal';
 
 interface Customer {
   uid: string;
@@ -34,6 +40,7 @@ export default function CustomersPage() {
 }
 
 function CustomersContent() {
+  const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -42,6 +49,13 @@ function CustomersContent() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+
+  // Delete modal states
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertData, setAlertData] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
 
   useEffect(() => {
     if (!db) return;
@@ -135,6 +149,64 @@ function CustomersContent() {
     setFilteredCustomers(filtered);
     setCurrentPage(1); // Reset to first page when filters change
   }, [customers, filterSearch]);
+
+  const handleDeleteClick = (customer: Customer) => {
+    setCustomerToDelete(customer);
+    setShowDeleteConfirm(true);
+  };
+
+  const handleDeleteCancel = () => {
+    setShowDeleteConfirm(false);
+    setCustomerToDelete(null);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!customerToDelete || !db) {
+      setShowDeleteConfirm(false);
+      setCustomerToDelete(null);
+      return;
+    }
+    const dbInstance = db; // Store for TypeScript narrowing
+
+    setDeleting(true);
+    try {
+      // Find the customer document by uid
+      const customersQuery = query(
+        collection(dbInstance, 'customers'),
+        where('uid', '==', customerToDelete.uid)
+      );
+      
+      const customersSnapshot = await getDocs(customersQuery);
+      if (customersSnapshot.empty) {
+        throw new Error('Customer document not found');
+      }
+
+      // Delete all matching customer documents
+      const deletePromises = customersSnapshot.docs.map((docSnapshot) =>
+        deleteDoc(doc(dbInstance, 'customers', docSnapshot.id))
+      );
+      await Promise.all(deletePromises);
+
+      setShowDeleteConfirm(false);
+      setCustomerToDelete(null);
+      setAlertData({
+        title: 'Success',
+        message: 'Customer deleted successfully',
+        type: 'success',
+      });
+      setShowAlert(true);
+    } catch (error: any) {
+      console.error('Error deleting customer:', error);
+      setAlertData({
+        title: 'Delete Failed',
+        message: error.message || 'Failed to delete customer. Please try again.',
+        type: 'error',
+      });
+      setShowAlert(true);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const totalCustomers = filteredCustomers.length;
 
@@ -258,11 +330,12 @@ function CustomersContent() {
                     .map((customer) => (
                   <tr 
                     key={customer.uid} 
-                    className="hover:bg-green-power-50/30 transition-colors group"
+                    onClick={() => router.push(`/customers/${customer.uid}`)}
+                    className="hover:bg-green-power-50/30 transition-colors group cursor-pointer"
                   >
                     <td className="px-3 py-2.5">
-                      <Link href={`/customers/${customer.uid}`} className="flex items-center gap-2 group/link">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow-sm group-hover/link:shadow-md transition-shadow">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center flex-shrink-0 shadow-sm group-hover:shadow-md transition-shadow">
                           <span className="text-white font-semibold text-xs">
                             {customer.name 
                               ? customer.name.charAt(0).toUpperCase()
@@ -271,15 +344,15 @@ function CustomersContent() {
                         </div>
                         <div className="min-w-0">
                           {customer.name && (
-                            <div className="text-xs font-semibold text-gray-900 group-hover/link:text-green-power-700 transition-colors truncate">
+                            <div className="text-xs font-semibold text-gray-900 group-hover:text-green-power-700 transition-colors truncate">
                               {customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()}
                             </div>
                           )}
-                          <div className={`text-xs ${customer.name ? 'text-gray-500' : 'font-semibold text-gray-900'} group-hover/link:text-green-power-700 transition-colors truncate`}>
+                          <div className={`text-xs ${customer.name ? 'text-gray-500' : 'font-semibold text-gray-900'} group-hover:text-green-power-700 transition-colors truncate`}>
                             {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)}
                           </div>
                         </div>
-                      </Link>
+                      </div>
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex items-center gap-1.5 text-xs text-gray-600">
@@ -312,11 +385,12 @@ function CustomersContent() {
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
                       <div 
-                        className="flex items-center justify-end"
+                        className="flex items-center justify-end gap-2"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <Link
                           href={`/customers/${customer.uid}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="w-7 h-7 rounded-md bg-green-power-50 hover:bg-green-power-100 flex items-center justify-center text-green-power-600 hover:text-green-power-700 transition-colors group/icon"
                           title="View Details"
                         >
@@ -325,6 +399,28 @@ function CustomersContent() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.522 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.478 0-8.268-2.943-9.542-7z" />
                           </svg>
                         </Link>
+                        <Link
+                          href={`/customers/${customer.uid}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-7 h-7 rounded-md bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-600 hover:text-blue-700 transition-colors group/icon"
+                          title="Edit Customer"
+                        >
+                          <svg className="w-4 h-4 group-hover/icon:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </Link>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClick(customer);
+                          }}
+                          className="w-7 h-7 rounded-md bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-600 hover:text-red-700 transition-colors group/icon"
+                          title="Delete Customer"
+                        >
+                          <svg className="w-4 h-4 group-hover/icon:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -346,6 +442,38 @@ function CustomersContent() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={showDeleteConfirm}
+        title="Delete Customer"
+        message={
+          customerToDelete
+            ? `Are you sure you want to delete ${customerToDelete.name || customerToDelete.customerNumber}? This action cannot be undone.${
+                customerToDelete.projectCount > 0
+                  ? ` This customer has ${customerToDelete.projectCount} project${customerToDelete.projectCount === 1 ? '' : 's'} associated.`
+                  : ''
+              }`
+            : 'Are you sure you want to delete this customer? This action cannot be undone.'
+        }
+        confirmText={deleting ? 'Deleting...' : 'Delete'}
+        cancelText="Cancel"
+        type="danger"
+        onConfirm={handleDeleteConfirm}
+        onCancel={handleDeleteCancel}
+      />
+
+      {/* Alert Modal */}
+      <AlertModal
+        isOpen={showAlert}
+        title={alertData?.title || 'Alert'}
+        message={alertData?.message || ''}
+        type={alertData?.type || 'info'}
+        onClose={() => {
+          setShowAlert(false);
+          setAlertData(null);
+        }}
+      />
     </div>
   );
 }
