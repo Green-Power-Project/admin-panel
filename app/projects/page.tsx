@@ -25,6 +25,7 @@ interface Project {
   customerId: string;
   customerNumber?: string;
   customerEmail?: string;
+  enabled?: boolean;
 }
 
 export default function ProjectsPage() {
@@ -48,7 +49,7 @@ function ProjectsContent() {
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   
   // Modal states
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -197,7 +198,7 @@ function ProjectsContent() {
   const totalProjects = (filteredProjects && filteredProjects.length) || 0;
 
   return (
-    <div className="px-8 py-8 space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -290,7 +291,8 @@ function ProjectsContent() {
             </div>
           ) : (
             <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
@@ -301,6 +303,9 @@ function ProjectsContent() {
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
                       Customer
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
+                      Status
                     </th>
                     <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       Actions
@@ -353,6 +358,11 @@ function ProjectsContent() {
                         <div className="text-[10px] text-gray-500 mt-0.5 truncate">{project.customerEmail}</div>
                       )}
                     </td>
+                    <td className="px-3 py-2.5">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${project.enabled !== false ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+                        {project.enabled !== false ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
                       <div 
                         className="flex items-center justify-end gap-1.5"
@@ -397,6 +407,7 @@ function ProjectsContent() {
                 ))}
               </tbody>
             </table>
+              </div>
               <Pagination
                 currentPage={currentPage}
                 totalPages={Math.ceil(filteredProjects.length / itemsPerPage)}

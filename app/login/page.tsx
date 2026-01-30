@@ -63,13 +63,13 @@ export default function LoginPage() {
             <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
               <img 
                 src="/logo.png" 
-                alt="Green Power Logo" 
+                alt="AppGrün Power Logo" 
                 className="w-full h-full object-contain p-2"
               />
             </div>
           </div>
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight mb-1">
-            Green Power
+            AppGrün Power
           </h1>
           <p className="text-sm text-gray-500 font-normal">{t('login.adminPanel')}</p>
         </div>

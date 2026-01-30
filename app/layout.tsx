@@ -3,8 +3,8 @@ import './globals.css';
 import Providers from './providers';
 
 export const metadata: Metadata = {
-  title: 'Green Power - Admin Panel',
-  description: 'Green Power Admin Panel - Manage customers, projects, and files',
+  title: 'AppGrün Power - Admin Panel',
+  description: 'AppGrün Power Admin Panel - Manage customers, projects, and files',
   icons: {
     icon: '/logo.png',
     shortcut: '/logo.png',

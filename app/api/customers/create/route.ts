@@ -5,7 +5,7 @@ import { getAuth } from 'firebase-admin/auth';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, mobileNumber, email, password, customerNumber, enabled } = body;
+    const { name, mobileNumber, zipCode, city, email, password, customerNumber, enabled } = body;
 
     if (!email || !password || !customerNumber) {
       return NextResponse.json(
@@ -45,6 +45,8 @@ export async function POST(request: NextRequest) {
       uid,
       name: name?.trim() || '',
       mobileNumber: mobileNumber?.trim() || '',
+      zipCode: zipCode?.trim() || '',
+      city: city?.trim() || '',
       email: email.trim(),
       customerNumber: customerNumber.trim(),
       enabled: enabled !== false,

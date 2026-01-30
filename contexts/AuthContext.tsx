@@ -260,6 +260,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return sendPasswordResetEmail(authInstance, email);
   }
 
+  // Safeguard: if loading takes too long (e.g. Firestore hang), stop loading so user is not stuck
+  useEffect(() => {
+    const maxLoadingMs = 10000;
+    const t = setTimeout(() => {
+      setLoading((prev) => {
+        if (prev) {
+          console.warn('Auth loading timeout – stopping loading after', maxLoadingMs, 'ms');
+          return false;
+        }
+        return prev;
+      });
+    }, maxLoadingMs);
+    return () => clearTimeout(t);
+  }, []);
+
   useEffect(() => {
     if (!auth) {
       console.error('Firebase Auth is not initialized. Cannot set up auth state listener.');
@@ -272,13 +287,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (user) {
           // Keep loading true while verifying admin status
           setLoading(true);
-          
-          // Verify admin status BEFORE setting user
-          const isAdmin = await checkAdminStatus(user);
+          // Timeout so Firestore hang does not block forever
+          const timeoutMs = 8000;
+          const timeoutPromise = new Promise<boolean>((_, reject) =>
+            setTimeout(() => reject(new Error('Admin check timeout')), timeoutMs)
+          );
+          const isAdmin = await Promise.race([
+            checkAdminStatus(user),
+            timeoutPromise,
+          ]).catch(() => false);
           
           if (!isAdmin) {
             // If not an admin, check if this is the first admin (no admins exist)
-            const adminsExist = await checkIfAnyAdminsExist();
+            const adminsExist = await Promise.race([
+              checkIfAnyAdminsExist(),
+              new Promise<boolean>((_, reject) => setTimeout(() => reject(new Error('Admins check timeout')), 6000)),
+            ]).catch(() => true);
             
             if (!adminsExist) {
               // No admins exist - automatically create admin for first user

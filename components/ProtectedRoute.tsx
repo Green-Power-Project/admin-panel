@@ -69,23 +69,9 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
             ))}
           </div>
           
-          {/* Animated text */}
+          {/* Loading text */}
           <div className="space-y-3">
-            <h2 className="text-xl font-bold text-gray-800 tracking-tight">
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out' }}>V</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.1s', animationFillMode: 'both' }}>e</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.2s', animationFillMode: 'both' }}>r</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.3s', animationFillMode: 'both' }}>i</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.4s', animationFillMode: 'both' }}>f</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.5s', animationFillMode: 'both' }}>y</span>
-              <span className="inline-block mx-2" style={{ animation: 'fade-in-up 0.6s ease-out 0.6s', animationFillMode: 'both' }}>A</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.7s', animationFillMode: 'both' }}>c</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.8s', animationFillMode: 'both' }}>c</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.9s', animationFillMode: 'both' }}>e</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 1s', animationFillMode: 'both' }}>s</span>
-              <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 1.1s', animationFillMode: 'both' }}>s</span>
-            </h2>
-            
+            <h2 className="text-xl font-bold text-gray-800 tracking-tight">Loading</h2>
             {/* Animated dots */}
             <div className="flex items-center justify-center gap-1.5">
               {[0, 1, 2].map((i) => (

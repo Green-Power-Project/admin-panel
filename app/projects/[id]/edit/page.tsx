@@ -21,6 +21,7 @@ interface Project {
   year?: number;
   customerId: string;
   projectNumber?: string;
+  enabled?: boolean;
 }
 
 export default function EditProjectPage() {
@@ -41,6 +42,7 @@ function EditProjectContent() {
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
   const [customerId, setCustomerId] = useState('');
+  const [enabled, setEnabled] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -61,6 +63,7 @@ function EditProjectContent() {
           setName(projectData.name);
           setYear(projectData.year?.toString() || '');
           setCustomerId(projectData.customerId);
+          setEnabled(projectData.enabled !== false);
           setError('');
         } else {
           setError('Project not found');
@@ -132,6 +135,7 @@ function EditProjectContent() {
     try {
       const updateData: any = {
         name: name.trim(),
+        enabled: enabled,
         // Customer ID is not updated - it cannot be changed
       };
 
@@ -223,6 +227,27 @@ function EditProjectContent() {
                 />
                 <p className="mt-1 text-xs text-gray-500">
                   Project number is auto-generated and cannot be changed.
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label htmlFor="enabled" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Project active
+                  </label>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    onClick={() => setEnabled(!enabled)}
+                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 ${enabled ? 'bg-green-power-500' : 'bg-gray-200'}`}
+                  >
+                    <span className="sr-only">Deactivate / Activate project</span>
+                    <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  When deactivated, this project is hidden from the customer portal and cannot be used to log in.
                 </p>
               </div>
 

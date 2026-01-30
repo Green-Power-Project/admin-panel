@@ -14,7 +14,11 @@
  * - 06_Invoices (with Progress_Invoices, Final_Invoices, Credit_Notes subfolders)
  * - 07_Delivery_Notes (with Material_Delivery_Notes, Piecework_Delivery_Notes, Reports_Linked_to_Delivery_Notes subfolders)
  * - 08_General (with Contracts, Plans, Other_Documents subfolders)
+ * - 09_Admin_Only (admin-only private folder – not visible to customers; e.g. material prices, internal notes)
  */
+
+/** Folder path for the admin-only private folder. Must match the path used in window-app blocking logic. */
+export const ADMIN_ONLY_FOLDER_PATH = '09_Admin_Only' as const;
 
 export interface Folder {
   name: string;
@@ -103,7 +107,49 @@ export const PROJECT_FOLDER_STRUCTURE: Folder[] = [
       { name: 'Other_Documents', path: '08_General/Other_Documents' },
     ],
   },
+  {
+    name: '09_Admin_Only',
+    path: '09_Admin_Only',
+    // No children – single folder for private files (material prices, internal notes). Not visible to customers.
+  },
 ];
+
+/**
+ * Whether the folder path is the admin-only private folder (or a subpath).
+ * Used to hide this folder from customer-facing APIs and UI.
+ */
+export function isAdminOnlyFolderPath(folderPath: string): boolean {
+  return folderPath === ADMIN_ONLY_FOLDER_PATH || folderPath.startsWith(`${ADMIN_ONLY_FOLDER_PATH}/`);
+}
+
+const VISIBLE_FOLDER_STRUCTURE = PROJECT_FOLDER_STRUCTURE.filter(
+  (f) => f.path !== '00_New_Not_Viewed_Yet_' && f.path !== '01_Customer_Uploads'
+);
+
+/**
+ * Returns the single top-level folder that contains (or equals) the selected folder path.
+ * Used so the files sidebar shows only the opened folder and its subfolders.
+ */
+export function getScopeFolder(selectedFolderPath: string): Folder | null {
+  for (const folder of VISIBLE_FOLDER_STRUCTURE) {
+    if (selectedFolderPath === folder.path) return folder;
+    if (folder.children?.some((c) => c.path === selectedFolderPath)) return folder;
+  }
+  return null;
+}
+
+/**
+ * Default folder path when opening files for a project (first visible folder or first child).
+ */
+export function getDefaultFilesFolderPath(): string {
+  for (const folder of VISIBLE_FOLDER_STRUCTURE) {
+    if (folder.children && folder.children.length > 0) {
+      return folder.children[0].path;
+    }
+    return folder.path;
+  }
+  return VISIBLE_FOLDER_STRUCTURE[0]?.path ?? '';
+}
 
 /**
  * Get all valid folder paths (including nested folders)
@@ -139,4 +185,17 @@ export function isValidFolderPath(folderPath: string): boolean {
  */
 export function getAllFolderPathsArray(): string[] {
   return Array.from(getAllValidFolderPaths());
+}
+
+/**
+ * Get folder paths that are visible in the project UI (for admin edit table).
+ * Excludes 00_New_Not_Viewed_Yet_ and 01_Customer_Uploads.
+ */
+export function getVisibleFolderPathsForEdit(): string[] {
+  const paths: string[] = [];
+  VISIBLE_FOLDER_STRUCTURE.forEach((folder) => {
+    paths.push(folder.path);
+    folder.children?.forEach((child) => paths.push(child.path));
+  });
+  return paths;
 }

@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
+import { useLanguage } from '@/contexts/LanguageContext';
 import {
   collection,
   onSnapshot,
@@ -25,14 +26,14 @@ interface Customer {
   name?: string;
   email: string;
   customerNumber: string;
-  enabled: boolean;
   projectCount: number;
 }
 
 export default function CustomersPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="Customers">
+      <AdminLayout title={t('customers.title')}>
         <CustomersContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -40,6 +41,7 @@ export default function CustomersPage() {
 }
 
 function CustomersContent() {
+  const { t } = useLanguage();
   const router = useRouter();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
@@ -48,7 +50,7 @@ function CustomersContent() {
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   // Delete modal states
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -77,7 +79,6 @@ function CustomersContent() {
           name: data.name || '',
           email: data.email || 'N/A',
           customerNumber: data.customerNumber || 'N/A',
-          enabled: data.enabled !== false, // Default to true if not set
           projectCount: projectCounts.get(data.uid) || 0,
         });
       });
@@ -211,26 +212,26 @@ function CustomersContent() {
   const totalCustomers = filteredCustomers.length;
 
   return (
-    <div className="px-8 py-8 space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Customers</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('customers.title')}</h2>
               <p className="text-xs md:text-sm text-gray-600 mt-1">
-                Manage customer accounts
+                {t('customers.description')}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
-                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('common.total')}</p>
                 <p className="text-sm font-semibold text-gray-900">{totalCustomers}</p>
               </div>
               <Link
                 href="/customers/new"
                 className="px-4 py-2 bg-green-power-600 text-white text-sm font-medium rounded-lg hover:bg-green-power-700 transition-colors"
               >
-                + New Customer
+                + {t('customers.newCustomer')}
               </Link>
             </div>
           </div>
@@ -239,7 +240,7 @@ function CustomersContent() {
         <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1.5">
-              Filter by Customer / Email / Customer Number
+              {t('customers.filterLabel')}
             </label>
             <div className="relative">
               <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
@@ -262,7 +263,7 @@ function CustomersContent() {
                 type="text"
                 value={filterSearch}
                 onChange={(e) => setFilterSearch(e.target.value)}
-                placeholder="Search by customer name, number, or email"
+                placeholder={t('customers.searchPlaceholder')}
                 className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
               />
             </div>
@@ -288,39 +289,37 @@ function CustomersContent() {
           ) : filteredCustomers.length === 0 ? (
             <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
               <p className="text-sm font-medium text-gray-700">
-                No customers found for the selected filters.
+                {t('customers.noCustomersFound')}
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                {filterSearch ? 'Try adjusting your search query.' : 'Create your first customer account to get started.'}
+                {filterSearch ? t('customers.tryAdjustingSearch') : t('customers.createFirstCustomer')}
               </p>
               {!filterSearch && (
                 <Link
                   href="/customers/new"
                   className="mt-4 inline-block text-sm text-green-power-600 hover:text-green-power-700 font-medium"
                 >
-                  Create your first customer account →
+                  {t('customers.createFirstCustomer')} →
                 </Link>
               )}
             </div>
           ) : (
             <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
-                      Customer Number
+                      {t('customers.customerNumber')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
-                      Email
+                      {t('common.email')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Status
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Projects
+                      {t('customers.projects')}
                     </th>
                     <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
-                      Actions
+                      {t('common.actions')}
                     </th>
                   </tr>
                 </thead>
@@ -363,24 +362,12 @@ function CustomersContent() {
                       </div>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
-                      <span
-                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
-                          customer.enabled
-                            ? 'bg-green-100 text-green-700 border border-green-200'
-                            : 'bg-red-100 text-red-700 border border-red-200'
-                        }`}
-                      >
-                        <div className={`w-1.5 h-1.5 rounded-full ${customer.enabled ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                        {customer.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <div className="flex items-center gap-1.5 text-xs text-gray-600">
                         <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                         </svg>
                         <span className="font-medium">{customer.projectCount}</span>
-                        <span className="text-[10px] text-gray-500">{customer.projectCount === 1 ? 'project' : 'projects'}</span>
+                        <span className="text-[10px] text-gray-500">{customer.projectCount === 1 ? t('customers.project') : t('customers.projectsPlural')}</span>
                       </div>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
@@ -427,6 +414,7 @@ function CustomersContent() {
                 ))}
                 </tbody>
               </table>
+              </div>
               <Pagination
                 currentPage={currentPage}
                 totalPages={Math.ceil(filteredCustomers.length / itemsPerPage)}
@@ -446,18 +434,17 @@ function CustomersContent() {
       {/* Delete Confirmation Modal */}
       <ConfirmationModal
         isOpen={showDeleteConfirm}
-        title="Delete Customer"
+        title={t('customers.deleteCustomer')}
         message={
           customerToDelete
-            ? `Are you sure you want to delete ${customerToDelete.name || customerToDelete.customerNumber}? This action cannot be undone.${
-                customerToDelete.projectCount > 0
-                  ? ` This customer has ${customerToDelete.projectCount} project${customerToDelete.projectCount === 1 ? '' : 's'} associated.`
-                  : ''
-              }`
-            : 'Are you sure you want to delete this customer? This action cannot be undone.'
+            ? t('customers.deleteConfirm', { name: customerToDelete.name || customerToDelete.customerNumber }) +
+              (customerToDelete.projectCount > 0
+                ? t('customers.deleteConfirmWithProjects', { count: customerToDelete.projectCount })
+                : '')
+            : t('customers.deleteConfirmGeneric')
         }
-        confirmText={deleting ? 'Deleting...' : 'Delete'}
-        cancelText="Cancel"
+        confirmText={deleting ? t('customers.deleting') : t('common.delete')}
+        cancelText={t('common.cancel')}
         type="danger"
         onConfirm={handleDeleteConfirm}
         onCancel={handleDeleteCancel}

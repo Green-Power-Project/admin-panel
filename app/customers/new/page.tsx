@@ -22,36 +22,17 @@ export default function NewCustomerPage() {
 function NewCustomerContent() {
   const router = useRouter();
   const [name, setName] = useState('');
-  const [mobileNumber, setMobileNumber] = useState('');
-  const [email, setEmail] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
+  const [mobileNumber, setMobileNumber] = useState('');
+  const [zipCode, setZipCode] = useState('');
+  const [city, setCity] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [enabled, setEnabled] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [generatingNumber, setGeneratingNumber] = useState(false);
-
-  // Auto-generate customer number based on existing customers count
-  async function generateCustomerNumber(): Promise<string> {
-    if (!db) {
-      throw new Error('Database not initialized');
-    }
-    const dbInstance = db;
-    
-    setGeneratingNumber(true);
-    try {
-      const customersSnapshot = await getDocs(collection(dbInstance, 'customers'));
-      const count = customersSnapshot.size;
-      // Generate customer number as Cust-001, Cust-002, etc. (starts with capital C)
-      const nextNumber = String(count + 1).padStart(3, '0');
-      return `Cust-${nextNumber}`;
-    } finally {
-      setGeneratingNumber(false);
-    }
-  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -84,13 +65,14 @@ function NewCustomerContent() {
       return;
     }
 
+    if (!customerNumber.trim()) {
+      setError('Customer Number is required');
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Auto-generate customer number
-      const generatedCustomerNumber = await generateCustomerNumber();
-      setCustomerNumber(generatedCustomerNumber);
-
       // Create customer account and document using Admin SDK (doesn't affect client auth)
       const createResponse = await fetch('/api/customers/create', {
         method: 'POST',
@@ -99,11 +81,12 @@ function NewCustomerContent() {
         },
         body: JSON.stringify({
           name: name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase(),
+          customerNumber: customerNumber.trim(),
           mobileNumber: mobileNumber.trim() || '',
+          zipCode: zipCode.trim() || '',
+          city: city.trim() || '',
           email: email.trim(),
           password: password,
-          customerNumber: generatedCustomerNumber,
-          enabled,
         }),
       });
 
@@ -170,8 +153,25 @@ function NewCustomerContent() {
               </div>
 
               <div>
+                <label htmlFor="customerNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Customer Number <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="customerNumber"
+                  type="text"
+                  value={customerNumber}
+                  onChange={(e) => setCustomerNumber(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  placeholder="e.g., 204729"
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  Enter a unique customer number (e.g., 204729, 204730).
+                </p>
+              </div>
+
+              <div>
                 <label htmlFor="mobileNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Mobile Number
+                  Customer Mobile Number (Optional)
                 </label>
                 <input
                   id="mobileNumber"
@@ -181,6 +181,34 @@ function NewCustomerContent() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
                   placeholder="e.g., +1234567890"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Address (ZIP / City)
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <input
+                      id="zipCode"
+                      type="text"
+                      value={zipCode}
+                      onChange={(e) => setZipCode(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                      placeholder="ZIP Code"
+                    />
+                  </div>
+                  <div>
+                    <input
+                      id="city"
+                      type="text"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                      placeholder="City"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -196,23 +224,6 @@ function NewCustomerContent() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
                   placeholder="customer@example.com"
                 />
-              </div>
-
-              <div>
-                <label htmlFor="customerNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Customer Number
-                </label>
-                <input
-                  id="customerNumber"
-                  type="text"
-                  value={customerNumber || (generatingNumber ? 'Generating...' : '')}
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
-                  placeholder="Auto-generated"
-                />
-                <p className="mt-1 text-xs text-gray-500">
-                  Customer number will be auto-generated (e.g., Cust-001, Cust-002)
-                </p>
               </div>
 
               <div>
@@ -285,22 +296,6 @@ function NewCustomerContent() {
                   </button>
                 </div>
               </div>
-
-              <div className="flex items-center">
-                <input
-                  id="enabled"
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setEnabled(e.target.checked)}
-                  className="h-4 w-4 text-green-power-500 focus:ring-green-power-500 border-gray-300 rounded"
-                />
-                <label htmlFor="enabled" className="ml-2 block text-sm text-gray-700">
-                  Enable customer access
-                </label>
-              </div>
-              <p className="text-xs text-gray-500 -mt-3">
-                Disabled customers cannot log in to the portal
-              </p>
 
               <div className="flex items-center justify-end space-x-3 pt-4">
                 <Link

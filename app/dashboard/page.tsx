@@ -1,22 +1,19 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { translateFolderPath } from '@/lib/translations';
 import { db } from '@/lib/firebase';
 import {
   collection,
   onSnapshot,
   query,
   orderBy,
-  where,
-  Timestamp,
   getDocs,
+  Timestamp,
 } from 'firebase/firestore';
-import { PROJECT_FOLDER_STRUCTURE } from '@/lib/folderStructure';
 
 interface Project {
   id: string;
@@ -29,24 +26,25 @@ interface Customer {
   uid: string;
   customerNumber: string;
   email: string;
-  enabled: boolean;
   projectCount: number;
   projectIds: string[];
 }
 
-interface UnreadFile {
-  projectId: string;
-  projectName: string;
+interface ReportApprovalItem {
+  id: string;
   filePath: string;
   fileName: string;
-  folderPath: string;
-  customerId: string;
+  projectId: string;
+  projectName: string;
+  status: 'pending' | 'approved' | 'auto-approved';
+  approvedAt?: Timestamp;
+  uploadedAt?: Timestamp;
 }
 
 interface DashboardStats {
   totalProjects: number;
   totalCustomers: number;
-  totalUnreadFiles: number;
+  totalCustomerUploads: number;
   approvedReports: number;
 }
 
@@ -65,13 +63,26 @@ function DashboardContent() {
   const [stats, setStats] = useState<DashboardStats>({
     totalProjects: 0,
     totalCustomers: 0,
-    totalUnreadFiles: 0,
+    totalCustomerUploads: 0,
     approvedReports: 0,
   });
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [unreadFiles, setUnreadFiles] = useState<UnreadFile[]>([]);
+  const [rawReportApprovals, setRawReportApprovals] = useState<Array<{ id: string; filePath: string; projectId: string; customerId: string; status: 'pending' | 'approved' | 'auto-approved'; approvedAt?: Timestamp; uploadedAt?: Timestamp }>>([]);
   const [loading, setLoading] = useState(true);
+
+  const reportApprovalsList = useMemo((): ReportApprovalItem[] => {
+    return rawReportApprovals.map((a) => ({
+      id: a.id,
+      filePath: a.filePath,
+      fileName: a.filePath.split('/').pop() || a.filePath,
+      projectId: a.projectId,
+      projectName: projects.find((p) => p.id === a.projectId)?.name ?? 'Unknown',
+      status: a.status,
+      approvedAt: a.approvedAt,
+      uploadedAt: a.uploadedAt,
+    }));
+  }, [rawReportApprovals, projects]);
 
   function getFolderSegments(folderPath: string): string[] {
     return folderPath.split('/').filter(Boolean);
@@ -91,79 +102,37 @@ function DashboardContent() {
     return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
   }
 
-  const loadUnreadFiles = useCallback(async (projectsList: Project[]) => {
+  const loadCustomerUploadsCount = useCallback(async (projectsList: Project[]) => {
     if (!db || projectsList.length === 0) return;
-    
+    const customerUploadFolders = [
+      '01_Customer_Uploads',
+      '01_Customer_Uploads/Photos',
+      '01_Customer_Uploads/Documents',
+      '01_Customer_Uploads/Other',
+    ];
+    let total = 0;
     try {
-      // Get all read file paths (one-time read for this calculation)
-      const readFilesQuery = query(collection(db, 'fileReadStatus'));
-      const readFilesSnapshot = await getDocs(readFilesQuery);
-      const readFilePaths = new Set<string>();
-      readFilesSnapshot.forEach((docSnap) => {
-        readFilePaths.add(docSnap.data().filePath);
-      });
-
-      // Get all folder paths
-      const getAllFolderPaths = (folders: typeof PROJECT_FOLDER_STRUCTURE): string[] => {
-        const paths: string[] = [];
-        folders.forEach((folder) => {
-          if (folder.path !== '00_New_Not_Viewed_Yet_') {
-            paths.push(folder.path);
-            if (folder.children) {
-              folder.children.forEach((child) => {
-                paths.push(child.path);
-              });
-            }
-          }
-        });
-        return paths;
-      };
-
-      const folderPaths = getAllFolderPaths(PROJECT_FOLDER_STRUCTURE);
-      const unreadFilesList: UnreadFile[] = [];
-
-      // Use Firestore file metadata instead of Cloudinary list API
       for (const project of projectsList) {
-        for (const folderPath of folderPaths) {
+        for (const folderPath of customerUploadFolders) {
+          const segments = getFolderSegments(folderPath);
+          if (segments.length === 0) continue;
           try {
-            const segments = getFolderSegments(folderPath);
-            if (segments.length === 0) continue;
-
             const filesCollection = getProjectFolderRef(project.id, segments);
             const filesSnapshot = await getDocs(filesCollection);
-
-            filesSnapshot.forEach((docSnap) => {
-              const data = docSnap.data();
-              const storagePath = data.cloudinaryPublicId as string;
-
-              // Skip files that are already read (present in fileReadStatus)
-              if (readFilePaths.has(storagePath)) return;
-
-              const fileName = (data.fileName as string) || 'filename';
-              unreadFilesList.push({
-                projectId: project.id,
-                projectName: project.name,
-                filePath: storagePath,
-                fileName,
-                folderPath,
-                customerId: project.customerId,
-              });
-            });
+            total += filesSnapshot.size;
           } catch (error) {
-            console.error('Error loading folder from Firestore:', folderPath, error);
+            console.error('Error loading customer uploads folder:', folderPath, error);
           }
         }
       }
-
-      setUnreadFiles(unreadFilesList);
       setStats((prev) => ({
         ...prev,
-        totalUnreadFiles: unreadFilesList.length,
+        totalCustomerUploads: total,
       }));
     } catch (error) {
-      console.error('Error loading unread files:', error);
+      console.error('Error loading customer uploads count:', error);
     }
-  }, []); // db is an outer scope value, doesn't need to be in dependencies
+  }, []);
 
   useEffect(() => {
     if (!db) return;
@@ -211,7 +180,6 @@ function DashboardContent() {
             uid: data.uid,
             customerNumber: data.customerNumber || 'N/A',
             email: data.email || 'N/A',
-            enabled: data.enabled !== false,
             projectCount: 0,
             projectIds: [],
           });
@@ -261,15 +229,25 @@ function DashboardContent() {
           return Array.from(customerMap.values());
         });
 
-        // Load unread files when projects change
-        loadUnreadFiles(projectsList);
+        // Load customer uploads count when projects change
+        loadCustomerUploadsCount(projectsList);
       },
       (error) => {
         console.error('Error listening to projects:', error);
       }
     );
 
-    // Real-time listener for report approvals
+    // Cleanup listeners on unmount (report approvals handled in separate effect)
+    return () => {
+      customersUnsubscribe();
+      projectsUnsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadCustomerUploadsCount]);
+
+  // Report approvals listener: store raw list for dashboard approvals card
+  useEffect(() => {
+    if (!db) return;
     const approvalsUnsubscribe = onSnapshot(
       collection(db, 'reportApprovals'),
       (approvalsSnapshot) => {
@@ -277,50 +255,42 @@ function DashboardContent() {
           ...prev,
           approvedReports: approvalsSnapshot.size,
         }));
+        const list: Array<{ id: string; filePath: string; projectId: string; customerId: string; status: 'pending' | 'approved' | 'auto-approved'; approvedAt?: Timestamp; uploadedAt?: Timestamp }> = [];
+        approvalsSnapshot.forEach((docSnap) => {
+          const d = docSnap.data();
+          list.push({
+            id: docSnap.id,
+            filePath: d.filePath ?? '',
+            projectId: d.projectId ?? '',
+            customerId: d.customerId ?? '',
+            status: d.status ?? 'pending',
+            approvedAt: d.approvedAt,
+            uploadedAt: d.uploadedAt,
+          });
+        });
+        list.sort((a, b) => {
+          const aTime = a.approvedAt?.toMillis?.() ?? a.uploadedAt?.toMillis?.() ?? 0;
+          const bTime = b.approvedAt?.toMillis?.() ?? b.uploadedAt?.toMillis?.() ?? 0;
+          return bTime - aTime;
+        });
+        setRawReportApprovals(list);
       },
       (error) => {
         console.error('Error listening to report approvals:', error);
       }
     );
-
-    // Cleanup listeners on unmount
-    return () => {
-      customersUnsubscribe();
-      projectsUnsubscribe();
-      approvalsUnsubscribe();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadUnreadFiles]); // projects is used in callback but adding it would cause re-subscriptions
-
-  // Separate effect to handle file read status listener when projects are loaded
-  useEffect(() => {
-    if (!db || projects.length === 0) return;
-
-    const fileReadStatusUnsubscribe = onSnapshot(
-      collection(db, 'fileReadStatus'),
-      () => {
-        // When read status changes, recalculate unread files
-        loadUnreadFiles(projects);
-      },
-      (error) => {
-        console.error('Error listening to file read status:', error);
-      }
-    );
-
-    return () => {
-      fileReadStatusUnsubscribe();
-    };
-  }, [projects, loadUnreadFiles]);
+    return () => approvalsUnsubscribe();
+  }, []);
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('dashboard.title')}</h2>
           <p className="text-sm text-gray-600">{t('dashboard.overview')}</p>
         </div>
 
         {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
           {loading ? (
             <>
               {[1, 2, 3, 4].map((i) => (
@@ -345,10 +315,10 @@ function DashboardContent() {
                 link="/customers"
               />
               <StatCard
-                title={t('dashboard.unreadFiles')}
-                value={stats.totalUnreadFiles}
-                icon="🔔"
-                link="/tracking"
+                title={t('dashboard.customerUploads')}
+                value={stats.totalCustomerUploads}
+                icon="📥"
+                link="/customer-uploads"
               />
               <StatCard
                 title={t('dashboard.approvedReports')}
@@ -360,7 +330,7 @@ function DashboardContent() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
           {/* Customers List */}
           {loading ? (
             <>
@@ -416,20 +386,9 @@ function DashboardContent() {
                       >
                         <div className="flex items-center justify-between">
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)}
-                              </p>
-                              <span
-                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
-                                  customer.enabled
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-red-100 text-red-800'
-                                }`}
-                              >
-                                {customer.enabled ? '✓' : '✗'}
-                              </span>
-                            </div>
+                            <p className="text-sm font-medium text-gray-900 truncate">
+                              {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)}
+                            </p>
                             <p className="text-xs text-gray-500 mt-0.5">
                               {customer.projectCount} {customer.projectCount === 1 ? t('dashboard.totalProjects').toLowerCase().replace('total ', '') : t('dashboard.totalProjects').toLowerCase().replace('total ', '')}
                             </p>
@@ -491,48 +450,48 @@ function DashboardContent() {
                 </div>
               </div>
 
-              {/* Unread Files Overview */}
+              {/* Approvals Overview */}
               <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                <div className="px-5 py-4 bg-gradient-to-r from-amber-50 to-orange-50 border-b-2 border-amber-200 flex items-center justify-between">
+                <div className="px-5 py-4 bg-gradient-to-r from-emerald-50 to-green-50 border-b-2 border-emerald-200 flex items-center justify-between">
                   <div>
-                    <h3 className="text-sm font-semibold text-gray-900">Unread Files</h3>
-                    <p className="text-xs text-gray-600 mt-0.5">Total: {stats.totalUnreadFiles}</p>
+                    <h3 className="text-sm font-semibold text-gray-900">{t('dashboard.approvals')}</h3>
+                    <p className="text-xs text-gray-600 mt-0.5">{t('common.total')}: {reportApprovalsList.length}</p>
                   </div>
                   <Link
-                    href="/tracking"
+                    href="/approvals"
                     className="text-xs text-green-power-600 hover:text-green-power-700 font-semibold"
                   >
-                    View all →
+                    {t('dashboard.viewAll')} →
                   </Link>
                 </div>
                 <div className="divide-y divide-gray-200">
-                  {unreadFiles.length === 0 ? (
+                  {reportApprovalsList.length === 0 ? (
                     <div className="px-5 py-8 text-center">
                       <p className="text-sm text-gray-500">{t('common.noResults')}</p>
                       <Link
-                        href="/files"
+                        href="/approvals"
                         className="mt-2 inline-block text-xs text-green-power-600 hover:text-green-power-700"
                       >
-                        {t('common.upload')} {t('navigation.files').toLowerCase()} →
+                        {t('navigation.approvals')} →
                       </Link>
                     </div>
                   ) : (
-                    unreadFiles.slice(0, 2).map((file, index) => (
+                    reportApprovalsList.slice(0, 2).map((approval) => (
                       <Link
-                        key={`${file.projectId}-${file.filePath}-${index}`}
-                        href={`/files/${file.projectId}?from=dashboard`}
+                        key={approval.id}
+                        href="/approvals"
                         className="block px-5 py-3 hover:bg-gray-50 transition-colors"
                       >
-                        <div className="flex items-start justify-between">
+                        <div className="flex items-start justify-between gap-2">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-gray-900 truncate">
-                              {file.fileName}
+                              {approval.fileName}
                             </p>
                             <p className="text-xs text-gray-500 mt-0.5 truncate">
-                              {file.projectName} • {translateFolderPath(file.folderPath, t)}
+                              {approval.projectName}
                             </p>
                           </div>
-                          <span className="text-gray-400 ml-2">→</span>
+                          <span className="text-gray-400 flex-shrink-0">→</span>
                         </div>
                       </Link>
                     ))
@@ -548,8 +507,8 @@ function DashboardContent() {
           <div className="px-6 py-4 bg-gradient-to-r from-green-power-50 to-green-power-100 border-b border-green-power-200">
             <h3 className="text-base font-semibold text-gray-900">Quick Actions</h3>
           </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 sm:p-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
               <Link
                 href="/projects/new"
                 className="flex items-center px-5 py-3 text-sm font-medium text-white bg-gradient-to-r from-green-power-600 to-green-power-700 hover:from-green-power-700 hover:to-green-power-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
@@ -562,14 +521,14 @@ function DashboardContent() {
                 className="flex items-center px-5 py-3 text-sm font-medium text-white bg-gradient-to-r from-green-power-600 to-green-power-700 hover:from-green-power-700 hover:to-green-power-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
               >
                 <span className="mr-3 text-lg">👤</span>
-                <span>{t('common.create')} {t('navigation.customers')} {t('common.name').toLowerCase()}</span>
+                <span>{t('common.create')} {t('common.new')} {t('navigation.customers')}</span>
               </Link>
               <Link
-                href="/files"
+                href="/projects"
                 className="flex items-center px-5 py-3 text-sm font-medium text-white bg-gradient-to-r from-green-power-600 to-green-power-700 hover:from-green-power-700 hover:to-green-power-800 rounded-lg shadow-md hover:shadow-lg transition-all duration-200"
               >
-                <span className="mr-3 text-lg">📤</span>
-                <span>{t('common.upload')} {t('navigation.files')}</span>
+                <span className="mr-3 text-lg">📁</span>
+                <span>{t('navigation.projects')}</span>
               </Link>
             </div>
           </div>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { db } from '@/lib/firebase';
@@ -16,6 +17,17 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import Pagination from '@/components/Pagination';
+
+function getFolderSegments(folderPath: string): string[] {
+  return folderPath.split('/').filter(Boolean);
+}
+
+function getProjectFolderRef(projectId: string, folderSegments: string[]) {
+  if (folderSegments.length === 0) throw new Error('Folder segments must not be empty');
+  if (!db) throw new Error('Firestore database is not initialized');
+  const folderPathId = folderSegments.join('__');
+  return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
+}
 
 interface ReportApproval {
   id: string;
@@ -44,9 +56,10 @@ interface ReportApprovalDisplay {
 }
 
 export default function ApprovalsPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="Report Approvals">
+      <AdminLayout title={t('approvals.title')}>
         <ApprovalsContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -55,6 +68,7 @@ export default function ApprovalsPage() {
 
 function ApprovalsContent() {
   const { t } = useLanguage();
+  const router = useRouter();
   const [allApprovals, setAllApprovals] = useState<ReportApprovalDisplay[]>([]);
   const [approvals, setApprovals] = useState<ReportApprovalDisplay[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,10 +76,11 @@ function ApprovalsContent() {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCustomer, setFilterCustomer] = useState<string>(''); // customer/project/file search
   const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
-  
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null);
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   // Store raw approvals and maps separately so we can re-enrich when maps update
   const [rawApprovals, setRawApprovals] = useState<ReportApproval[]>([]);
   const [projectsMap, setProjectsMap] = useState<Map<string, string>>(new Map());
@@ -287,6 +302,42 @@ function ApprovalsContent() {
     return status;
   }
 
+  async function handleRowClick(approval: ReportApprovalDisplay) {
+    if (!db) return;
+    setOpeningFileId(approval.id);
+    try {
+      // filePath (Cloudinary public_id) format: projects/{projectId}/{folderPath}/{fileName}
+      const parts = approval.filePath.split('/').filter(Boolean);
+      const projectId = approval.projectId || (parts[0] === 'projects' ? parts[1] : undefined);
+      const folderPath = parts.length >= 4 ? parts.slice(2, -1).join('/') : undefined;
+
+      if (!projectId) {
+        router.push('/files');
+        return;
+      }
+
+      const segments = folderPath ? getFolderSegments(folderPath) : [];
+      if (segments.length > 0) {
+        const filesRef = getProjectFolderRef(projectId, segments);
+        const q = query(filesRef, where('cloudinaryPublicId', '==', approval.filePath));
+        const snapshot = await getDocs(q);
+        const first = snapshot.docs[0];
+        const url = first?.data()?.cloudinaryUrl as string | undefined;
+        if (url) {
+          window.open(url, '_blank', 'noopener,noreferrer');
+          return;
+        }
+      }
+      // Fallback: open project files page with folder selected (if we have folderPath)
+      router.push(folderPath ? `/files/${projectId}?folder=${encodeURIComponent(folderPath)}` : `/files/${projectId}`);
+    } catch (err) {
+      console.error('Error opening file:', err);
+      router.push(`/files/${approval.projectId}`);
+    } finally {
+      setOpeningFileId(null);
+    }
+  }
+
   // Fast in-memory filtering for instant UI response
   useEffect(() => {
     let filtered = [...allApprovals];
@@ -329,25 +380,25 @@ function ApprovalsContent() {
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Work Report Approvals</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('approvals.title')}</h2>
               <p className="text-xs md:text-sm text-gray-600 mt-1">
-                Monitor report approval status and dates.
+                {t('approvals.description')}
               </p>
               <p className="text-[11px] text-gray-500 mt-1">
-                ⚠️ Approval status is updated automatically. Admin can view but cannot manually change status.
+                ⚠️ {t('approvals.autoUpdateNote')}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
-                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('common.total')}</p>
                 <p className="text-sm font-semibold text-gray-900">{totalApprovals}</p>
               </div>
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-yellow-200">
-                <p className="text-[11px] text-yellow-700 uppercase tracking-wide">Pending</p>
+                <p className="text-[11px] text-yellow-700 uppercase tracking-wide">{t('approvals.pending')}</p>
                 <p className="text-sm font-semibold text-yellow-800">{pendingCount}</p>
               </div>
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-green-200">
-                <p className="text-[11px] text-green-700 uppercase tracking-wide">Approved</p>
+                <p className="text-[11px] text-green-700 uppercase tracking-wide">{t('approvals.approved')}</p>
                 <p className="text-sm font-semibold text-green-800">{approvedCount}</p>
               </div>
             </div>
@@ -358,14 +409,14 @@ function ApprovalsContent() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Project
+                {t('approvals.filterProject')}
               </label>
               <select
                 value={filterProject}
                 onChange={(e) => setFilterProject(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
               >
-                <option value="all">All Projects</option>
+                <option value="all">{t('approvals.allProjects')}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -376,23 +427,23 @@ function ApprovalsContent() {
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Status
+                {t('approvals.filterStatus')}
               </label>
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
               >
-                <option value="all">All Statuses</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="auto-approved">Auto-Approved</option>
+                <option value="all">{t('approvals.allStatus')}</option>
+                <option value="pending">{t('approvals.pending')}</option>
+                <option value="approved">{t('approvals.approved')}</option>
+                <option value="auto-approved">{t('status.autoApproved')}</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Customer / Email / Project / File
+                {t('approvals.filterCustomer')}
               </label>
               <div className="relative">
                 <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
@@ -415,7 +466,7 @@ function ApprovalsContent() {
                   type="text"
                   value={filterCustomer}
                   onChange={(e) => setFilterCustomer(e.target.value)}
-                  placeholder="Search by customer number, email, project, or file name"
+                  placeholder={t('approvals.searchPlaceholder')}
                   className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
                 />
               </div>
@@ -442,10 +493,10 @@ function ApprovalsContent() {
           ) : approvals.length === 0 ? (
             <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
               <p className="text-sm font-medium text-gray-700">
-                No report approvals found for the selected filters.
+                {t('approvals.noApprovalsFound')}
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                Try adjusting the project, status, or customer filters to widen your search.
+                {t('approvals.tryAdjustingFilters')}
               </p>
             </div>
           ) : (
@@ -453,20 +504,21 @@ function ApprovalsContent() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                  <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
+                      {t('common.status')}
+                    </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
-                      Report File
+                      {t('approvals.reportFile')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
-                      Project
+                      {t('approvals.project')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
-                      Customer
+                      {t('approvals.customer')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Status
-                    </th>
+                   
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
-                      Approval Date & Time
+                      {t('approvals.approvalDate')}
                     </th>
                   </tr>
                 </thead>
@@ -474,7 +526,16 @@ function ApprovalsContent() {
                   {approvals
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((approval) => (
-                    <tr key={approval.id} className="hover:bg-gray-50/80">
+                    <tr
+                      key={approval.id}
+                      onClick={() => handleRowClick(approval)}
+                      className={`hover:bg-gray-50/80 cursor-pointer ${openingFileId === approval.id ? 'opacity-70 pointer-events-none' : ''}`}
+                    >
+                      <td className="px-3 py-2.5 whitespace-nowrap">
+                        <span className={getStatusBadge(approval.status)}>
+                          {getStatusLabel(approval.status)}
+                        </span>
+                      </td>
                       <td className="px-3 py-2.5">
                         <div className="text-xs font-medium text-gray-900 truncate">
                           {approval.fileName || 'Untitled file'}
@@ -489,13 +550,8 @@ function ApprovalsContent() {
                             ? approval.customerNumber.charAt(0).toUpperCase() + approval.customerNumber.slice(1)
                             : 'N/A'}
                         </div>
-                        <div className="text-[10px] text-gray-500 truncate">{approval.customerEmail || 'N/A'}</div>
                       </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap">
-                        <span className={getStatusBadge(approval.status)}>
-                          {getStatusLabel(approval.status)}
-                        </span>
-                      </td>
+                      
                       <td className="px-3 py-2.5">
                         {approval.approvedAt ? (
                           <div className="text-xs text-gray-900">
@@ -503,11 +559,11 @@ function ApprovalsContent() {
                           </div>
                         ) : approval.status === 'pending' && approval.autoApproveDate ? (
                           <div>
-                            <div className="text-xs text-gray-500">Auto-approve:</div>
+                            <div className="text-xs text-gray-500">{t('approvals.autoApproveLabel')}:</div>
                             <div className="text-[10px] text-gray-400">{formatDate(approval.autoApproveDate)}</div>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400">Not approved yet</span>
+                          <span className="text-xs text-gray-400">{t('approvals.notApprovedYet')}</span>
                         )}
                       </td>
                     </tr>
@@ -530,15 +586,7 @@ function ApprovalsContent() {
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-xs text-blue-800 font-semibold mb-1">📋 Approval Rules</p>
-        <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
-          <li>Customer can approve/acknowledge reports manually</li>
-          <li>If no objection within 5 working days, reports are auto-approved</li>
-          <li>Email notifications are sent on upload and auto-approval</li>
-          <li>Admin can view report status and approval date & time</li>
-        </ul>
-      </div>
+     
     </div>
   );
 }

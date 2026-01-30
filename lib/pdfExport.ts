@@ -27,7 +27,7 @@ export function exportAuditLogsToPDF(logs: AuditLogEntry[], title: string = 'Fil
   // Header
   doc.setFontSize(18);
   doc.setFont('helvetica', 'bold');
-  doc.text('Green Power', pageWidth / 2, yPosition, { align: 'center' });
+  doc.text('AppGrün Power', pageWidth / 2, yPosition, { align: 'center' });
   yPosition += lineHeight;
 
   doc.setFontSize(14);

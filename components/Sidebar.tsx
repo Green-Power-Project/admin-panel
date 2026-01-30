@@ -11,11 +11,16 @@ interface NavItem {
   icon: string;
 }
 
+interface SidebarProps {
+  isOpen: boolean;
+  onClose: () => void;
+}
+
 const navigation: NavItem[] = [
   { nameKey: 'navigation.dashboard', href: '/dashboard', icon: '📊' },
   { nameKey: 'navigation.projects', href: '/projects', icon: '📁' },
   { nameKey: 'navigation.customers', href: '/customers', icon: '👥' },
-  { nameKey: 'navigation.files', href: '/files', icon: '📤' },
+  { nameKey: 'navigation.gallery', href: '/gallery', icon: '🖼️' },
   { nameKey: 'navigation.tracking', href: '/tracking', icon: '👁️' },
   { nameKey: 'navigation.approvals', href: '/approvals', icon: '✅' },
   { nameKey: 'navigation.auditLogs', href: '/audit-logs', icon: '📋' },
@@ -23,25 +28,41 @@ const navigation: NavItem[] = [
   { nameKey: 'navigation.profile', href: '/profile', icon: '⚙️' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { currentUser } = useAuth();
   const { t } = useLanguage();
 
   return (
-    <div className="flex flex-col h-screen bg-gradient-to-b from-green-power-700 to-green-power-800 text-white w-64 fixed left-0 top-0 z-40 shadow-2xl">
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={onClose}
+        />
+      )}
+      
+      {/* Sidebar */}
+      <div className={`
+        flex flex-col h-screen bg-gradient-to-b from-green-power-700 to-green-power-800 text-white 
+        w-64 fixed left-0 top-0 z-50 shadow-2xl
+        transform transition-transform duration-300 ease-in-out
+        lg:translate-x-0
+        ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
       {/* Logo Section */}
       <div className="flex items-center px-6 py-5 border-b border-green-power-600/30">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-lg overflow-hidden">
             <img 
               src="/logo.png" 
-              alt="Green Power Logo" 
+              alt="AppGrün Power Logo" 
               className="w-full h-full object-contain p-1"
             />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">Green Power</h1>
+            <h1 className="text-lg font-bold text-white">AppGrün Power</h1>
             <p className="text-xs text-green-power-200">{t('navigation.adminPanel')}</p>
           </div>
         </div>
@@ -56,6 +77,12 @@ export default function Sidebar() {
               key={item.nameKey}
               href={item.href}
               prefetch={true}
+              onClick={() => {
+                // Close sidebar on mobile when navigating
+                if (window.innerWidth < 1024) {
+                  onClose();
+                }
+              }}
               className={`
                 flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200
                 ${
@@ -89,6 +116,7 @@ export default function Sidebar() {
         </div>
       </div>
     </div>
+    </>
   );
 }
 

@@ -1,5 +1,7 @@
 'use client';
 
+import { useLanguage } from '@/contexts/LanguageContext';
+
 interface PaginationProps {
   currentPage: number;
   totalPages: number;
@@ -19,6 +21,7 @@ export default function Pagination({
   onItemsPerPageChange,
   showItemsPerPage = true,
 }: PaginationProps) {
+  const { t } = useLanguage();
   const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
   const endItem = Math.min(currentPage * itemsPerPage, totalItems);
 
@@ -67,7 +70,7 @@ export default function Pagination({
       {/* Items per page selector */}
       {showItemsPerPage && onItemsPerPageChange && (
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-700">Items per page:</label>
+          <label className="text-sm text-gray-700">{t('common.itemsPerPage')}</label>
           <select
             value={itemsPerPage}
             onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
@@ -83,9 +86,7 @@ export default function Pagination({
 
       {/* Page info */}
       <div className="text-sm text-gray-700">
-        Showing <span className="font-medium">{startItem}</span> to{' '}
-        <span className="font-medium">{endItem}</span> of{' '}
-        <span className="font-medium">{totalItems}</span> results
+        {t('common.showingToOf', { start: startItem, end: endItem, total: totalItems })}
       </div>
 
       {/* Pagination controls */}
@@ -97,7 +98,7 @@ export default function Pagination({
             disabled={currentPage === 1}
             className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            Previous
+            {t('common.previous')}
           </button>
 
           {/* Page numbers */}
@@ -139,7 +140,7 @@ export default function Pagination({
             disabled={currentPage === totalPages}
             className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            Next
+            {t('common.next')}
           </button>
         </div>
       )}

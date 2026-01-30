@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { db } from '@/lib/firebase';
@@ -39,12 +40,14 @@ interface FileTrackingInfo {
   customerEmail?: string;
   readStatus: FileReadStatus | null;
   isRead: boolean;
+  downloadUrl?: string;
 }
 
 export default function TrackingPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="File Tracking">
+      <AdminLayout title={t('tracking.title')}>
         <TrackingContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -52,6 +55,7 @@ export default function TrackingPage() {
 }
 
 function TrackingContent() {
+  const router = useRouter();
   const { t } = useLanguage();
   const [allFiles, setAllFiles] = useState<FileTrackingInfo[]>([]);
   const [files, setFiles] = useState<FileTrackingInfo[]>([]);
@@ -63,7 +67,7 @@ function TrackingContent() {
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     if (!db) return;
@@ -316,6 +320,7 @@ function TrackingContent() {
           const data = docSnap.data();
           const storagePath = data.cloudinaryPublicId as string;
           const fileName = (data.fileName as string) || '';
+          const downloadUrl = data.cloudinaryUrl as string | undefined;
           const readStatuses = readStatusesMap.get(storagePath) || [];
           const readStatus = readStatuses.length > 0 ? readStatuses[0] : null;
           const isRead = readStatus !== null;
@@ -331,6 +336,7 @@ function TrackingContent() {
             customerEmail: customerInfo?.email,
             readStatus,
             isRead,
+            downloadUrl,
           });
         });
       });
@@ -402,31 +408,39 @@ function TrackingContent() {
   const unreadCount = files.filter((f) => !f.isRead).length;
   const readCount = totalFiles - unreadCount;
 
+  function handleRowClick(file: FileTrackingInfo) {
+    if (file.downloadUrl) {
+      window.open(file.downloadUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    router.push(`/files/${file.projectId}?folder=${encodeURIComponent(file.folderPath)}`);
+  }
+
   return (
-    <div className="px-8 py-8 space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h2 className="text-lg md:text-xl font-semibold text-gray-900">File Read Tracking</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('tracking.title')}</h2>
               <p className="text-xs md:text-sm text-gray-600 mt-1">
-                Monitor which customer files have been opened and when.
+                {t('tracking.description')}
               </p>
               <p className="text-[11px] text-gray-500 mt-1">
-                ⚠️ Read status is updated automatically when customers open files. Admin cannot manually change it.
+                ⚠️ {t('tracking.autoNote')}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
-                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('common.total')}</p>
                 <p className="text-sm font-semibold text-gray-900">{totalFiles}</p>
               </div>
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-green-200">
-                <p className="text-[11px] text-green-700 uppercase tracking-wide">Read</p>
+                <p className="text-[11px] text-green-700 uppercase tracking-wide">{t('status.read')}</p>
                 <p className="text-sm font-semibold text-green-800">{readCount}</p>
               </div>
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-yellow-200">
-                <p className="text-[11px] text-yellow-700 uppercase tracking-wide">Unread</p>
+                <p className="text-[11px] text-yellow-700 uppercase tracking-wide">{t('status.unread')}</p>
                 <p className="text-sm font-semibold text-yellow-800">{unreadCount}</p>
               </div>
             </div>
@@ -437,14 +451,14 @@ function TrackingContent() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Project
+                {t('tracking.filterProject')}
               </label>
               <select
                 value={filterProject}
                 onChange={(e) => setFilterProject(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
               >
-                <option value="all">All Projects</option>
+                <option value="all">{t('tracking.allProjects')}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -455,22 +469,22 @@ function TrackingContent() {
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Status
+                {t('tracking.filterStatus')}
               </label>
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
               >
-                <option value="all">All Files</option>
-                <option value="unread">Unread Only</option>
-                <option value="read">Read Only</option>
+                <option value="all">{t('tracking.allFiles')}</option>
+                <option value="unread">{t('tracking.unreadOnly')}</option>
+                <option value="read">{t('tracking.readOnly')}</option>
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Customer / Email / Project / File
+                {t('tracking.filterCustomer')}
               </label>
               <div className="relative">
                 <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
@@ -493,7 +507,7 @@ function TrackingContent() {
                   type="text"
                   value={filterCustomer}
                   onChange={(e) => setFilterCustomer(e.target.value)}
-                  placeholder="Search by customer number, email, project, or file name"
+                  placeholder={t('tracking.searchPlaceholder')}
                   className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
                 />
               </div>
@@ -523,34 +537,35 @@ function TrackingContent() {
           ) : files.length === 0 ? (
             <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
               <p className="text-sm font-medium text-gray-700">
-                No files found for the selected filters.
+                {t('tracking.noFilesFound')}
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                Try adjusting the project, status, or customer filters to widen your search.
+                {t('tracking.tryAdjustingFilters')}
               </p>
             </div>
           ) : (
             <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
+              <div className="overflow-x-auto">
+                <table className="min-w-full w-full table-fixed divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
-                      Status
+                      {t('common.status')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
-                      File
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[16%]">
+                      {t('tracking.file')}
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
+                      {t('tracking.project')}
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[16%]">
+                      {t('tracking.folder')}
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
+                      {t('tracking.customer')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[18%]">
-                      Project
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Folder
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[17%]">
-                      Customer
-                    </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Read At
+                      {t('tracking.readAt')}
                     </th>
                   </tr>
                 </thead>
@@ -558,7 +573,14 @@ function TrackingContent() {
                   {files
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((file, index) => (
-                    <tr key={`${file.filePath}-${index}`} className="hover:bg-gray-50/80">
+                    <tr
+                      key={`${file.filePath}-${index}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleRowClick(file)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleRowClick(file)}
+                      className="hover:bg-gray-50/80 cursor-pointer"
+                    >
                       <td className="px-3 py-2.5 whitespace-nowrap">
                         <span
                           className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium ${
@@ -570,8 +592,8 @@ function TrackingContent() {
                           {file.isRead ? `✓ ${translateStatus('read', t)}` : `● ${translateStatus('unread', t)}`}
                         </span>
                       </td>
-                      <td className="px-3 py-2.5">
-                        <div className="text-xs font-medium text-gray-900 truncate">
+                      <td className="px-3 py-2.5 overflow-hidden">
+                        <div className="text-xs font-medium text-gray-900 truncate min-w-0" title={file.fileName || undefined}>
                           {file.fileName || 'Untitled file'}
                         </div>
                       </td>
@@ -589,7 +611,6 @@ function TrackingContent() {
                             ? file.customerNumber.charAt(0).toUpperCase() + file.customerNumber.slice(1)
                             : 'N/A'}
                         </div>
-                        <div className="text-[10px] text-gray-500 truncate">{file.customerEmail || 'N/A'}</div>
                       </td>
                       <td className="px-3 py-2.5">
                         {file.readStatus ? (
@@ -597,13 +618,14 @@ function TrackingContent() {
                             {formatDate(file.readStatus.readAt)}
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400">Not read yet</span>
+                          <span className="text-xs text-gray-400">{t('tracking.notReadYet')}</span>
                         )}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
               <Pagination
                 currentPage={currentPage}
                 totalPages={Math.ceil(files.length / itemsPerPage)}
@@ -620,25 +642,7 @@ function TrackingContent() {
         </div>
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-xs text-blue-800 font-semibold mb-1">📋 How It Works</p>
-        <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
-          <li>
-            All newly uploaded admin files are automatically marked as <strong>Unread</strong>
-          </li>
-          <li>
-            Unread files appear in the <code>00_New_Not_Viewed_Yet_</code> folder for customers
-          </li>
-          <li>
-            When a customer opens a file, it&apos;s automatically marked as <strong>Read</strong>
-          </li>
-          <li>
-            Read files are removed from <code>00_New_Not_Viewed_Yet_</code> but remain in their
-            original folder
-          </li>
-          <li>Admin can view read status but cannot manually change it</li>
-        </ul>
-      </div>
+      
     </div>
   );
 }

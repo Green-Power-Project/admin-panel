@@ -18,6 +18,7 @@ import {
   setDoc,
   getDoc,
 } from 'firebase/firestore';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Project {
   id: string;
@@ -31,7 +32,6 @@ interface CustomerData {
   mobileNumber?: string;
   email: string;
   customerNumber: string;
-  enabled: boolean;
   canViewAllProjects?: boolean;
 }
 
@@ -48,6 +48,7 @@ export default function CustomerDetailPage() {
 function CustomerDetailContent() {
   const params = useParams();
   const router = useRouter();
+  const { t } = useLanguage();
   const customerId = params.id as string;
   const [customer, setCustomer] = useState<CustomerData | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -56,7 +57,6 @@ function CustomerDetailContent() {
   const [name, setName] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
-  const [enabled, setEnabled] = useState(true);
   const [canViewAllProjects, setCanViewAllProjects] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -101,13 +101,12 @@ function CustomerDetailContent() {
             mobileNumber: data.mobileNumber || '',
             email: data.email || 'N/A',
             customerNumber: data.customerNumber || 'N/A',
-            enabled: data.enabled !== false,
+            canViewAllProjects: data.canViewAllProjects === true,
           };
           setCustomer(customerData);
           setName(customerData.name || '');
           setMobileNumber(customerData.mobileNumber || '');
           setCustomerNumber(customerData.customerNumber);
-          setEnabled(customerData.enabled !== false);
           setCanViewAllProjects(customerData.canViewAllProjects === true);
         } else {
           // Customer document doesn't exist - try to get from Firebase Auth or set defaults
@@ -117,7 +116,6 @@ function CustomerDetailContent() {
             mobileNumber: '',
             email: 'N/A',
             customerNumber: 'N/A',
-            enabled: true,
           });
         }
         setLoading(false);
@@ -218,7 +216,6 @@ function CustomerDetailContent() {
           name: name.trim() ? name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase() : '',
           mobileNumber: mobileNumber.trim() || '',
           customerNumber: customerNumber.trim(),
-          enabled,
           canViewAllProjects,
           updatedAt: new Date(),
         });
@@ -231,7 +228,6 @@ function CustomerDetailContent() {
           mobileNumber: mobileNumber.trim() || '',
           email: customer?.email || 'N/A',
           customerNumber: customerNumber.trim(),
-          enabled,
           canViewAllProjects,
           createdAt: new Date(),
           updatedAt: new Date(),
@@ -243,7 +239,6 @@ function CustomerDetailContent() {
         name: name.trim() ? name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase() : '',
         mobileNumber: mobileNumber.trim() || '',
         customerNumber: customerNumber.trim(),
-        enabled,
         canViewAllProjects,
       });
       setEditing(false);
@@ -258,7 +253,7 @@ function CustomerDetailContent() {
   // Don't show full-page loading - use skeleton in content area instead
 
   return (
-    <div className="px-6 sm:px-8 py-6 sm:py-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
       {/* Breadcrumb */}
       <div className="mb-6">
         <Link
@@ -268,7 +263,7 @@ function CustomerDetailContent() {
           <svg className="w-4 h-4 mr-1 group-hover:-translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
           </svg>
-          Back to Customers
+          {t('customers.backToCustomers')}
         </Link>
       </div>
 
@@ -284,10 +279,10 @@ function CustomerDetailContent() {
           <div className="h-2 bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500"></div>
           
           {/* Customer Info Section */}
-          <div className="px-8 py-8 border-b border-gray-200">
+          <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 border-b border-gray-200">
             {/* Edit Button */}
             {!editing && (
-              <div className="absolute top-8 right-8">
+              <div className="absolute top-4 right-4 sm:top-6 sm:right-6 lg:top-8 lg:right-8">
                 <button
                   onClick={() => setEditing(true)}
                   className="inline-flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all shadow-sm"
@@ -295,7 +290,7 @@ function CustomerDetailContent() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                   </svg>
-                  Edit
+                  {t('common.edit')}
                 </button>
               </div>
             )}
@@ -304,7 +299,7 @@ function CustomerDetailContent() {
               /* Edit Form */
               <div className="space-y-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-gray-900">Edit Customer</h2>
+                  <h2 className="text-xl font-bold text-gray-900">{t('customers.editCustomer')}</h2>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => {
@@ -312,104 +307,75 @@ function CustomerDetailContent() {
                         setName(customer?.name || '');
                         setMobileNumber(customer?.mobileNumber || '');
                         setCustomerNumber(customer?.customerNumber || '');
-                        setEnabled(customer?.enabled !== false);
                         setCanViewAllProjects(customer?.canViewAllProjects === true);
                         setError('');
                       }}
                       className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </button>
                     <button
                       onClick={handleSave}
                       disabled={saving}
                       className="px-4 py-2 text-sm font-semibold text-white bg-green-power-600 rounded-lg hover:bg-green-power-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                     >
-                      {saving ? 'Saving...' : 'Save Changes'}
+                      {saving ? t('common.saving') : t('customers.saveChanges')}
                     </button>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Customer Name
+                      {t('customers.customerName')}
                     </label>
                     <input
                       type="text"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
-                      placeholder="Enter customer name"
+                      placeholder={t('customers.enterCustomerName')}
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Customer Number
+                      {t('customers.customerNumber')}
                     </label>
                     <input
                       type="text"
                       value={customerNumber}
                       onChange={(e) => setCustomerNumber(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
-                      placeholder="Enter customer number"
+                      placeholder={t('customers.enterCustomerNumber')}
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Mobile Number
+                      {t('customers.mobileNumber')}
                     </label>
                     <input
                       type="text"
                       value={mobileNumber}
                       onChange={(e) => setMobileNumber(e.target.value)}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
-                      placeholder="Enter mobile number"
+                      placeholder={t('customers.enterMobileNumber')}
                     />
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Email
+                      {t('common.email')}
                     </label>
                     <input
                       type="email"
                       value={customer?.email || ''}
                       disabled
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 cursor-not-allowed"
-                      placeholder="Email (read-only)"
+                      placeholder={t('customers.emailReadOnly')}
                     />
-                    <p className="mt-1 text-xs text-gray-500">Email cannot be changed</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Status
-                    </label>
-                    <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="status"
-                          checked={enabled}
-                          onChange={() => setEnabled(true)}
-                          className="w-4 h-4 text-green-power-600 focus:ring-green-power-500"
-                        />
-                        <span className="text-sm text-gray-700">Enabled</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="status"
-                          checked={!enabled}
-                          onChange={() => setEnabled(false)}
-                          className="w-4 h-4 text-red-600 focus:ring-red-500"
-                        />
-                        <span className="text-sm text-gray-700">Disabled</span>
-                      </label>
-                    </div>
+                    <p className="mt-1 text-xs text-gray-500">{t('customers.emailCannotBeChanged')}</p>
                   </div>
 
                   <div>
@@ -431,10 +397,10 @@ function CustomerDetailContent() {
                       </div>
                       <div className="flex-1">
                         <span className="text-sm font-medium text-gray-700 block">
-                          Allow customer to view all projects
+                          {t('customers.allowViewAllProjects')}
                         </span>
                         <span className="text-xs text-gray-500 mt-0.5 block">
-                          If enabled, customer can see all projects for their customer number. If disabled, customer can only see the specific project they logged in with.
+                          {t('customers.allowViewAllProjectsDescription')}
                         </span>
                       </div>
                     </label>
@@ -461,10 +427,10 @@ function CustomerDetailContent() {
                       <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
                         {customer?.name 
                           ? customer.name.charAt(0).toUpperCase() + customer.name.slice(1).toLowerCase()
-                          : 'Customer'}
+                          : t('customers.customerSingular')}
                       </h1>
                       <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
-                        <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">Customer Number</span>
+                        <span className="text-xs font-semibold text-blue-600 uppercase tracking-wide">{t('customers.customerNumber')}</span>
                         <span className="text-sm font-bold text-blue-700">
                           {customer?.customerNumber 
                             ? customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)
@@ -496,20 +462,13 @@ function CustomerDetailContent() {
                       )}
                     </div>
                     
-                    {/* Status Badge */}
-                    <div className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 bg-white">
-                      <div className={`w-3 h-3 rounded-full ${customer?.enabled ? 'bg-green-500' : 'bg-red-500'} animate-pulse`}></div>
-                      <span className={`text-sm font-bold ${customer?.enabled ? 'text-green-700' : 'text-red-700'}`}>
-                        {customer?.enabled ? 'Active' : 'Inactive'}
-                      </span>
-                    </div>
                   </div>
                 </div>
                 
                 {/* Right Section - Quick Stats */}
                 <div className="flex flex-col sm:flex-row lg:flex-col gap-4 lg:min-w-[200px]">
                   <div className="px-6 py-4 rounded-xl bg-gradient-to-br from-blue-50 to-cyan-50 border border-blue-200">
-                    <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">Total Projects</div>
+                    <div className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1">{t('customers.totalProjects')}</div>
                     <div className="text-3xl font-bold text-blue-700">{projects.length}</div>
                   </div>
                 </div>
@@ -532,13 +491,13 @@ function CustomerDetailContent() {
           <div className="px-8 py-6">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-xl font-bold text-gray-900 mb-1">Assigned Projects</h3>
-                <p className="text-sm text-gray-600">Manage and view all projects for this customer</p>
+                <h3 className="text-xl font-bold text-gray-900 mb-1">{t('customers.assignedProjects')}</h3>
+                <p className="text-sm text-gray-600">{t('customers.manageAndViewProjectsForCustomer')}</p>
               </div>
               <div className="flex items-center gap-3">
                 <span className="px-4 py-2 rounded-lg bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200">
                   <span className="text-sm font-bold text-blue-700">{projects.length}</span>
-                  <span className="text-xs text-blue-600 ml-1">{projects.length === 1 ? 'project' : 'projects'}</span>
+                  <span className="text-xs text-blue-600 ml-1">{projects.length === 1 ? t('customers.project') : t('customers.projectsPlural')}</span>
                 </span>
                 <Link
                   href="/projects/new"
@@ -547,7 +506,7 @@ function CustomerDetailContent() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  New Project
+                  {t('projects.newProject')}
                 </Link>
               </div>
             </div>
@@ -559,8 +518,8 @@ function CustomerDetailContent() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                   </svg>
                 </div>
-                <p className="text-lg font-semibold text-gray-900 mb-2">No projects assigned</p>
-                <p className="text-sm text-gray-600 mb-6 max-w-md mx-auto">This customer doesn&apos;t have any projects yet. Create a new project to get started.</p>
+                <p className="text-lg font-semibold text-gray-900 mb-2">{t('customers.noProjectsAssigned')}</p>
+                <p className="text-sm text-gray-600 mb-6 max-w-md mx-auto">{t('customers.noProjectsAssignedDescription')}</p>
                 <Link
                   href="/projects/new"
                   className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold text-white bg-gradient-to-r from-green-power-600 to-green-power-700 rounded-xl hover:from-green-power-700 hover:to-green-power-800 transition-all shadow-md hover:shadow-lg"
@@ -568,11 +527,11 @@ function CustomerDetailContent() {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Create First Project
+                  {t('customers.createFirstProject')}
                 </Link>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
                 {projects.map((project) => (
                   <Link
                     key={project.id}

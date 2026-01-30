@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
     // Different email content based on recipient type
     let subject: string;
     let emailContent: string;
-    let fromName: string = 'Green Power'; // Default value
+    let fromName: string = 'AppGrün Power'; // Default value
     let replyTo: string | undefined;
 
     if (isCustomerUpload) {
@@ -274,7 +274,7 @@ export async function POST(request: NextRequest) {
     const mailOptions = {
       from: isCustomerUpload && fromName 
         ? `${fromName} <${EMAIL_USER}>` 
-        : `Green Power <${EMAIL_USER}>`,
+        : `AppGrün Power <${EMAIL_USER}>`,
       replyTo: replyTo || EMAIL_USER,
       to: recipientEmail,
       subject,
@@ -302,7 +302,7 @@ export async function POST(request: NextRequest) {
               ${emailContent}
             </div>
             <div class="footer">
-              <p>This is an automated notification from Green Power.</p>
+              <p>This is an automated notification from AppGrün Power.</p>
             </div>
           </div>
         </body>

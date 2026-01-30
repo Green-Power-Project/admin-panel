@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, FormEvent, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
@@ -8,18 +8,19 @@ import Link from 'next/link';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, query, orderBy, where } from 'firebase/firestore';
 import { createProjectFolderStructure } from '@/lib/projectUtils';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 interface Customer {
   uid: string;
   customerNumber: string;
   email: string;
-  enabled: boolean;
 }
 
 export default function NewProjectPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="Create Project">
+      <AdminLayout title={t('projects.createProject')}>
         <NewProjectContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -27,6 +28,7 @@ export default function NewProjectPage() {
 }
 
 function NewProjectContent() {
+  const { t } = useLanguage();
   const router = useRouter();
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
@@ -36,30 +38,39 @@ function NewProjectContent() {
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [generatingNumber, setGeneratingNumber] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
+  const customerDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadCustomers();
   }, []);
 
-  // Auto-generate project number based on existing projects count
-  async function generateProjectNumber(): Promise<string> {
-    if (!db) return 'PROJ-001';
-    const dbInstance = db;
-
-    setGeneratingNumber(true);
-    try {
-      const projectsSnapshot = await getDocs(collection(dbInstance, 'projects'));
-      const count = projectsSnapshot.size;
-      const nextNumber = String(count + 1).padStart(3, '0');
-      return `PROJ-${nextNumber}`;
-    } catch (error) {
-      console.error('Error generating project number:', error);
-      return 'PROJ-001';
-    } finally {
-      setGeneratingNumber(false);
+  // Click outside to close customer dropdown
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (customerDropdownRef.current && !customerDropdownRef.current.contains(event.target as Node)) {
+        setCustomerDropdownOpen(false);
+      }
     }
-  }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredCustomers = useMemo(() => {
+    if (!customerSearchQuery.trim()) return customers;
+    const q = customerSearchQuery.trim().toLowerCase();
+    return customers.filter(
+      (c) =>
+        (c.customerNumber && c.customerNumber.toLowerCase().includes(q)) ||
+        (c.email && c.email.toLowerCase().includes(q))
+    );
+  }, [customers, customerSearchQuery]);
+
+  const selectedCustomer = useMemo(
+    () => customers.find((c) => c.uid === customerId) || null,
+    [customers, customerId]
+  );
 
   async function loadCustomers() {
     if (!db) return;
@@ -78,7 +89,6 @@ function NewProjectContent() {
           uid: data.uid,
           customerNumber: data.customerNumber || 'N/A',
           email: data.email || 'N/A',
-          enabled: data.enabled !== false,
         });
       });
 
@@ -96,27 +106,30 @@ function NewProjectContent() {
     setLoading(true);
 
     if (!db) {
-      setError('Database not initialized');
+      setError(t('projectsNew.dbNotInitialized'));
       setLoading(false);
       return;
     }
-    const dbInstance = db; // Store for TypeScript narrowing
+    const dbInstance = db;
 
     if (!customerId) {
-      setError('Please select a customer');
+      setError(t('projectsNew.selectCustomer'));
+      setLoading(false);
+      return;
+    }
+
+    if (!projectNumber.trim()) {
+      setError(t('projectsNew.projectNumberRequired'));
       setLoading(false);
       return;
     }
 
     try {
-      // Auto-generate project number
-      const generatedProjectNumber = await generateProjectNumber();
-      setProjectNumber(generatedProjectNumber);
-
       const projectData: any = {
         name: name.trim(),
         customerId: customerId.trim(),
-        projectNumber: generatedProjectNumber,
+        projectNumber: projectNumber.trim(),
+        enabled: true,
       };
 
       if (year) {
@@ -158,7 +171,7 @@ function NewProjectContent() {
             },
             body: JSON.stringify({
               projectId,
-              projectNumber: generatedProjectNumber,
+              projectNumber: projectNumber.trim(),
               projectName: name.trim(),
               customerId: customerId.trim(),
               customerNumber: customerData.customerNumber || '',
@@ -181,7 +194,7 @@ function NewProjectContent() {
       router.push(`/projects/${projectId}`);
     } catch (err: any) {
       console.error('Error creating project:', err);
-      setError(err.message || 'Failed to create project. Please try again.');
+      setError(err.message || t('projectsNew.createFailed'));
     } finally {
       setLoading(false);
     }
@@ -195,10 +208,10 @@ function NewProjectContent() {
             href="/projects"
             className="text-sm text-gray-600 hover:text-gray-900 mb-4 inline-block"
           >
-            ← Back to Projects
+            ← {t('projectsNew.backToProjects')}
           </Link>
-          <h2 className="text-2xl font-semibold text-gray-900 mt-2">Create New Project</h2>
-          <p className="text-sm text-gray-500 mt-1">Add a new project and assign it to a customer</p>
+          <h2 className="text-2xl font-semibold text-gray-900 mt-2">{t('projects.newProject')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('projectsNew.description')}</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-sm">
@@ -210,38 +223,74 @@ function NewProjectContent() {
                 </div>
               )}
 
-              <div>
-                <label htmlFor="customerId" className="block text-sm font-medium text-gray-700 mb-1.5">
+              <div ref={customerDropdownRef}>
+                <label htmlFor="customerSearch" className="block text-sm font-medium text-gray-700 mb-1.5">
                   Customer <span className="text-red-500">*</span>
                 </label>
                 {loadingCustomers ? (
                   <div className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm text-gray-500">
-                    Loading customers...
+                    {t('projectsNew.loadingCustomers')}
                   </div>
                 ) : customers.length === 0 ? (
                   <div className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm text-gray-500 bg-gray-50">
                     No customers available. <Link href="/customers/new" className="text-green-power-600 hover:text-green-power-700">Create a customer first</Link>
                   </div>
                 ) : (
-                  <select
-                    id="customerId"
-                    value={customerId}
-                    onChange={(e) => setCustomerId(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                  >
-                    <option value="">Select a customer...</option>
-                    {customers
-                      .filter((customer) => customer.enabled)
-                      .map((customer) => (
-                        <option key={customer.uid} value={customer.uid}>
-                          {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)} - {customer.email}
-                        </option>
-                      ))}
-                  </select>
+                  <div className="relative">
+                    <div className="flex rounded-sm border border-gray-300 bg-white focus-within:ring-1 focus-within:ring-green-power-500 focus-within:border-green-power-500">
+                      <input
+                        id="customerSearch"
+                        type="text"
+                        value={customerDropdownOpen ? customerSearchQuery : (selectedCustomer ? `${selectedCustomer.customerNumber.charAt(0).toUpperCase() + selectedCustomer.customerNumber.slice(1)} - ${selectedCustomer.email}` : '')}
+                        onChange={(e) => {
+                          setCustomerSearchQuery(e.target.value);
+                          setCustomerDropdownOpen(true);
+                        }}
+                        onFocus={() => setCustomerDropdownOpen(true)}
+                        placeholder="Search or select a customer..."
+                        className="w-full px-3 py-2 text-sm focus:outline-none border-0 rounded-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCustomerDropdownOpen(!customerDropdownOpen);
+                          if (!customerDropdownOpen) setCustomerSearchQuery('');
+                        }}
+                        className="px-2 text-gray-400 hover:text-gray-600 border-l border-gray-200"
+                        aria-label="Toggle dropdown"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </button>
+                    </div>
+                    {customerDropdownOpen && (
+                      <ul className="absolute z-10 mt-1 w-full max-h-60 overflow-auto bg-white border border-gray-300 rounded-sm shadow-lg text-sm">
+                        {filteredCustomers.length === 0 ? (
+                          <li className="px-3 py-2 text-gray-500">No matching customers</li>
+                        ) : (
+                          filteredCustomers.map((customer) => (
+                            <li
+                              key={customer.uid}
+                              role="option"
+                              aria-selected={customerId === customer.uid}
+                              onClick={() => {
+                                setCustomerId(customer.uid);
+                                setCustomerSearchQuery('');
+                                setCustomerDropdownOpen(false);
+                              }}
+                              className={`px-3 py-2 cursor-pointer hover:bg-green-power-50 ${customerId === customer.uid ? 'bg-green-power-100 text-green-power-800' : 'text-gray-700'}`}
+                            >
+                              {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)} - {customer.email}
+                            </li>
+                          ))
+                        )}
+                      </ul>
+                    )}
+                  </div>
                 )}
                 <p className="mt-1 text-xs text-gray-500">
-                  Only enabled customers are shown. One project belongs to one customer.
+                  One project belongs to one customer.
                 </p>
               </div>
 
@@ -253,12 +302,12 @@ function NewProjectContent() {
                   id="projectNumber"
                   type="text"
                   value={projectNumber}
-                  readOnly
-                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
-                  placeholder="Auto-generated"
+                  onChange={(e) => setProjectNumber(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  placeholder="e.g., 2026-2030"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Project number will be auto-generated when you create the project.
+                  Enter a unique project number (e.g., 2026-2030).
                 </p>
               </div>
 
@@ -309,7 +358,7 @@ function NewProjectContent() {
                 </Link>
                 <button
                   type="submit"
-                  disabled={loading || loadingCustomers || customers.length === 0}
+                  disabled={loading || loadingCustomers || customers.length === 0 || !customerId || !projectNumber.trim()}
                   className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Creating...' : 'Create Project'}

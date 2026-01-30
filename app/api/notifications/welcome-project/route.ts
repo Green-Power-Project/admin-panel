@@ -47,7 +47,9 @@ export async function POST(request: NextRequest) {
     
     const emailContent = `
       <p>Dear Sir or Madam,</p>
-      <p>Your project has been created in our customer portal.</p>
+      <p>A new file has been uploaded to your customer portal.</p>
+      <p>Please review it within 5 working days.</p>
+      <p>If we do not receive any response, the document will be considered accepted.</p>
       
       <div style="background-color: #e8f5e9; padding: 20px; margin: 20px 0; border-left: 4px solid #5d7a5d; border-radius: 4px;">
         <p style="margin: 10px 0;"><strong>Project name:</strong> ${projectName || 'Your Project'}</p>
@@ -100,8 +102,11 @@ export async function POST(request: NextRequest) {
       `,
       text: `Dear Sir or Madam,
 
-Your project has been created in our customer portal.
+A new file has been uploaded to your customer portal.
+Please review it within 5 working days.
+If we do not receive any response, the document will be considered accepted.
 
+Project details:
 Project name: ${projectName || 'Your Project'}
 Project number: ${projectNumber}
 Customer number: ${customerNumber}

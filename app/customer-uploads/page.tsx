@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { db } from '@/lib/firebase';
@@ -12,6 +13,9 @@ import {
   query,
   orderBy,
   getDocs,
+  setDoc,
+  doc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import Pagination from '@/components/Pagination';
 
@@ -34,12 +38,14 @@ interface CustomerUpload {
   fileSize: number;
   fileType: string;
   downloadUrl: string;
+  adminReadStatus?: 'read' | 'unread';
 }
 
 export default function CustomerUploadsPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="Customer Uploads">
+      <AdminLayout title={t('navigation.customerUploads')}>
         <CustomerUploadsContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -47,6 +53,7 @@ export default function CustomerUploadsPage() {
 }
 
 function CustomerUploadsContent() {
+  const router = useRouter();
   const { t } = useLanguage();
   const [allUploads, setAllUploads] = useState<CustomerUpload[]>([]);
   const [uploads, setUploads] = useState<CustomerUpload[]>([]);
@@ -57,7 +64,7 @@ function CustomerUploadsContent() {
   
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
 
   useEffect(() => {
     if (!db) return;
@@ -207,6 +214,20 @@ function CustomerUploadsContent() {
         }
       }
 
+      // Get admin read status for all files
+      const adminReadStatusMap = new Map<string, boolean>();
+      try {
+        const adminReadStatusSnapshot = await getDocs(collection(dbInstance, 'adminFileReadStatus'));
+        adminReadStatusSnapshot.forEach((doc) => {
+          const data = doc.data();
+          if (data.adminRead) {
+            adminReadStatusMap.set(data.filePath, true);
+          }
+        });
+      } catch (error) {
+        console.error('Error loading admin read status:', error);
+      }
+
       const snapshots = await Promise.all(
         folderTasks.map((task) =>
           getDocs(task.ref).catch((error) => {
@@ -246,6 +267,7 @@ function CustomerUploadsContent() {
             fileSize: 0, // Not stored in Firestore
             fileType,
             downloadUrl: data.cloudinaryUrl as string,
+            adminReadStatus: adminReadStatusMap.has(data.cloudinaryPublicId as string) ? 'read' : 'unread',
           });
         });
       });
@@ -310,6 +332,35 @@ function CustomerUploadsContent() {
     return translateFolderPath(folderPath, t);
   }
 
+  // Firestore document IDs cannot contain '/'. Encode filePath (Cloudinary public_id) for use as doc ID.
+  function adminReadStatusDocId(filePath: string): string {
+    return filePath.replace(/\//g, '__');
+  }
+
+  async function handleMarkAsRead(upload: CustomerUpload) {
+    if (!db) return;
+
+    try {
+      const docId = adminReadStatusDocId(upload.filePath);
+      await setDoc(doc(db, 'adminFileReadStatus', docId), {
+        adminRead: true,
+        readAt: serverTimestamp(),
+        filePath: upload.filePath,
+        projectId: upload.projectId,
+        customerId: upload.customerId,
+      });
+      // Update local state
+      setAllUploads((prev) =>
+        prev.map((u) => (u.filePath === upload.filePath ? { ...u, adminReadStatus: 'read' as const } : u))
+      );
+      setUploads((prev) =>
+        prev.map((u) => (u.filePath === upload.filePath ? { ...u, adminReadStatus: 'read' as const } : u))
+      );
+    } catch (error) {
+      console.error('Error marking file as read:', error);
+    }
+  }
+
   const totalUploads = uploads.length;
 
   return (
@@ -318,17 +369,17 @@ function CustomerUploadsContent() {
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
             <div>
-              <h2 className="text-lg md:text-xl font-semibold text-gray-900">Customer Uploads Review</h2>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('customerUploads.title')}</h2>
               <p className="text-xs md:text-sm text-gray-600 mt-1">
-                View files uploaded by customers.
+                {t('customerUploads.viewDescription')}
               </p>
               <p className="text-[11px] text-gray-500 mt-1">
-                ⚠️ Customer uploads appear only in the Customer Uploads folder. Admin can view but cannot edit or delete customer files.
+                ⚠️ {t('customerUploads.note')}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
-                <p className="text-[11px] text-gray-500 uppercase tracking-wide">Total</p>
+                <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('common.total')}</p>
                 <p className="text-sm font-semibold text-gray-900">{totalUploads}</p>
               </div>
             </div>
@@ -339,14 +390,14 @@ function CustomerUploadsContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Project
+                {t('customerUploads.filterProject')}
               </label>
               <select
                 value={filterProject}
                 onChange={(e) => setFilterProject(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
               >
-                <option value="all">All Projects</option>
+                <option value="all">{t('customerUploads.allProjects')}</option>
                 {projects.map((project) => (
                   <option key={project.id} value={project.id}>
                     {project.name}
@@ -357,7 +408,7 @@ function CustomerUploadsContent() {
 
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                Filter by Customer / Email / Project / File
+                {t('customerUploads.filterCustomer')}
               </label>
               <div className="relative">
                 <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-gray-400">
@@ -380,7 +431,7 @@ function CustomerUploadsContent() {
                   type="text"
                   value={filterCustomer}
                   onChange={(e) => setFilterCustomer(e.target.value)}
-                  placeholder="Search by customer number, email, project, or file name"
+                  placeholder={t('customerUploads.searchPlaceholder')}
                   className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 placeholder:text-gray-400"
                 />
               </div>
@@ -408,31 +459,35 @@ function CustomerUploadsContent() {
           ) : uploads.length === 0 ? (
             <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
               <p className="text-sm font-medium text-gray-700">
-                No customer uploads found for the selected filters.
+                {t('customerUploads.noUploadsFound')}
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                Try adjusting the project or customer filters to widen your search.
+                {t('customerUploads.tryAdjustingFilters')}
               </p>
             </div>
           ) : (
             <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
+              <div className="overflow-x-auto overflow-y-visible">
+                <table className="min-w-full w-full table-fixed divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
-                      File Name
-                    </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
-                      Project
+                      {t('customerUploads.fileName')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
-                      Customer
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
+                      {t('customerUploads.project')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Folder
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
+                      {t('customerUploads.customer')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Upload Date & Time
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
+                      {t('customerUploads.folder')}
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[18%]">
+                      {t('common.status')}
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[22%]">
+                      {t('customerUploads.uploadDateTime')}
                     </th>
                   </tr>
                 </thead>
@@ -440,41 +495,71 @@ function CustomerUploadsContent() {
                   {uploads
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((upload, index) => (
-                    <tr key={`${upload.filePath}-${index}`} className="hover:bg-gray-50/80">
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center gap-1.5">
+                    <tr
+                      key={`${upload.filePath}-${index}`}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        window.open(upload.downloadUrl, '_blank', 'noopener,noreferrer');
+                        handleMarkAsRead(upload);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          window.open(upload.downloadUrl, '_blank', 'noopener,noreferrer');
+                          handleMarkAsRead(upload);
+                        }
+                      }}
+                      className="hover:bg-gray-50/80 cursor-pointer"
+                    >
+                      <td className="px-3 py-2.5 overflow-hidden">
+                        <div className="flex items-center gap-1.5 min-w-0">
                           <span className="text-sm flex-shrink-0">{getFileIcon(upload.fileType)}</span>
-                          <a
-                            href={upload.downloadUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs font-medium text-gray-900 hover:text-green-power-600 truncate"
+                          <span
+                            className="text-xs font-medium text-gray-900 hover:text-green-power-600 truncate block min-w-0"
+                            title={upload.fileName}
                           >
                             {upload.fileName}
-                          </a>
+                          </span>
                         </div>
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 overflow-hidden">
                         <div className="text-xs text-gray-900 truncate">{upload.projectName}</div>
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 overflow-hidden">
                         <div className="text-xs text-gray-900 truncate">
                           {upload.customerNumber 
                             ? upload.customerNumber.charAt(0).toUpperCase() + upload.customerNumber.slice(1)
                             : 'N/A'}
                         </div>
-                        <div className="text-[10px] text-gray-500 truncate">{upload.customerEmail || 'N/A'}</div>
                       </td>
-                      <td className="px-3 py-2.5">
+                      <td className="px-3 py-2.5 overflow-hidden">
                         <div className="text-xs text-gray-900 truncate">{getFolderDisplayName(upload.folderPath)}</div>
                       </td>
-                      <td className="px-3 py-2.5">
-                        <div className="text-xs text-gray-900 truncate">{formatDate(upload.uploadDate)}</div>
+                      <td className="px-3 py-2.5 overflow-hidden">
+                        <div className="flex items-center gap-1 whitespace-nowrap">
+                          {upload.adminReadStatus === 'unread' ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
+                              <div className="w-1.5 h-1.5 rounded-full bg-amber-600"></div>
+                              {t('customerUploads.unread')}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-green-100 text-green-800 border border-green-200">
+                              <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                              {t('customerUploads.read')}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 overflow-hidden">
+                        <div className="text-xs text-gray-900 whitespace-nowrap">{formatDate(upload.uploadDate)}</div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              </div>
               <Pagination
                 currentPage={currentPage}
                 totalPages={Math.ceil(uploads.length / itemsPerPage)}
@@ -489,16 +574,6 @@ function CustomerUploadsContent() {
             </div>
           )}
         </div>
-      </div>
-
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <p className="text-xs text-blue-800 font-semibold mb-1">📋 Customer Uploads</p>
-        <ul className="text-xs text-blue-800 space-y-1 list-disc list-inside">
-          <li>Files uploaded by customers appear only in <code>01_Customer_Uploads</code> folder</li>
-          <li>Admin can view file name, upload date & time, project, and customer information</li>
-          <li>Click on file name to download the file</li>
-          <li>Files are organized by subfolder: Photos, Documents, Other</li>
-        </ul>
       </div>
     </div>
   );
