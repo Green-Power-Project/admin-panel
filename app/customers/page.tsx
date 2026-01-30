@@ -188,6 +188,17 @@ function CustomersContent() {
       );
       await Promise.all(deletePromises);
 
+      // Cascade: delete report approvals for this customer
+      const approvalsQuery = query(
+        collection(dbInstance, 'reportApprovals'),
+        where('customerId', '==', customerToDelete.uid)
+      );
+      const approvalsSnapshot = await getDocs(approvalsQuery);
+      const approvalDeletePromises = approvalsSnapshot.docs.map((d) =>
+        deleteDoc(doc(dbInstance, 'reportApprovals', d.id))
+      );
+      await Promise.all(approvalDeletePromises);
+
       setShowDeleteConfirm(false);
       setCustomerToDelete(null);
       setAlertData({

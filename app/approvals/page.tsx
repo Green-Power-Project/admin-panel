@@ -283,6 +283,19 @@ function ApprovalsContent() {
     return date.toLocaleString();
   }
 
+  /** If status is pending but autoApproveDate has passed, treat as auto-approved for display and counts */
+  function getEffectiveStatus(approval: ReportApprovalDisplay): 'pending' | 'approved' | 'auto-approved' {
+    if (approval.status === 'approved' || approval.status === 'auto-approved') return approval.status;
+    if (
+      approval.status === 'pending' &&
+      approval.autoApproveDate &&
+      approval.autoApproveDate.toMillis() <= Date.now()
+    ) {
+      return 'auto-approved';
+    }
+    return approval.status;
+  }
+
   function getStatusBadge(status: string) {
     const baseClasses = 'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium';
     if (status === 'approved') {
@@ -347,7 +360,7 @@ function ApprovalsContent() {
     }
 
     if (filterStatus !== 'all') {
-      filtered = filtered.filter((a) => a.status === filterStatus);
+      filtered = filtered.filter((a) => getEffectiveStatus(a) === filterStatus);
     }
 
     const term = filterCustomer.trim().toLowerCase();
@@ -371,8 +384,8 @@ function ApprovalsContent() {
   }, [allApprovals, filterProject, filterStatus, filterCustomer]);
 
   const totalApprovals = approvals.length;
-  const pendingCount = approvals.filter((a) => a.status === 'pending').length;
-  const approvedCount = approvals.filter((a) => a.status === 'approved' || a.status === 'auto-approved').length;
+  const pendingCount = approvals.filter((a) => getEffectiveStatus(a) === 'pending').length;
+  const approvedCount = approvals.filter((a) => getEffectiveStatus(a) === 'approved' || getEffectiveStatus(a) === 'auto-approved').length;
 
   return (
     <div className="px-8 py-8 space-y-6">
@@ -532,8 +545,8 @@ function ApprovalsContent() {
                       className={`hover:bg-gray-50/80 cursor-pointer ${openingFileId === approval.id ? 'opacity-70 pointer-events-none' : ''}`}
                     >
                       <td className="px-3 py-2.5 whitespace-nowrap">
-                        <span className={getStatusBadge(approval.status)}>
-                          {getStatusLabel(approval.status)}
+                        <span className={getStatusBadge(getEffectiveStatus(approval))}>
+                          {getStatusLabel(getEffectiveStatus(approval))}
                         </span>
                       </td>
                       <td className="px-3 py-2.5">
@@ -556,6 +569,10 @@ function ApprovalsContent() {
                         {approval.approvedAt ? (
                           <div className="text-xs text-gray-900">
                             {formatDate(approval.approvedAt)}
+                          </div>
+                        ) : getEffectiveStatus(approval) === 'auto-approved' && approval.autoApproveDate ? (
+                          <div className="text-xs text-gray-900">
+                            {formatDate(approval.autoApproveDate)}
                           </div>
                         ) : approval.status === 'pending' && approval.autoApproveDate ? (
                           <div>
