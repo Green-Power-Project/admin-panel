@@ -151,8 +151,9 @@ export async function POST(request: NextRequest) {
         console.error('[file-upload-notification] Error fetching admin emails:', error);
       }
     } else {
-      // Admin uploaded → notify CUSTOMER
-      recipientEmail = customerEmail;
+      // Admin uploaded → notify CUSTOMER: use project notification email if set, else customer email
+      const projectNotificationEmail = (projectData.notificationEmail && String(projectData.notificationEmail).trim()) || null;
+      recipientEmail = projectNotificationEmail || customerEmail;
       recipientType = 'customer';
     }
 
@@ -162,9 +163,9 @@ export async function POST(request: NextRequest) {
       return withCors(NextResponse.json({ success: false }, { status: 200 }));
     }
 
-    // For customer notifications, ensure customer has email stored in system
-    if (recipientType === 'customer' && !customerEmail) {
-      console.log('[file-upload-notification] Customer does not have email stored in system - skipping email notification');
+    // For customer notifications, ensure we have a recipient (project notification email or customer email)
+    if (recipientType === 'customer' && !recipientEmail) {
+      console.log('[file-upload-notification] No customer/project notification email - skipping email notification');
       return withCors(NextResponse.json({ success: false, skipped: true, reason: 'no_email' }, { status: 200 }));
     }
 
@@ -197,7 +198,7 @@ export async function POST(request: NextRequest) {
     // Different email content based on recipient type
     let subject: string;
     let emailContent: string;
-    let fromName: string = 'AppGrün Power'; // Default value
+    let fromName: string = 'Grün Power'; // Default value
     let replyTo: string | undefined;
 
     if (isCustomerUpload) {
@@ -271,12 +272,14 @@ export async function POST(request: NextRequest) {
         `;
     }
 
+    const EMAIL_CC = process.env.EMAIL_CC || 'grunpower462@gmail.com';
     const mailOptions = {
       from: isCustomerUpload && fromName 
         ? `${fromName} <${EMAIL_USER}>` 
-        : `AppGrün Power <${EMAIL_USER}>`,
+        : `Grün Power <${EMAIL_USER}>`,
       replyTo: replyTo || EMAIL_USER,
       to: recipientEmail,
+      cc: EMAIL_CC,
       subject,
       html: `
         <!DOCTYPE html>
@@ -302,7 +305,7 @@ export async function POST(request: NextRequest) {
               ${emailContent}
             </div>
             <div class="footer">
-              <p>This is an automated notification from AppGrün Power.</p>
+              <p>This is an automated notification from Grün Power.</p>
             </div>
           </div>
         </body>

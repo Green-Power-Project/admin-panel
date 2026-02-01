@@ -37,6 +37,7 @@ import AlertModal from '@/components/AlertModal';
 import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
 import Pagination from '@/components/Pagination';
 import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
+import { deleteFileRelatedData } from '@/lib/cascadeDelete';
 
 interface Project {
   id: string;
@@ -167,6 +168,8 @@ function ProjectFilesContent() {
   const [showUploadPreview, setShowUploadPreview] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  const [viewerFile, setViewerFile] = useState<FileMetadata | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [contentReady, setContentReady] = useState(false);
 
@@ -336,6 +339,7 @@ function ProjectFilesContent() {
       setUploadError(t('files.invalidFolderPath'));
       return;
     }
+    setShowUploadPreview(false);
     setUploading(true);
     setUploadError('');
     const folderPathFull = `projects/${projectId}/${selectedFolder}`;
@@ -399,6 +403,8 @@ function ProjectFilesContent() {
       await Promise.all(
         snapshot.docs.map((d) => deleteDoc(doc(dbInstance, 'files', 'projects', projectId, folderPathId, 'files', d.id)))
       );
+      // Remove related data first so audit logs, tracking, etc. stay in sync
+      await deleteFileRelatedData(dbInstance, projectId, publicId);
       const deleted = await deleteFile(publicId);
       if (!deleted) {
         setAlertData({ title: t('files.deleteFailedTitle'), message: t('files.deleteFailedMessage'), type: 'error' });
@@ -568,7 +574,23 @@ function ProjectFilesContent() {
                     />
                     <div
                       onClick={() => fileInputRef.current?.click()}
-                      className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-green-power-400 hover:bg-green-power-50/30 transition-colors"
+                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
+                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDragOver(false);
+                        const fl = Array.from(e.dataTransfer.files || []);
+                        if (fl.length) {
+                          setSelectedFiles(fl);
+                          setSelectedFile(fl[0]);
+                          setShowUploadPreview(true);
+                          setUploadError('');
+                        }
+                      }}
+                      className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                        dragOver ? 'border-green-power-500 bg-green-power-50' : 'border-gray-300 hover:border-green-power-400 hover:bg-green-power-50/30'
+                      }`}
                     >
                       <p className="text-sm text-gray-600">{t('files.clickToSelectFiles')}</p>
                       <p className="text-xs text-gray-500 mt-1">{t('files.fileTypesHint')}</p>
@@ -629,14 +651,13 @@ function ProjectFilesContent() {
                             </div>
                           </div>
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            <a
-                              href={file.cloudinaryUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
+                            <button
+                              type="button"
+                              onClick={() => setViewerFile(file)}
                               className="text-sm text-green-power-600 hover:underline"
                             >
                               {t('files.open')}
-                            </a>
+                            </button>
                             {!isCustomerUploadsFolder(selectedFolder) && (
                               <button
                                 type="button"
@@ -729,6 +750,42 @@ function ProjectFilesContent() {
         onConfirm={handleUploadConfirm}
         onCancel={clearSelectedFiles}
       />
+      {/* File viewer modal (in-portal, no new tab) */}
+      {viewerFile && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setViewerFile(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setViewerFile(null)}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            aria-label={t('common.close')}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="relative max-w-[95vw] max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            {viewerFile.fileType === 'image' ? (
+              <img
+                src={viewerFile.cloudinaryUrl}
+                alt={viewerFile.fileName}
+                className="max-h-[90vh] w-auto object-contain rounded-lg"
+              />
+            ) : (
+              <iframe
+                src={viewerFile.cloudinaryUrl}
+                title={viewerFile.fileName}
+                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
+              />
+            )}
+            <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
+              {viewerFile.fileName}
+            </p>
+          </div>
+        </div>
+      )}
       <ConfirmationModal
         isOpen={showDeleteConfirm}
         title={t('files.deleteFile')}

@@ -65,6 +65,9 @@ function CustomerUploadsContent() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  // In-portal file viewer (no new tab)
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerFileName, setViewerFileName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!db) return;
@@ -500,12 +503,14 @@ function CustomerUploadsContent() {
                       role="button"
                       tabIndex={0}
                       onClick={() => {
-                        window.open(upload.downloadUrl, '_blank', 'noopener,noreferrer');
+                        setViewerUrl(upload.downloadUrl);
+                        setViewerFileName(upload.fileName || 'file');
                         handleMarkAsRead(upload);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          window.open(upload.downloadUrl, '_blank', 'noopener,noreferrer');
+                          setViewerUrl(upload.downloadUrl);
+                          setViewerFileName(upload.fileName || 'file');
                           handleMarkAsRead(upload);
                         }
                       }}
@@ -575,6 +580,43 @@ function CustomerUploadsContent() {
           )}
         </div>
       </div>
+
+      {/* File viewer modal (in-portal, no new tab) */}
+      {viewerUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => { setViewerUrl(null); setViewerFileName(null); }}
+        >
+          <button
+            type="button"
+            onClick={() => { setViewerUrl(null); setViewerFileName(null); }}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            aria-label={t('common.close')}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="relative max-w-[95vw] max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            {viewerFileName && /\.(jpg|jpeg|png|gif|webp)$/i.test(viewerFileName) ? (
+              <img
+                src={viewerUrl}
+                alt={viewerFileName}
+                className="max-h-[90vh] w-auto object-contain rounded-lg"
+              />
+            ) : (
+              <iframe
+                src={viewerUrl}
+                title={viewerFileName || ''}
+                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
+              />
+            )}
+            <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
+              {viewerFileName}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -16,7 +16,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import { getAllFolderPathsArray } from '@/lib/folderStructure';
-import { exportFilteredLogsToPDF, AuditLogEntry } from '@/lib/pdfExport';
+import { exportFilteredLogsToPDF, exportFilteredLogsToPDFBlob, AuditLogEntry, PdfLanguage } from '@/lib/pdfExport';
 import Pagination from '@/components/Pagination';
 
 interface FileReadStatus {
@@ -38,6 +38,7 @@ interface AuditLogData {
   customerId: string;
   readAt: string;
   isRead: boolean;
+  uploadedAt?: string;
   downloadUrl?: string;
 }
 
@@ -54,7 +55,7 @@ export default function AuditLogsPage() {
 
 function AuditLogsContent() {
   const router = useRouter();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [allLogs, setAllLogs] = useState<AuditLogData[]>([]);
   const [logs, setLogs] = useState<AuditLogData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,18 @@ function AuditLogsContent() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+
+  // In-portal file/viewer modal (no new tab)
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerFileName, setViewerFileName] = useState<string | null>(null);
+  const [viewerBlobUrl, setViewerBlobUrl] = useState<string | null>(null);
+
+  function closeViewer() {
+    if (viewerBlobUrl) URL.revokeObjectURL(viewerBlobUrl);
+    setViewerUrl(null);
+    setViewerFileName(null);
+    setViewerBlobUrl(null);
+  }
 
   useEffect(() => {
     if (!db) return;
@@ -271,6 +284,11 @@ function AuditLogsContent() {
             readAtFormatted = date.toLocaleString();
           }
 
+          let uploadedAtFormatted = '';
+          if (data.uploadedAt?.toDate) {
+            uploadedAtFormatted = data.uploadedAt.toDate().toLocaleString();
+          }
+
           allLogsData.push({
             fileName,
             filePath: storagePath,
@@ -282,6 +300,7 @@ function AuditLogsContent() {
             customerId,
             readAt: readAtFormatted,
             isRead,
+            uploadedAt: uploadedAtFormatted || undefined,
             downloadUrl,
           });
         });
@@ -341,6 +360,9 @@ function AuditLogsContent() {
     setCurrentPage(1); // Reset to first page when filters change
   }, [allLogs, filterProject, filterStatus, filterCustomer]);
 
+  // Audit PDFs must be in German only
+  const pdfLanguage: PdfLanguage = 'de';
+
   function handleExportPDF() {
     const exportData: AuditLogEntry[] = logs.map(log => ({
       fileName: log.fileName,
@@ -353,9 +375,32 @@ function AuditLogsContent() {
       customerId: log.customerId,
       readAt: log.readAt,
       isRead: log.isRead,
+      uploadedAt: log.uploadedAt,
     }));
 
-    exportFilteredLogsToPDF(exportData, filterProject, filterStatus, projects);
+    exportFilteredLogsToPDF(exportData, filterProject, filterStatus, projects, pdfLanguage);
+  }
+
+  function handleViewPDF() {
+    const exportData: AuditLogEntry[] = logs.map(log => ({
+      fileName: log.fileName,
+      filePath: log.filePath,
+      projectName: log.projectName,
+      projectId: log.projectId,
+      folderPath: log.folderPath,
+      customerNumber: log.customerNumber,
+      customerEmail: log.customerEmail,
+      customerId: log.customerId,
+      readAt: log.readAt,
+      isRead: log.isRead,
+      uploadedAt: log.uploadedAt,
+    }));
+
+    const blob = exportFilteredLogsToPDFBlob(exportData, filterProject, filterStatus, projects, pdfLanguage);
+    const url = URL.createObjectURL(blob);
+    setViewerUrl(url);
+    setViewerFileName('Audit-Log.pdf');
+    setViewerBlobUrl(url);
   }
 
   const totalLogs = logs.length;
@@ -364,11 +409,15 @@ function AuditLogsContent() {
 
   function handleRowClick(log: AuditLogData) {
     if (log.downloadUrl) {
-      window.open(log.downloadUrl, '_blank', 'noopener,noreferrer');
+      setViewerUrl(log.downloadUrl);
+      setViewerFileName(log.fileName || 'file');
+      setViewerBlobUrl(null);
       return;
     }
     router.push(`/files/${log.projectId}?folder=${encodeURIComponent(log.folderPath)}`);
   }
+
+  const isViewerImage = viewerFileName && /\.(jpg|jpeg|png|gif|webp)$/i.test(viewerFileName);
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
@@ -380,9 +429,7 @@ function AuditLogsContent() {
               <p className="text-xs md:text-sm text-gray-600 mt-1">
                 {t('auditLogs.description')}
               </p>
-              <p className="text-[11px] text-gray-500 mt-1">
-                ⚠️ {t('auditLogs.autoGenerateNote')}
-              </p>
+             
             </div>
             <div className="flex items-center gap-3">
               <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
@@ -397,6 +444,14 @@ function AuditLogsContent() {
                 <p className="text-[11px] text-yellow-700 uppercase tracking-wide">{t('auditLogs.unread')}</p>
                 <p className="text-sm font-semibold text-yellow-800">{unreadCount}</p>
               </div>
+              <button
+                onClick={handleViewPDF}
+                disabled={loading || logs.length === 0}
+                className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors border border-gray-300"
+              >
+                <span>👁</span>
+                <span>{t('auditLogs.viewPDF')}</span>
+              </button>
               <button
                 onClick={handleExportPDF}
                 disabled={loading || logs.length === 0}
@@ -521,10 +576,13 @@ function AuditLogsContent() {
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
                       {t('auditLogs.folder')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[17%]">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
                       {t('auditLogs.customer')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
+                      {t('auditLogs.uploadedDate')}
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
                       {t('auditLogs.dateTimeOpened')}
                     </th>
                   </tr>
@@ -574,6 +632,11 @@ function AuditLogsContent() {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="text-xs text-gray-900 truncate">
+                          {log.uploadedAt || <span className="text-gray-400">—</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="text-xs text-gray-900 truncate">
                           {log.isRead ? log.readAt : <span className="text-gray-400">{t('auditLogs.notReadYet')}</span>}
                         </div>
                       </td>
@@ -597,6 +660,43 @@ function AuditLogsContent() {
           )}
         </div>
       </div>
+
+      {/* File/PDF viewer modal (in-portal, no new tab) */}
+      {viewerUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={closeViewer}
+        >
+          <button
+            type="button"
+            onClick={closeViewer}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            aria-label={t('common.close')}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="relative max-w-[95vw] max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            {isViewerImage ? (
+              <img
+                src={viewerUrl}
+                alt={viewerFileName || ''}
+                className="max-h-[90vh] w-auto object-contain rounded-lg"
+              />
+            ) : (
+              <iframe
+                src={viewerUrl}
+                title={viewerFileName || ''}
+                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
+              />
+            )}
+            <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
+              {viewerFileName}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,29 +1,40 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+
+const REDIRECT_DELAY_MS = 150;
+const MAX_LOADING_MS = 5000;
 
 export default function Home() {
   const router = useRouter();
   const { currentUser, loading } = useAuth();
+  const mountedAt = useRef<number>(Date.now());
 
   useEffect(() => {
-    // Add a small delay to prevent rapid redirects
-    const timer = setTimeout(() => {
-      if (!loading) {
-        // Only redirect admin users to dashboard
+    if (!loading) {
+      const timer = setTimeout(() => {
         if (currentUser && currentUser.isAdmin) {
           router.push('/dashboard');
         } else {
-          // Non-admin or not logged in, go to login
           router.push('/login');
         }
-      }
-    }, 100);
-
-    return () => clearTimeout(timer);
+      }, REDIRECT_DELAY_MS);
+      return () => clearTimeout(timer);
+    }
   }, [currentUser, loading, router]);
+
+  // Safety: if loading runs too long (e.g. auth hang), redirect to login so user is not stuck
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const elapsed = Date.now() - mountedAt.current;
+      if (elapsed >= MAX_LOADING_MS) {
+        router.push('/login');
+      }
+    }, MAX_LOADING_MS);
+    return () => clearTimeout(timer);
+  }, [router]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
@@ -70,37 +81,7 @@ export default function Home() {
           ))}
         </div>
         
-        {/* Animated text */}
-        <div className="space-y-3">
-          <h2 className="text-xl font-bold text-gray-800 tracking-tight">
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out' }}>V</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.1s', animationFillMode: 'both' }}>e</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.2s', animationFillMode: 'both' }}>r</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.3s', animationFillMode: 'both' }}>i</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.4s', animationFillMode: 'both' }}>f</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.5s', animationFillMode: 'both' }}>y</span>
-            <span className="inline-block mx-2" style={{ animation: 'fade-in-up 0.6s ease-out 0.6s', animationFillMode: 'both' }}>A</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.7s', animationFillMode: 'both' }}>c</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.8s', animationFillMode: 'both' }}>c</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 0.9s', animationFillMode: 'both' }}>e</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 1s', animationFillMode: 'both' }}>s</span>
-            <span className="inline-block" style={{ animation: 'fade-in-up 0.6s ease-out 1.1s', animationFillMode: 'both' }}>s</span>
-          </h2>
-          
-          {/* Animated dots */}
-          <div className="flex items-center justify-center gap-1.5">
-            {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="w-2 h-2 rounded-full bg-green-power-500"
-                style={{
-                  animation: `bounce 1.4s ease-in-out infinite`,
-                  animationDelay: `${i * 0.2}s`,
-                }}
-              ></div>
-            ))}
-          </div>
-        </div>
+        <p className="text-xl font-semibold text-gray-800">Loading</p>
       </div>
     </div>
   );

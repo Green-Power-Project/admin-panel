@@ -14,6 +14,8 @@ interface Customer {
   uid: string;
   customerNumber: string;
   email: string;
+  name?: string;
+  mobileNumber?: string;
 }
 
 export default function NewProjectPage() {
@@ -28,12 +30,14 @@ export default function NewProjectPage() {
 }
 
 function NewProjectContent() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const router = useRouter();
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [projectNumber, setProjectNumber] = useState('');
+  const [notificationEmail, setNotificationEmail] = useState('');
+  const [notifyCustomerByEmail, setNotifyCustomerByEmail] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [error, setError] = useState('');
@@ -63,7 +67,9 @@ function NewProjectContent() {
     return customers.filter(
       (c) =>
         (c.customerNumber && c.customerNumber.toLowerCase().includes(q)) ||
-        (c.email && c.email.toLowerCase().includes(q))
+        (c.email && c.email.toLowerCase().includes(q)) ||
+        (c.name && c.name.toLowerCase().includes(q)) ||
+        (c.mobileNumber && c.mobileNumber.toLowerCase().includes(q))
     );
   }, [customers, customerSearchQuery]);
 
@@ -71,6 +77,13 @@ function NewProjectContent() {
     () => customers.find((c) => c.uid === customerId) || null,
     [customers, customerId]
   );
+
+  /** Display label for customer: name only, or fallback if no name */
+  function getCustomerDisplayName(c: Customer): string {
+    if (c.name && c.name.trim()) return c.name.trim();
+    if (c.customerNumber && c.customerNumber !== 'N/A') return c.customerNumber;
+    return c.email || '—';
+  }
 
   async function loadCustomers() {
     if (!db) return;
@@ -89,6 +102,8 @@ function NewProjectContent() {
           uid: data.uid,
           customerNumber: data.customerNumber || 'N/A',
           email: data.email || 'N/A',
+          name: data.name || '',
+          mobileNumber: data.mobileNumber || '',
         });
       });
 
@@ -138,6 +153,9 @@ function NewProjectContent() {
           projectData.year = yearNum;
         }
       }
+      if (notificationEmail.trim()) {
+        projectData.notificationEmail = notificationEmail.trim();
+      }
 
       // Create project document in Firestore
       const projectRef = await addDoc(collection(dbInstance, 'projects'), projectData);
@@ -151,44 +169,46 @@ function NewProjectContent() {
         // Continue even if folder creation fails - folders will be created when files are uploaded
       }
 
-      // Send welcome email to customer with project details
-      try {
-        // Fetch customer details
-        const customerQuery = query(
-          collection(dbInstance, 'customers'),
-          where('uid', '==', customerId.trim())
-        );
-        const customerSnapshot = await getDocs(customerQuery);
-        
-        if (!customerSnapshot.empty) {
-          const customerDoc = customerSnapshot.docs[0];
-          const customerData = customerDoc.data();
-          
-          const welcomeResponse = await fetch('/api/notifications/welcome-project', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              projectId,
-              projectNumber: projectNumber.trim(),
-              projectName: name.trim(),
-              customerId: customerId.trim(),
-              customerNumber: customerData.customerNumber || '',
-              customerName: customerData.name || '',
-              customerEmail: customerData.email || '',
-            }),
-          });
-          
-          if (welcomeResponse.ok) {
-            console.log('[project-create] Welcome email sent successfully');
-          } else {
-            console.warn('[project-create] Failed to send welcome email');
+      // Send welcome email only when "Notify customer by email" is ON
+      if (notifyCustomerByEmail) {
+        try {
+          const customerQuery = query(
+            collection(dbInstance, 'customers'),
+            where('uid', '==', customerId.trim())
+          );
+          const customerSnapshot = await getDocs(customerQuery);
+
+          if (!customerSnapshot.empty) {
+            const customerDoc = customerSnapshot.docs[0];
+            const customerData = customerDoc.data();
+
+            const welcomeResponse = await fetch('/api/notifications/welcome-project', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                projectId,
+                projectNumber: projectNumber.trim(),
+                projectName: name.trim(),
+                customerId: customerId.trim(),
+                customerNumber: customerData.customerNumber || '',
+                customerName: customerData.name || '',
+                customerEmail: customerData.email || '',
+                notificationEmail: notificationEmail.trim() || undefined,
+                language: language || 'en',
+              }),
+            });
+
+            if (welcomeResponse.ok) {
+              console.log('[project-create] Welcome email sent successfully');
+            } else {
+              console.warn('[project-create] Failed to send welcome email');
+            }
           }
+        } catch (emailError) {
+          console.error('[project-create] Error sending welcome email:', emailError);
         }
-      } catch (emailError) {
-        console.error('[project-create] Error sending welcome email:', emailError);
-        // Don't fail project creation if email fails
       }
 
       router.push(`/projects/${projectId}`);
@@ -241,13 +261,13 @@ function NewProjectContent() {
                       <input
                         id="customerSearch"
                         type="text"
-                        value={customerDropdownOpen ? customerSearchQuery : (selectedCustomer ? `${selectedCustomer.customerNumber.charAt(0).toUpperCase() + selectedCustomer.customerNumber.slice(1)} - ${selectedCustomer.email}` : '')}
+                        value={customerDropdownOpen ? customerSearchQuery : (selectedCustomer ? getCustomerDisplayName(selectedCustomer) : '')}
                         onChange={(e) => {
                           setCustomerSearchQuery(e.target.value);
                           setCustomerDropdownOpen(true);
                         }}
                         onFocus={() => setCustomerDropdownOpen(true)}
-                        placeholder="Search or select a customer..."
+                        placeholder={t('projectsNew.customerSearchPlaceholder')}
                         className="w-full px-3 py-2 text-sm focus:outline-none border-0 rounded-sm"
                       />
                       <button
@@ -281,7 +301,7 @@ function NewProjectContent() {
                               }}
                               className={`px-3 py-2 cursor-pointer hover:bg-green-power-50 ${customerId === customer.uid ? 'bg-green-power-100 text-green-power-800' : 'text-gray-700'}`}
                             >
-                              {customer.customerNumber.charAt(0).toUpperCase() + customer.customerNumber.slice(1)} - {customer.email}
+                              {getCustomerDisplayName(customer)}
                             </li>
                           ))
                         )}
@@ -289,9 +309,7 @@ function NewProjectContent() {
                     )}
                   </div>
                 )}
-                <p className="mt-1 text-xs text-gray-500">
-                  One project belongs to one customer.
-                </p>
+              
               </div>
 
               <div>
@@ -327,6 +345,36 @@ function NewProjectContent() {
               </div>
 
               <div>
+                <label htmlFor="notificationEmail" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('projectsNew.notificationEmailLabel')}
+                </label>
+                <input
+                  id="notificationEmail"
+                  type="email"
+                  value={notificationEmail}
+                  onChange={(e) => setNotificationEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  placeholder={t('projectsNew.notificationEmailPlaceholder')}
+                />
+                <p className="mt-1 text-xs text-gray-500">
+                  {t('projectsNew.notificationEmailHelp')}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <input
+                  id="notifyCustomerByEmail"
+                  type="checkbox"
+                  checked={notifyCustomerByEmail}
+                  onChange={(e) => setNotifyCustomerByEmail(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-green-power-600 focus:ring-green-power-500"
+                />
+                <label htmlFor="notifyCustomerByEmail" className="text-sm font-medium text-gray-700">
+                  {t('projectsNew.notifyCustomerByEmail')}
+                </label>
+              </div>
+
+              <div>
                 <label htmlFor="year" className="block text-sm font-medium text-gray-700 mb-1.5">
                   Year (Optional)
                 </label>
@@ -342,12 +390,7 @@ function NewProjectContent() {
                 />
               </div>
 
-              <div className="bg-blue-50 border border-blue-200 rounded-sm p-4">
-                <p className="text-xs text-blue-800 font-medium mb-1">📁 Folder Structure</p>
-                <p className="text-xs text-blue-700">
-                  A predefined folder structure will be automatically created for this project, including folders for photos, reports, invoices, and more.
-                </p>
-              </div>
+
 
               <div className="flex items-center justify-end space-x-3 pt-4">
                 <Link

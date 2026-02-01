@@ -81,6 +81,9 @@ function ApprovalsContent() {
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
+  // In-portal file viewer (no new tab)
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerFileName, setViewerFileName] = useState<string | null>(null);
   // Store raw approvals and maps separately so we can re-enrich when maps update
   const [rawApprovals, setRawApprovals] = useState<ReportApproval[]>([]);
   const [projectsMap, setProjectsMap] = useState<Map<string, string>>(new Map());
@@ -337,7 +340,8 @@ function ApprovalsContent() {
         const first = snapshot.docs[0];
         const url = first?.data()?.cloudinaryUrl as string | undefined;
         if (url) {
-          window.open(url, '_blank', 'noopener,noreferrer');
+          setViewerUrl(url);
+          setViewerFileName(approval.fileName || 'file');
           return;
         }
       }
@@ -396,9 +400,6 @@ function ApprovalsContent() {
               <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('approvals.title')}</h2>
               <p className="text-xs md:text-sm text-gray-600 mt-1">
                 {t('approvals.description')}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-1">
-                ⚠️ {t('approvals.autoUpdateNote')}
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -603,7 +604,42 @@ function ApprovalsContent() {
         </div>
       </div>
 
-     
+      {/* File viewer modal (in-portal, no new tab) */}
+      {viewerUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => { setViewerUrl(null); setViewerFileName(null); }}
+        >
+          <button
+            type="button"
+            onClick={() => { setViewerUrl(null); setViewerFileName(null); }}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            aria-label={t('common.close')}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="relative max-w-[95vw] max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            {viewerFileName && /\.(jpg|jpeg|png|gif|webp)$/i.test(viewerFileName) ? (
+              <img
+                src={viewerUrl}
+                alt={viewerFileName}
+                className="max-h-[90vh] w-auto object-contain rounded-lg"
+              />
+            ) : (
+              <iframe
+                src={viewerUrl}
+                title={viewerFileName || ''}
+                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
+              />
+            )}
+            <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
+              {viewerFileName}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

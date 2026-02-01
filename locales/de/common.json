@@ -51,11 +51,28 @@
     "customerUploads": "Kunden-Uploads",
     "gallery": "Galerie",
     "profile": "Profil",
+    "contactSettings": "Kontakteinstellungen",
     "adminPanel": "Admin-Panel",
     "administrator": "Administrator"
   },
+  "contactSettings": {
+    "title": "Kontaktdaten",
+    "subtitle": "Diese Angaben werden im Kundenportal (Galerie, Login) angezeigt. Bearbeiten und speichern Sie sie, um sie live zu aktualisieren.",
+    "phone": "Telefonnummer",
+    "phonePlaceholder": "z.B. +49 157 31709686",
+    "email": "E-Mail-Adresse",
+    "emailPlaceholder": "z.B. info@gruen-power.de",
+    "whatsApp": "WhatsApp-Nummer",
+    "whatsAppPlaceholder": "z.B. 4915731709686 (ohne + oder Leerzeichen)",
+    "website": "Website-URL",
+    "websitePlaceholder": "z.B. https://gruen-power.de/",
+    "save": "Kontaktdaten speichern",
+    "saved": "Kontaktdaten gespeichert. Sie erscheinen im Kundenportal.",
+    "saveFailed": "Kontaktdaten konnten nicht gespeichert werden."
+  },
   "profile": {
     "title": "Profileinstellungen",
+    "signedInAs": "Angemeldet als {{email}}",
     "language": "Sprache",
     "languageDescription": "Wählen Sie Ihre bevorzugte Sprache",
     "english": "Englisch",
@@ -116,7 +133,7 @@
     "tooManyRequests": "Zu viele fehlgeschlagene Anmeldeversuche. Bitte versuchen Sie es später erneut.",
     "networkError": "Netzwerkfehler. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     "signInError": "Anmeldung nicht möglich. Bitte versuchen Sie es erneut.",
-    "copyright": "© {{year}} AppGrün Power. Alle Rechte vorbehalten."
+    "copyright": "© {{year}} Grün Power. Alle Rechte vorbehalten."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -358,10 +375,11 @@
   "auditLogs": {
     "title": "Dokumentationslesen / Prüfprotokolle",
     "description": "Vollständige Prüfspur von Dateilesaktivitäten.",
-    "autoGenerateNote": "⚠️ Prüfprotokolle werden automatisch generiert, wenn Kunden Dateien öffnen. Admin kann anzeigen, aber Datensätze nicht manuell ändern.",
     "read": "Gelesen",
     "unread": "Ungelesen",
     "exportPDF": "PDF exportieren",
+    "viewPDF": "PDF anzeigen",
+    "uploadedDate": "Hochgeladen",
     "filterProject": "Nach Projekt filtern",
     "filterStatus": "Nach Status filtern",
     "filterCustomer": "Kunde suchen",
@@ -411,7 +429,10 @@
     "active": "Aktiv",
     "inactive": "Inaktiv",
     "uploadImages": "Bilder hochladen",
+    "categories": "Kategorien",
     "filterByCategory": "Nach Kategorie filtern",
+    "filterHint": "Kategorie zum Filtern wählen. Stift-Symbol zum Bearbeiten des Anzeigenamens (wird im Kundenportal übernommen).",
+    "imagesCount": "Bilder",
     "allCategories": "Alle Kategorien ({{count}})",
     "noImagesInGallery": "Keine Bilder in der Galerie",
     "noImagesInCategory": "Keine Bilder in \"{{category}}\"",
@@ -457,10 +478,15 @@
   "projectsNew": {
     "backToProjects": "Zurück zu Projekten",
     "description": "Neues Projekt anlegen und einem Kunden zuweisen",
+    "customerSearchPlaceholder": "Suchen nach Name, E-Mail, Mobilnummer oder Kundennummer...",
     "loadingCustomers": "Kunden werden geladen...",
     "dbNotInitialized": "Datenbank nicht initialisiert",
     "selectCustomer": "Bitte wählen Sie einen Kunden",
     "projectNumberRequired": "Projektnummer ist erforderlich",
+    "notificationEmailLabel": "Benachrichtigungs-E-Mail (optional)",
+    "notificationEmailPlaceholder": "z. B. projekt-kontakt@beispiel.de",
+    "notificationEmailHelp": "Benachrichtigungen (z. B. Projekt erstellt, Dateien hochgeladen) werden an diese E-Mail gesendet. Wenn leer, wird die Kunden-Login-E-Mail verwendet.",
+    "notifyCustomerByEmail": "Kunde per E-Mail über das Projekt benachrichtigen",
     "createFailed": "Projekt konnte nicht erstellt werden. Bitte versuchen Sie es erneut."
   }
 }

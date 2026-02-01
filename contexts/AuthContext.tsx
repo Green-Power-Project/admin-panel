@@ -262,7 +262,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Safeguard: if loading takes too long (e.g. Firestore hang), stop loading so user is not stuck
   useEffect(() => {
-    const maxLoadingMs = 10000;
+    const maxLoadingMs = 5000;
     const t = setTimeout(() => {
       setLoading((prev) => {
         if (prev) {

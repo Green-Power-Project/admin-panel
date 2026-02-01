@@ -51,11 +51,28 @@
     "customerUploads": "Customer Uploads",
     "gallery": "Gallery",
     "profile": "Profile",
+    "contactSettings": "Contact Settings",
     "adminPanel": "Admin Panel",
     "administrator": "Administrator"
   },
+  "contactSettings": {
+    "title": "Contact Details",
+    "subtitle": "These details are shown on the customer portal (gallery, login). Edit and save to update them live.",
+    "phone": "Phone number",
+    "phonePlaceholder": "e.g. +49 157 31709686",
+    "email": "Email address",
+    "emailPlaceholder": "e.g. info@gruen-power.de",
+    "whatsApp": "WhatsApp number",
+    "whatsAppPlaceholder": "e.g. 4915731709686 (no + or spaces)",
+    "website": "Website URL",
+    "websitePlaceholder": "e.g. https://gruen-power.de/",
+    "save": "Save contact details",
+    "saved": "Contact details saved. They will appear on the customer portal.",
+    "saveFailed": "Failed to save contact details."
+  },
   "profile": {
     "title": "Profile Settings",
+    "signedInAs": "Signed in as {{email}}",
     "language": "Language",
     "languageDescription": "Choose your preferred language",
     "english": "English",
@@ -116,7 +133,7 @@
     "tooManyRequests": "Too many failed login attempts. Please try again later.",
     "networkError": "Network error. Please check your connection and try again.",
     "signInError": "Unable to sign in. Please try again.",
-    "copyright": "© {{year}} AppGrün Power. All rights reserved."
+    "copyright": "© {{year}} Grün Power. All rights reserved."
   },
   "dashboard": {
     "title": "Dashboard",
@@ -358,10 +375,11 @@
   "auditLogs": {
     "title": "Read Documentation / Audit Logs",
     "description": "Complete audit trail of file read activities.",
-    "autoGenerateNote": "⚠️ Audit logs are automatically generated when customers open files. Admin can view but cannot manually change records.",
     "read": "Read",
     "unread": "Unread",
     "exportPDF": "Export PDF",
+    "viewPDF": "View PDF",
+    "uploadedDate": "Uploaded",
     "filterProject": "Filter by Project",
     "filterStatus": "Filter by Status",
     "filterCustomer": "Search Customer",
@@ -411,7 +429,10 @@
     "active": "Active",
     "inactive": "Inactive",
     "uploadImages": "Upload Images",
+    "categories": "Categories",
     "filterByCategory": "Filter by Category",
+    "filterHint": "Click a category to filter. Use the pencil icon to edit the display name (synced to customer panel).",
+    "imagesCount": "images",
     "allCategories": "All Categories ({{count}})",
     "noImagesInGallery": "No images in gallery",
     "noImagesInCategory": "No images in \"{{category}}\"",
@@ -424,6 +445,8 @@
     "delete": "Delete",
     "uploadModalTitle": "Upload Gallery Images",
     "uploadModalDescription": "Add new images to your public gallery",
+    "editCategoryNames": "Edit category names",
+    "editName": "Edit name",
     "category": "Category",
     "titleOptional": "Title (optional)",
     "titlePlaceholder": "Enter title for all images",
@@ -457,10 +480,15 @@
   "projectsNew": {
     "backToProjects": "Back to Projects",
     "description": "Add a new project and assign it to a customer",
+    "customerSearchPlaceholder": "Search by name, email, mobile or customer number...",
     "loadingCustomers": "Loading customers...",
     "dbNotInitialized": "Database not initialized",
     "selectCustomer": "Please select a customer",
     "projectNumberRequired": "Project Number is required",
+    "notificationEmailLabel": "Notification email (optional)",
+    "notificationEmailPlaceholder": "e.g., project-contact@example.com",
+    "notificationEmailHelp": "Notifications (e.g. project created, files uploaded) will be sent to this email. If empty, the customer login email is used.",
+    "notifyCustomerByEmail": "Notify customer by email about the project",
     "createFailed": "Failed to create project. Please try again."
   }
 }

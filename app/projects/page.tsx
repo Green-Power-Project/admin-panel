@@ -13,9 +13,8 @@ import {
   orderBy,
   where,
   getDocs,
-  deleteDoc,
-  doc,
 } from 'firebase/firestore';
+import { deleteProjectCascade } from '@/lib/cascadeDelete';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
 import Pagination from '@/components/Pagination';
@@ -181,18 +180,8 @@ function ProjectsContent() {
     setDeleting(projectId);
     
     try {
-      // Cascade: delete report approvals for this project
-      const approvalsQuery = query(
-        collection(dbInstance, 'reportApprovals'),
-        where('projectId', '==', projectId)
-      );
-      const approvalsSnapshot = await getDocs(approvalsQuery);
-      const approvalDeletePromises = approvalsSnapshot.docs.map((d) =>
-        deleteDoc(doc(dbInstance, 'reportApprovals', d.id))
-      );
-      await Promise.all(approvalDeletePromises);
-
-      await deleteDoc(doc(dbInstance, 'projects', projectId));
+      // Cascade: delete project files (Firestore + Cloudinary), fileReadStatus, reportApprovals, then project
+      await deleteProjectCascade(dbInstance, projectId);
       // No need to reload - real-time listener will update automatically
     } catch (error) {
       console.error('Error deleting project:', error);

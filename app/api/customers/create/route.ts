@@ -5,7 +5,7 @@ import { getAuth } from 'firebase-admin/auth';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { name, mobileNumber, zipCode, city, email, password, customerNumber, enabled } = body;
+    const { name, mobileNumber, zipCode, city, email, password, customerNumber, enabled, notifyCustomer, language } = body;
 
     if (!email || !password || !customerNumber) {
       return NextResponse.json(
@@ -54,29 +54,33 @@ export async function POST(request: NextRequest) {
       createdAt: new Date(),
     });
 
-    // Send welcome email to customer
-    try {
-      const welcomeResponse = await fetch(`${process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL || 'http://localhost:3000'}/api/notifications/welcome-customer`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          customerId: uid,
-          customerNumber: customerNumber.trim(),
-          customerName: name?.trim() || '',
-          customerEmail: email.trim(),
-        }),
-      });
-      
-      if (welcomeResponse.ok) {
-        console.log('[customer-create] Welcome email sent successfully');
-      } else {
-        console.warn('[customer-create] Failed to send welcome email');
+    // Send welcome email only when notifyCustomer is true
+    if (notifyCustomer === true) {
+      try {
+        const baseUrl = process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL || 'http://localhost:3000';
+        const welcomeResponse = await fetch(`${baseUrl}/api/notifications/welcome-customer`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            customerId: uid,
+            customerNumber: customerNumber.trim(),
+            customerName: name?.trim() || '',
+            customerEmail: email.trim(),
+            password: password,
+            language: language || 'en',
+          }),
+        });
+
+        if (welcomeResponse.ok) {
+          console.log('[customer-create] Welcome email sent successfully');
+        } else {
+          console.warn('[customer-create] Failed to send welcome email');
+        }
+      } catch (emailError) {
+        console.error('[customer-create] Error sending welcome email:', emailError);
       }
-    } catch (emailError) {
-      console.error('[customer-create] Error sending welcome email:', emailError);
-      // Don't fail customer creation if email fails
     }
 
     return NextResponse.json({ success: true, uid });

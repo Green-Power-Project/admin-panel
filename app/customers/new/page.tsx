@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 
@@ -21,6 +22,7 @@ export default function NewCustomerPage() {
 
 function NewCustomerContent() {
   const router = useRouter();
+  const { language } = useLanguage();
   const [name, setName] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
@@ -29,10 +31,22 @@ function NewCustomerContent() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [notifyCustomer, setNotifyCustomer] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  function generatePassword() {
+    const length = 12;
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%&*';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    setPassword(result);
+    setConfirmPassword(result);
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -87,6 +101,8 @@ function NewCustomerContent() {
           city: city.trim() || '',
           email: email.trim(),
           password: password,
+          notifyCustomer: notifyCustomer,
+          language: language || 'en',
         }),
       });
 
@@ -226,11 +242,25 @@ function NewCustomerContent() {
                 />
               </div>
 
+              <div className="flex items-center gap-3">
+                <input
+                  id="notifyCustomer"
+                  type="checkbox"
+                  checked={notifyCustomer}
+                  onChange={(e) => setNotifyCustomer(e.target.checked)}
+                  className="h-4 w-4 rounded border-gray-300 text-green-power-600 focus:ring-green-power-500"
+                />
+                <label htmlFor="notifyCustomer" className="text-sm font-medium text-gray-700">
+                  Notify customer (send welcome email with portal link, login email and password)
+                </label>
+              </div>
+
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
                   Password <span className="text-red-500">*</span>
                 </label>
-                <div className="relative">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className="relative flex-1">
                   <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
@@ -256,6 +286,14 @@ function NewCustomerContent() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                       </svg>
                     )}
+                  </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={generatePassword}
+                    className="px-3 py-2 text-sm font-medium text-green-power-700 bg-green-power-50 border border-green-power-200 rounded-sm hover:bg-green-power-100 focus:outline-none focus:ring-1 focus:ring-green-power-500 whitespace-nowrap"
+                  >
+                    Auto-generate
                   </button>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">

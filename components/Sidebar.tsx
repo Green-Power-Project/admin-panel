@@ -57,12 +57,12 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
           <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-lg overflow-hidden">
             <img 
               src="/logo.png" 
-              alt="AppGrün Power Logo" 
+              alt="Grün Power Logo" 
               className="w-full h-full object-contain p-1"
             />
           </div>
           <div>
-            <h1 className="text-lg font-bold text-white">AppGrün Power</h1>
+            <h1 className="text-lg font-bold text-white">Grün Power</h1>
             <p className="text-xs text-green-power-200">{t('navigation.adminPanel')}</p>
           </div>
         </div>

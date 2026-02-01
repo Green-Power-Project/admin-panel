@@ -17,6 +17,7 @@ import {
   deleteDoc,
   getDocs,
 } from 'firebase/firestore';
+import { deleteProjectCascade } from '@/lib/cascadeDelete';
 import Pagination from '@/components/Pagination';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
@@ -168,36 +169,58 @@ function CustomersContent() {
       return;
     }
     const dbInstance = db; // Store for TypeScript narrowing
+    const uid = customerToDelete.uid;
 
     setDeleting(true);
     try {
-      // Find the customer document by uid
+      // Cascade: delete all projects owned by this customer (files, fileReadStatus, reportApprovals, project)
+      const projectsQuery = query(
+        collection(dbInstance, 'projects'),
+        where('customerId', '==', uid)
+      );
+      const projectsSnapshot = await getDocs(projectsQuery);
+      for (const projectDoc of projectsSnapshot.docs) {
+        await deleteProjectCascade(dbInstance, projectDoc.id);
+      }
+
+      // Delete report approvals for this customer
+      const approvalsQuery = query(
+        collection(dbInstance, 'reportApprovals'),
+        where('customerId', '==', uid)
+      );
+      const approvalsSnapshot = await getDocs(approvalsQuery);
+      await Promise.all(
+        approvalsSnapshot.docs.map((d) =>
+          deleteDoc(doc(dbInstance, 'reportApprovals', d.id))
+        )
+      );
+
+      // Find and delete customer document(s)
       const customersQuery = query(
         collection(dbInstance, 'customers'),
-        where('uid', '==', customerToDelete.uid)
+        where('uid', '==', uid)
       );
-      
       const customersSnapshot = await getDocs(customersQuery);
       if (customersSnapshot.empty) {
         throw new Error('Customer document not found');
       }
+      await Promise.all(
+        customersSnapshot.docs.map((docSnapshot) =>
+          deleteDoc(doc(dbInstance, 'customers', docSnapshot.id))
+        )
+      );
 
-      // Delete all matching customer documents
-      const deletePromises = customersSnapshot.docs.map((docSnapshot) =>
-        deleteDoc(doc(dbInstance, 'customers', docSnapshot.id))
-      );
-      await Promise.all(deletePromises);
-
-      // Cascade: delete report approvals for this customer
-      const approvalsQuery = query(
-        collection(dbInstance, 'reportApprovals'),
-        where('customerId', '==', customerToDelete.uid)
-      );
-      const approvalsSnapshot = await getDocs(approvalsQuery);
-      const approvalDeletePromises = approvalsSnapshot.docs.map((d) =>
-        deleteDoc(doc(dbInstance, 'reportApprovals', d.id))
-      );
-      await Promise.all(approvalDeletePromises);
+      // Delete Firebase Auth user so the email can be reused
+      const deleteUserRes = await fetch('/api/auth/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid }),
+      });
+      if (!deleteUserRes.ok) {
+        const errData = await deleteUserRes.json().catch(() => ({}));
+        console.error('Auth delete-user failed:', errData);
+        // Still show success for Firestore cleanup; user may need to delete Auth manually
+      }
 
       setShowDeleteConfirm(false);
       setCustomerToDelete(null);
@@ -207,11 +230,11 @@ function CustomersContent() {
         type: 'success',
       });
       setShowAlert(true);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error deleting customer:', error);
       setAlertData({
         title: 'Delete Failed',
-        message: error.message || 'Failed to delete customer. Please try again.',
+        message: error instanceof Error ? error.message : 'Failed to delete customer. Please try again.',
         type: 'error',
       });
       setShowAlert(true);

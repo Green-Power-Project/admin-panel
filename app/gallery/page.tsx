@@ -6,24 +6,16 @@ import AdminLayout from '@/components/AdminLayout';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import {
+  DEFAULT_CATEGORY_KEYS,
+  getGalleryCategoryLabels,
+  setGalleryCategoryLabels,
+  getCategoryDisplayName,
+  type CategoryLabelsMap,
+} from '@/lib/galleryCategoryLabels';
 
 const GALLERY_HEADER_TITLE = 'Grün Power – Galerie';
-const GALLERY_CATEGORIES = [
-  'Pflaster & Einfahrten',
-  'Terrassen & Plattenbeläge',
-  'Naturstein & Feinsteinzeug',
-  'Mauern, L-Steine & Hangbefestigung',
-  'Treppen & Podeste',
-  'Gartenwege & Eingänge',
-  'Entwässerung & Drainage',
-  'Erdarbeiten & Unterbau',
-  'Rasen, Rollrasen & Grünflächen',
-  'Bepflanzung & Gartengestaltung',
-  'Zäune, Sichtschutz & Einfriedungen',
-  'Außenanlagen Komplett',
-  'Vorher / Nachher',
-  'Highlights & Referenzprojekte',
-];
 
 interface GalleryImage {
   id: string;
@@ -52,7 +44,7 @@ function GalleryManagementContent() {
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [uploadCategory, setUploadCategory] = useState<string>(GALLERY_CATEGORIES[0]);
+  const [uploadCategory, setUploadCategory] = useState<string>(DEFAULT_CATEGORY_KEYS[0]);
   const [uploadTitle, setUploadTitle] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -60,6 +52,54 @@ function GalleryManagementContent() {
   const [dragOver, setDragOver] = useState(false);
   const [imageToDelete, setImageToDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+
+  // Category labels from Firestore (edit in admin → reflected in customer)
+  const [categoryLabels, setCategoryLabels] = useState<CategoryLabelsMap>({});
+  const [editingCategoryKey, setEditingCategoryKey] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [savingCategoryName, setSavingCategoryName] = useState(false);
+
+  // Subscribe to gallery config for category labels (live update)
+  useEffect(() => {
+    if (!db) return;
+    const ref = doc(db, 'config', 'gallery');
+    const unsub = onSnapshot(
+      ref,
+      (snap) => {
+        const labels: CategoryLabelsMap = {};
+        if (snap.exists()) {
+          const data = snap.data();
+          const raw = data?.categoryLabels;
+          if (typeof raw === 'object' && raw !== null) Object.assign(labels, raw);
+        }
+        setCategoryLabels(labels);
+      },
+      () => setCategoryLabels({})
+    );
+    return unsub;
+  }, []);
+
+  async function onSaveCategoryName(key: string, value: string) {
+    if (!db) return;
+    setSavingCategoryName(true);
+    try {
+      const next = { ...categoryLabels, [key]: value.trim() || key };
+      await setGalleryCategoryLabels(db, next);
+      setCategoryLabels(next);
+      setEditingCategoryKey(null);
+      setEditingValue('');
+    } catch (e) {
+      console.error('Error saving category name:', e);
+    } finally {
+      setSavingCategoryName(false);
+    }
+  }
+
+  function openUploadModal() {
+    if (selectedCategory !== 'all') setUploadCategory(selectedCategory);
+    setShowUploadModal(true);
+  }
 
   // Load images from Firestore
   useEffect(() => {
@@ -209,82 +249,147 @@ function GalleryManagementContent() {
   const inactiveCount = totalCount - activeCount;
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
-      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-        {/* Header strip – same pattern as Audit Logs */}
-        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('gallery.title')}</h2>
-              <p className="text-xs md:text-sm text-gray-600 mt-1">
-                {t('gallery.headerTitle')}. {t('gallery.description')}
-              </p>
-              <p className="text-[11px] text-gray-500 mt-1">
-                {t('gallery.activeInactiveNote')}
-              </p>
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 h-[calc(100vh-2rem)] flex flex-col min-h-0">
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+        {/* Top bar: title + stats + Upload */}
+        <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+          <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('gallery.title')}</h2>
+          <div className="flex items-center gap-3">
+            <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
+              <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('gallery.total')}</p>
+              <p className="text-sm font-semibold text-gray-900">{totalCount}</p>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="px-3 py-2 rounded-lg bg-white/90 border border-gray-200">
-                <p className="text-[11px] text-gray-500 uppercase tracking-wide">{t('gallery.total')}</p>
-                <p className="text-sm font-semibold text-gray-900">{totalCount}</p>
-              </div>
-              <div className="px-3 py-2 rounded-lg bg-white/90 border border-green-200">
-                <p className="text-[11px] text-green-700 uppercase tracking-wide">{t('gallery.active')}</p>
-                <p className="text-sm font-semibold text-green-800">{activeCount}</p>
-              </div>
-              <div className="px-3 py-2 rounded-lg bg-white/90 border border-yellow-200">
-                <p className="text-[11px] text-yellow-700 uppercase tracking-wide">{t('gallery.inactive')}</p>
-                <p className="text-sm font-semibold text-yellow-800">{inactiveCount}</p>
-              </div>
-              <button
-                onClick={() => setShowUploadModal(true)}
-                disabled={loading}
-                className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-md hover:bg-green-power-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                </svg>
-                {t('gallery.uploadImages')}
-              </button>
+            <div className="px-3 py-2 rounded-lg bg-white/90 border border-green-200">
+              <p className="text-[11px] text-green-700 uppercase tracking-wide">{t('gallery.active')}</p>
+              <p className="text-sm font-semibold text-green-800">{activeCount}</p>
             </div>
-          </div>
-        </div>
-
-        {/* Filter strip – same pattern as Audit Logs */}
-        <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/60">
-          <label className="block text-xs font-medium text-gray-700 mb-2">{t('gallery.filterByCategory')}</label>
-          <div className="flex flex-wrap gap-2">
+            <div className="px-3 py-2 rounded-lg bg-white/90 border border-yellow-200">
+              <p className="text-[11px] text-yellow-700 uppercase tracking-wide">{t('gallery.inactive')}</p>
+              <p className="text-sm font-semibold text-yellow-800">{inactiveCount}</p>
+            </div>
             <button
-              onClick={() => setSelectedCategory('all')}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                selectedCategory === 'all'
-                  ? 'bg-green-power-600 text-white'
-                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-green-power-300'
-              }`}
+              onClick={openUploadModal}
+              disabled={loading}
+              className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-md hover:bg-green-power-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
             >
-              {t('gallery.allCategories', { count: images.length })}
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+              {t('gallery.uploadImages')}
             </button>
-            {GALLERY_CATEGORIES.map((category) => {
-              const count = images.filter((img) => img.category === category).length;
-              return (
-                <button
-                  key={category}
-                  onClick={() => setSelectedCategory(category)}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    selectedCategory === category
-                      ? 'bg-green-power-600 text-white'
-                      : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 hover:border-green-power-300'
-                  }`}
-                >
-                  {category} ({count})
-                </button>
-              );
-            })}
           </div>
         </div>
 
-        {/* Content */}
-        <div className="px-6 py-4">
+        {/* Two columns: left = categories, right = images (both scroll inside their area) */}
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Left sidebar – Categories (scrollable, fixed height) */}
+          <aside className="w-64 sm:w-72 flex-shrink-0 min-h-0 border-r border-gray-200 bg-gray-50/50 flex flex-col overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+              <h3 className="text-sm font-semibold text-gray-900">{t('gallery.categories')}</h3>
+            </div>
+            <nav className="flex-1 min-h-0 overflow-y-auto py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {/* All */}
+              <button
+                onClick={() => setSelectedCategory('all')}
+                className={`w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                  selectedCategory === 'all'
+                    ? 'bg-green-power-600 text-white font-medium'
+                    : 'text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <span className="truncate">{t('gallery.allCategories', { count: images.length })}</span>
+              </button>
+              {/* Category list */}
+              {DEFAULT_CATEGORY_KEYS.map((category) => {
+                const count = images.filter((img) => img.category === category).length;
+                const displayName = getCategoryDisplayName(categoryLabels, category);
+                const isEditing = editingCategoryKey === category;
+                const isSelected = selectedCategory === category;
+                return (
+                  <div
+                    key={category}
+                    className={`border-b border-gray-100 last:border-0 ${
+                      isSelected && !isEditing ? 'bg-green-power-50' : ''
+                    }`}
+                  >
+                    {isEditing ? (
+                      <div className="flex items-center gap-2 px-4 py-2" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={(e) => setEditingValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') onSaveCategoryName(category, editingValue);
+                            if (e.key === 'Escape') { setEditingCategoryKey(null); setEditingValue(''); }
+                          }}
+                          className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => onSaveCategoryName(category, editingValue)}
+                          disabled={savingCategoryName}
+                          className="p-1.5 rounded text-green-power-600 hover:bg-green-power-100 disabled:opacity-50"
+                          title={t('common.save')}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingCategoryKey(null); setEditingValue(''); }}
+                          className="p-1.5 rounded text-gray-500 hover:bg-gray-100"
+                          title={t('common.cancel')}
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 w-full">
+                        <button
+                          onClick={() => setSelectedCategory(category)}
+                          className={`flex-1 min-w-0 flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors ${
+                            isSelected
+                              ? 'bg-green-power-600 text-white font-medium'
+                              : 'text-gray-700 hover:bg-gray-100'
+                          }`}
+                        >
+                          <span className="truncate">{displayName}</span>
+                          <span className={`text-xs flex-shrink-0 ${isSelected ? 'text-white/90' : 'text-gray-500'}`}>({count})</span>
+                        </button>
+                        {isSelected && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingCategoryKey(category);
+                              setEditingValue(displayName);
+                            }}
+                            className="flex-shrink-0 p-2 rounded-lg text-gray-900 hover:bg-black/10 transition-colors mr-1"
+                            title={t('gallery.editName')}
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </nav>
+          </aside>
+
+          {/* Right – Images (scrollable container only) */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+            <div className="px-6 py-3 border-b border-gray-100 bg-white flex items-center justify-between gap-2 flex-shrink-0">
+              <p className="text-sm text-gray-600">
+                {selectedCategory === 'all'
+                  ? t('gallery.allCategories', { count: filteredImages.length })
+                  : getCategoryDisplayName(categoryLabels, selectedCategory) + ` (${filteredImages.length})`}
+              </p>
+            </div>
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {loading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {Array.from({ length: 8 }).map((_, index) => (
@@ -295,13 +400,13 @@ function GalleryManagementContent() {
             <div className="text-center py-20">
               <div className="text-gray-300 text-8xl mb-6">📷</div>
               <h3 className="text-xl font-semibold text-gray-900 mb-2">
-                {selectedCategory === 'all' ? t('gallery.noImagesInGallery') : t('gallery.noImagesInCategory', { category: selectedCategory })}
+                {selectedCategory === 'all' ? t('gallery.noImagesInGallery') : t('gallery.noImagesInCategory', { category: getCategoryDisplayName(categoryLabels, selectedCategory) })}
               </h3>
               <p className="text-gray-500 text-lg mb-8 max-w-md mx-auto">
                 {t('gallery.uploadFirstDescription')}
               </p>
               <button
-                onClick={() => setShowUploadModal(true)}
+                onClick={openUploadModal}
                 className="px-8 py-3 bg-gradient-to-r from-green-power-600 to-green-power-700 text-white rounded-lg hover:from-green-power-700 hover:to-green-power-800 transition-all duration-200 shadow-lg hover:shadow-xl"
               >
                 {t('gallery.uploadFirstButton')}
@@ -311,23 +416,29 @@ function GalleryManagementContent() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
               {filteredImages.map((image) => (
                 <div key={image.id} className="group bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
-                  <div className="aspect-[4/3] relative overflow-hidden bg-gray-50">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewImageUrl(image.url)}
+                    className="aspect-[4/3] relative overflow-hidden bg-gray-50 w-full block cursor-pointer text-left"
+                  >
                     <img
                       src={image.url}
                       alt={image.title || `${image.category} - ${image.id}`}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
                     />
                     {!image.isActive && (
                       <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                         <span className="px-3 py-1.5 bg-gray-800/90 text-white text-xs font-semibold rounded-full">{t('gallery.inactive')}</span>
                       </div>
                     )}
-                    <div className="absolute top-2 left-2">
+                    <div className="absolute top-2 left-2 pointer-events-none">
                       <span className="px-2 py-1 bg-white/95 text-gray-700 text-xs font-medium rounded-md shadow-sm">
-                        {image.category.length > 20 ? image.category.slice(0, 18) + '…' : image.category}
+                        {(getCategoryDisplayName(categoryLabels, image.category)).length > 20
+                          ? getCategoryDisplayName(categoryLabels, image.category).slice(0, 18) + '…'
+                          : getCategoryDisplayName(categoryLabels, image.category)}
                       </span>
                     </div>
-                  </div>
+                  </button>
                   <div className="p-3 flex items-center justify-between gap-2 border-t border-gray-100">
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-gray-900 truncate">{image.title || t('gallery.untitled')}</p>
@@ -344,7 +455,7 @@ function GalleryManagementContent() {
                   <div className="px-3 pb-3 flex gap-2">
                     <button
                       type="button"
-                      onClick={() => window.open(image.url, '_blank')}
+                      onClick={() => setPreviewImageUrl(image.url)}
                       className="flex-1 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                     >
                       {t('gallery.view')}
@@ -372,6 +483,8 @@ function GalleryManagementContent() {
               ))}
             </div>
           )}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -406,15 +519,21 @@ function GalleryManagementContent() {
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       {t('gallery.category')}
                     </label>
-                    <select
-                      value={uploadCategory}
-                      onChange={(e) => setUploadCategory(e.target.value)}
-                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-transparent text-sm"
-                    >
-                      {GALLERY_CATEGORIES.map((category) => (
-                        <option key={category} value={category}>{category}</option>
-                      ))}
-                    </select>
+                    {selectedCategory === 'all' ? (
+                      <select
+                        value={uploadCategory}
+                        onChange={(e) => setUploadCategory(e.target.value)}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-transparent text-sm"
+                      >
+                        {DEFAULT_CATEGORY_KEYS.map((category) => (
+                          <option key={category} value={category}>{getCategoryDisplayName(categoryLabels, category)}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="w-full px-4 py-3 border border-gray-200 rounded-lg bg-gray-50 text-gray-700 text-sm font-medium">
+                        {getCategoryDisplayName(categoryLabels, uploadCategory)}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -550,6 +669,32 @@ function GalleryManagementContent() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image preview modal (in-portal, no new tab) */}
+      {previewImageUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setPreviewImageUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewImageUrl(null)}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            aria-label={t('common.close')}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div className="relative max-w-[95vw] max-h-[90vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={previewImageUrl}
+              alt=""
+              className="max-h-[90vh] w-auto object-contain rounded-lg"
+            />
           </div>
         </div>
       )}

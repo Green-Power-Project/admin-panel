@@ -22,6 +22,7 @@ interface Project {
   customerId: string;
   projectNumber?: string;
   enabled?: boolean;
+  notificationEmail?: string;
 }
 
 export default function EditProjectPage() {
@@ -42,6 +43,7 @@ function EditProjectContent() {
   const [name, setName] = useState('');
   const [year, setYear] = useState('');
   const [customerId, setCustomerId] = useState('');
+  const [notificationEmail, setNotificationEmail] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
@@ -63,6 +65,7 @@ function EditProjectContent() {
           setName(projectData.name);
           setYear(projectData.year?.toString() || '');
           setCustomerId(projectData.customerId);
+          setNotificationEmail(projectData.notificationEmail || '');
           setEnabled(projectData.enabled !== false);
           setError('');
         } else {
@@ -148,6 +151,12 @@ function EditProjectContent() {
         updateData.year = null;
       }
 
+      if (notificationEmail.trim()) {
+        updateData.notificationEmail = notificationEmail.trim();
+      } else {
+        updateData.notificationEmail = null;
+      }
+
       await updateDoc(doc(dbInstance, 'projects', projectId), updateData);
       router.push(`/projects/${projectId}`);
     } catch (err: any) {
@@ -225,9 +234,22 @@ function EditProjectContent() {
                   readOnly
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm bg-gray-50 text-gray-600 cursor-not-allowed"
                 />
-                <p className="mt-1 text-xs text-gray-500">
-                  Project number is auto-generated and cannot be changed.
-                </p>
+               
+              </div>
+
+              <div>
+                <label htmlFor="notificationEmail" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Notification email (optional)
+                </label>
+                <input
+                  id="notificationEmail"
+                  type="email"
+                  value={notificationEmail}
+                  onChange={(e) => setNotificationEmail(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  placeholder="e.g., project-contact@example.com"
+                />
+                
               </div>
 
               <div>
