@@ -114,10 +114,8 @@ function CustomerUploadsContent() {
             customerId: data.customerId,
           });
         });
-        // Trigger customer uploads reload when projects change
-        if (customersMap.size > 0) {
-          processCustomerUploads(projectsMap, customersMap);
-        }
+        // Always process (even with empty maps) so loading is cleared when there is no data
+        processCustomerUploads(projectsMap, customersMap);
       },
       (error) => {
         console.error('Error listening to projects:', error);
@@ -136,10 +134,8 @@ function CustomerUploadsContent() {
             email: data.email || 'N/A',
           });
         });
-        // Trigger customer uploads reload when customers change
-        if (projectsMap.size > 0) {
-          processCustomerUploads(projectsMap, customersMap);
-        }
+        // Always process (even with empty maps) so loading is cleared when there is no data
+        processCustomerUploads(projectsMap, customersMap);
       },
       (error) => {
         console.error('Error listening to customers:', error);

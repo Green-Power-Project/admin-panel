@@ -131,10 +131,8 @@ function AuditLogsContent() {
           }
           readStatusesMap.get(status.filePath)!.push(status);
         });
-        // Trigger audit logs reload when read status changes
-        if (projectsMap.size > 0 && customersMap.size > 0) {
-          processAuditLogs(readStatusesMap, projectsMap, customersMap);
-        }
+        // Always process (even with empty maps) so loading is cleared when there is no data
+        processAuditLogs(readStatusesMap, projectsMap, customersMap);
       },
       (error) => {
         console.error('Error listening to file read status:', error);
@@ -153,10 +151,8 @@ function AuditLogsContent() {
             customerId: data.customerId,
           });
         });
-        // Trigger audit logs reload when projects change
-        if (readStatusesMap.size >= 0 && customersMap.size > 0) {
-          processAuditLogs(readStatusesMap, projectsMap, customersMap);
-        }
+        // Always process (even with empty maps) so loading is cleared when there is no data
+        processAuditLogs(readStatusesMap, projectsMap, customersMap);
       },
       (error) => {
         console.error('Error listening to projects:', error);
@@ -175,10 +171,8 @@ function AuditLogsContent() {
             email: data.email || 'N/A',
           });
         });
-        // Trigger audit logs reload when customers change
-        if (readStatusesMap.size >= 0 && projectsMap.size > 0) {
-          processAuditLogs(readStatusesMap, projectsMap, customersMap);
-        }
+        // Always process (even with empty maps) so loading is cleared when there is no data
+        processAuditLogs(readStatusesMap, projectsMap, customersMap);
       },
       (error) => {
         console.error('Error listening to customers:', error);
