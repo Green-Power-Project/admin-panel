@@ -521,6 +521,12 @@
     "siteManagerNamePlaceholder": "e.g., Max Mustermann",
     "siteManagerNameHelp": "Optional. Shown in file notification emails.",
     "notifyCustomerByEmail": "Notify customer by email about the project",
+    "projectThumbnailLabel": "Project thumbnail image",
+    "projectThumbnailHelp": "Optional. Shown on project cards in the customer panel. Use a landscape image for best results.",
+    "projectThumbnailRemove": "Remove thumbnail",
+    "projectThumbnailChoose": "Choose thumbnail image",
+    "projectThumbnailChange": "Change image",
+    "uploadingThumbnail": "Uploading thumbnail...",
     "createFailed": "Failed to create project. Please try again."
   }
 }

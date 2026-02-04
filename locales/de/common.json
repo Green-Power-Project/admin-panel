@@ -519,6 +519,12 @@
     "siteManagerNamePlaceholder": "z. B. Max Mustermann",
     "siteManagerNameHelp": "Optional. Wird in Datei-Benachrichtigungen angezeigt.",
     "notifyCustomerByEmail": "Kunde per E-Mail über das Projekt benachrichtigen",
+    "projectThumbnailLabel": "Projekt-Vorschaubild",
+    "projectThumbnailHelp": "Optional. Wird auf den Projektkarten im Kundenportal angezeigt. Querformat für beste Darstellung.",
+    "projectThumbnailRemove": "Vorschaubild entfernen",
+    "projectThumbnailChoose": "Vorschaubild wählen",
+    "projectThumbnailChange": "Bild ändern",
+    "uploadingThumbnail": "Vorschaubild wird hochgeladen...",
     "createFailed": "Projekt konnte nicht erstellt werden. Bitte versuchen Sie es erneut."
   }
 }

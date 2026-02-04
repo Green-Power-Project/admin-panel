@@ -6,9 +6,10 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
-import { collection, addDoc, getDocs, query, orderBy, where } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { createProjectFolderStructure } from '@/lib/projectUtils';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { uploadFile } from '@/lib/cloudinary';
 
 interface Customer {
   uid: string;
@@ -47,6 +48,10 @@ function NewProjectContent() {
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
   const [customerDropdownOpen, setCustomerDropdownOpen] = useState(false);
   const customerDropdownRef = useRef<HTMLDivElement>(null);
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [thumbnailPreviewUrl, setThumbnailPreviewUrl] = useState<string | null>(null);
+  const [thumbnailUploading, setThumbnailUploading] = useState(false);
+  const thumbnailInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadCustomers();
@@ -62,6 +67,17 @@ function NewProjectContent() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Thumbnail preview: create object URL when file selected, revoke on change/unmount
+  useEffect(() => {
+    if (!thumbnailFile) {
+      setThumbnailPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(thumbnailFile);
+    setThumbnailPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [thumbnailFile]);
 
   const filteredCustomers = useMemo(() => {
     if (!customerSearchQuery.trim()) return customers;
@@ -168,6 +184,25 @@ function NewProjectContent() {
       // Create project document in Firestore
       const projectRef = await addDoc(collection(dbInstance, 'projects'), projectData);
       const projectId = projectRef.id;
+
+      // Upload project thumbnail if selected
+      if (thumbnailFile) {
+        setThumbnailUploading(true);
+        try {
+          const result = await uploadFile(
+            thumbnailFile,
+            `project-thumbnails/${projectId}`,
+            'thumbnail',
+            () => {}
+          );
+          await updateDoc(doc(dbInstance, 'projects', projectId), { thumbnailUrl: result.secure_url });
+        } catch (thumbErr) {
+          console.error('Error uploading project thumbnail:', thumbErr);
+          // Project is already created; thumbnail can be added later from project settings if needed
+        } finally {
+          setThumbnailUploading(false);
+        }
+      }
 
       // Create folder structure in Firebase Storage
       try {
@@ -461,7 +496,63 @@ function NewProjectContent() {
                 />
               </div>
 
-
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('projectsNew.projectThumbnailLabel')} (Optional)
+                </label>
+                <p className="text-xs text-gray-500 mb-2">
+                  {t('projectsNew.projectThumbnailHelp')}
+                </p>
+                <input
+                  ref={thumbnailInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    setThumbnailFile(file || null);
+                  }}
+                />
+                {thumbnailPreviewUrl ? (
+                  <div className="space-y-2">
+                    <div className="relative w-full max-w-xs aspect-video rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={thumbnailPreviewUrl}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setThumbnailFile(null);
+                          if (thumbnailInputRef.current) thumbnailInputRef.current.value = '';
+                        }}
+                        className="text-sm text-gray-600 hover:text-red-600"
+                      >
+                        {t('projectsNew.projectThumbnailRemove')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => thumbnailInputRef.current?.click()}
+                        className="text-sm text-green-power-600 hover:text-green-power-700"
+                      >
+                        {t('projectsNew.projectThumbnailChange')}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => thumbnailInputRef.current?.click()}
+                    className="w-full max-w-xs px-4 py-3 border border-dashed border-gray-300 rounded-lg text-sm text-gray-600 hover:border-green-power-400 hover:bg-green-power-50/30 hover:text-green-power-700 transition-colors"
+                  >
+                    {t('projectsNew.projectThumbnailChoose')}
+                  </button>
+                )}
+              </div>
 
               <div className="flex items-center justify-end space-x-3 pt-4">
                 <Link
@@ -472,10 +563,10 @@ function NewProjectContent() {
                 </Link>
                 <button
                   type="submit"
-                  disabled={loading || loadingCustomers || customers.length === 0 || !customerId || !projectNumber.trim() || !notificationEmail.trim()}
+                  disabled={loading || thumbnailUploading || loadingCustomers || customers.length === 0 || !customerId || !projectNumber.trim() || !notificationEmail.trim()}
                   className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Creating...' : 'Create Project'}
+                  {loading || thumbnailUploading ? (thumbnailUploading ? t('projectsNew.uploadingThumbnail') : 'Creating...') : 'Create Project'}
                 </button>
               </div>
             </form>
