@@ -61,11 +61,31 @@ export async function POST(request: NextRequest) {
     const category = formData.get('category') as string;
     const title = formData.get('title') as string;
     const uploadedBy = formData.get('uploadedBy') as string;
+    const projectIdsRaw = formData.get('projectIds') as string | null;
+    let projectIds: string[] = [];
+    if (projectIdsRaw) {
+      try {
+        const parsed = JSON.parse(projectIdsRaw);
+        projectIds = Array.isArray(parsed) ? parsed.filter((id: unknown) => typeof id === 'string') : [];
+      } catch {
+        projectIds = [];
+      }
+    }
 
     if (!files.length || !category || !uploadedBy) {
       return NextResponse.json(
-        { error: 'Missing required fields' },
+        { error: 'Missing required fields (files, category, or uploadedBy)' },
         { status: 400 }
+      );
+    }
+
+    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+    const apiKey = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    if (!cloudName || !apiKey || !apiSecret) {
+      return NextResponse.json(
+        { error: 'Gallery upload is not configured (Cloudinary credentials missing).' },
+        { status: 500 }
       );
     }
 
@@ -87,7 +107,7 @@ export async function POST(request: NextRequest) {
       });
 
       // Save to Firestore
-      const galleryDoc = {
+      const galleryDoc: Record<string, unknown> = {
         url: cloudinaryResponse.secure_url,
         publicId: cloudinaryResponse.public_id,
         category,
@@ -98,6 +118,7 @@ export async function POST(request: NextRequest) {
         fileSize: file.size,
         fileType: file.type,
       };
+      if (projectIds.length > 0) galleryDoc.projectIds = projectIds;
 
       const docRef = await adminDb.collection('gallery').add(galleryDoc);
       
@@ -113,10 +134,12 @@ export async function POST(request: NextRequest) {
       success: true, 
       uploadedImages: uploadResults 
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error uploading gallery images:', error);
+    const message = error instanceof Error ? error.message : 'Failed to upload images';
+    const isConfig = /cloudinary|credentials|config|environment/i.test(message);
     return NextResponse.json(
-      { error: 'Failed to upload images' },
+      { error: isConfig ? 'Gallery upload is not configured (check Cloudinary and Firebase).' : message },
       { status: 500 }
     );
   }

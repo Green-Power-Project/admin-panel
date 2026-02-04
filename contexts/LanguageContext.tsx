@@ -15,6 +15,22 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
+const LANGUAGE_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const languageCache: { uid: string; language: Language; ts: number }[] = [];
+
+function getCachedLanguage(uid: string): Language | null {
+  const entry = languageCache.find((e) => e.uid === uid);
+  if (!entry || Date.now() - entry.ts > LANGUAGE_CACHE_TTL_MS) return null;
+  return entry.language;
+}
+
+function setCachedLanguage(uid: string, language: Language) {
+  const idx = languageCache.findIndex((e) => e.uid === uid);
+  if (idx >= 0) languageCache.splice(idx, 1);
+  languageCache.push({ uid, language, ts: Date.now() });
+  if (languageCache.length > 20) languageCache.shift();
+}
+
 // Import translations
 import enTranslations from '@/locales/en/common.json';
 import deTranslations from '@/locales/de/common.json';
@@ -87,10 +103,18 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // If we have a user and db, try to load from Firestore
+      // If we have a user and db, try to load from Firestore (with cache)
       if (currentUser && db) {
+        const cached = getCachedLanguage(currentUser.uid);
+        if (cached) {
+          setLanguageState(cached);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('admin-language', cached);
+          }
+          setLoading(false);
+          return;
+        }
         const dbInstance = db;
-
         try {
           const adminDoc = await getDoc(doc(dbInstance, 'admins', currentUser.uid));
           if (adminDoc.exists()) {
@@ -98,6 +122,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
             const savedLanguage = data.language as Language;
             if (savedLanguage === 'en' || savedLanguage === 'de') {
               setLanguageState(savedLanguage);
+              setCachedLanguage(currentUser.uid, savedLanguage);
               if (typeof window !== 'undefined') {
                 localStorage.setItem('admin-language', savedLanguage);
               }
@@ -142,6 +167,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
             updatedAt: new Date(),
           });
         }
+        setCachedLanguage(currentUser.uid, lang);
       } catch (error) {
         console.error('Error saving language preference:', error);
       }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 
 const PORTAL_URL_DEFAULT = 'https://window-app-roan.vercel.app';
 const CONTACT_EMAIL = 'info@gruen-power.de';
@@ -9,6 +10,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { projectId, projectNumber, projectName, customerId, customerNumber, customerName, customerEmail, notificationEmail, language } = body;
+    const customerNameSafe = (customerName && String(customerName).trim()) || '';
 
     if (!projectId || !projectNumber || !customerId || !customerNumber) {
       return NextResponse.json(
@@ -38,6 +40,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, skipped: true }, { status: 200 });
     }
 
+    const contact = await getContactForEmail(db);
+    const closing = buildGermanEmailClosing(contact);
+    const contactEmailForBody = contact.email || CONTACT_EMAIL;
+    const portalLoginUrl = `${PORTAL_URL.replace(/\/$/, '')}/login`;
+
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -46,53 +53,47 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const isDe = language === 'de';
+    const subject = 'Ihr Zugang zum Grün Power Kundenportal – Login-Daten';
 
-    const subject = isDe
-      ? 'Neues Projekt in unserem Grün Power Kundenportal'
-      : 'New project in our Grün Power Customer Portal';
+    const emailContentHtml = `
+<p>Sehr geehrte Damen und Herren,</p>
+<p>wir haben für Sie ein Kundenkonto in unserem Grün Power Kundenportal erstellt.</p>
+<p>Dort finden Sie alle Unterlagen und Informationen zu Ihrem Projekt.</p>
 
-    const emailContentHtml = isDe
-      ? `<p>Sehr geehrte Damen und Herren,</p>
-<p>wir haben ein neues Projekt in unserem Grün Power Kundenportal für Sie erstellt.</p>
-<p><strong>Link zum Kundenportal:</strong><br><a href="${PORTAL_URL}/login">${PORTAL_URL}/login</a></p>
-<p>Bitte melden Sie sich mit Ihrer E-Mail-Adresse an, um die für Ihr Projekt bereitgestellten Unterlagen einzusehen.</p>
-<p>Bei Fragen oder Problemen können Sie sich jederzeit gerne bei uns melden oder uns eine E-Mail an ${CONTACT_EMAIL} schreiben.</p>
-<p>Mit freundlichen Grüßen<br>Grün Power Garten- und Landschaftsbau</p>`
-      : `<p>Dear Sir or Madam,</p>
-<p>we have created a new project for you in our Grün Power Customer Portal.</p>
-<p><strong>Customer portal link:</strong><br><a href="${PORTAL_URL}/login">${PORTAL_URL}/login</a></p>
-<p>Please log in using your email address to view the documents provided for your project.</p>
-<p>If you have any questions or experience any issues, feel free to contact us anytime or email us at ${CONTACT_EMAIL}.</p>
-<p>Kind regards,<br>Grün Power Garten- und Landschaftsbau</p>`;
+<p style="margin: 16px 0 8px 0;"><strong>📌 Kundenportal:</strong></p>
+<p style="margin: 12px 0 16px 0;"><a href="${portalLoginUrl}" style="display: inline-block; padding: 12px 24px; background-color: #2e7d32; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: bold;">Zum Kundenportal — Login</a></p>
 
-    const emailContentText = isDe
-      ? `Sehr geehrte Damen und Herren,
+<div style="background-color: #e8f5e9; padding: 16px 20px; margin: 20px 0; border-left: 4px solid #2e7d32; border-radius: 4px;">
+  <p style="margin: 0 0 10px 0; font-weight: bold; color: #1b5e20;">🔐 Ihre Zugangsdaten (Login):</p>
+  <p style="margin: 6px 0;"><strong>Kunden Nr:</strong> ${customerNumber}</p>
+  <p style="margin: 6px 0;"><strong>Projekt Nr:</strong> ${projectNumber}</p>
+</div>
 
-wir haben ein neues Projekt in unserem Grün Power Kundenportal für Sie erstellt.
+<p>Sie können sich ab sofort mit diesen Daten anmelden und die Dokumente, Fotos sowie alle projektbezogenen Informationen einsehen.</p>
+<p>Das Portal dient der Transparenz und einer klaren Kommunikation, damit Sie jederzeit über den aktuellen Stand Ihres Projekts informiert sind.</p>
+<p>Bei Fragen oder Problemen mit der Anmeldung können Sie uns jederzeit kontaktieren oder eine E-Mail schreiben an:</p>
+<p style="margin: 8px 0 0 0;">📧 <a href="mailto:${contactEmailForBody}">${contactEmailForBody}</a></p>
+${closing.html}`;
 
-Link zum Kundenportal:
-${PORTAL_URL}/login
+    const emailContentText = `Sehr geehrte Damen und Herren,
 
-Bitte melden Sie sich mit Ihrer E-Mail-Adresse an, um die für Ihr Projekt bereitgestellten Unterlagen einzusehen.
+wir haben für Sie ein Kundenkonto in unserem Grün Power Kundenportal erstellt.
+Dort finden Sie alle Unterlagen und Informationen zu Ihrem Projekt.
 
-Bei Fragen oder Problemen können Sie sich jederzeit gerne bei uns melden oder uns eine E-Mail an ${CONTACT_EMAIL} schreiben.
+📌 Link zum Kundenportal:
+${portalLoginUrl}
 
-Mit freundlichen Grüßen
-Grün Power Garten- und Landschaftsbau`
-      : `Dear Sir or Madam,
+🔐 Ihre Zugangsdaten (Login):
+Kunden Nr: ${customerNumber}
+Projekt Nr: ${projectNumber}
 
-we have created a new project for you in our Grün Power Customer Portal.
+Sie können sich ab sofort mit diesen Daten anmelden und die Dokumente, Fotos sowie alle projektbezogenen Informationen einsehen.
+Das Portal dient der Transparenz und einer klaren Kommunikation, damit Sie jederzeit über den aktuellen Stand Ihres Projekts informiert sind.
 
-Customer portal link:
-${PORTAL_URL}/login
+Bei Fragen oder Problemen mit der Anmeldung können Sie uns jederzeit kontaktieren oder eine E-Mail schreiben an:
+📧 ${contactEmailForBody}
 
-Please log in using your email address to view the documents provided for your project.
-
-If you have any questions or experience any issues, feel free to contact us anytime or email us at ${CONTACT_EMAIL}.
-
-Kind regards,
-Grün Power Garten- und Landschaftsbau`;
+${closing.text}`;
 
     const EMAIL_CC = process.env.EMAIL_CC || 'grunpower462@gmail.com';
     const mailOptions = {
@@ -107,18 +108,15 @@ Grün Power Garten- und Landschaftsbau`;
           <meta charset="utf-8">
           <style>
             body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .content { background-color: #f9f9f9; padding: 20px; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+            .container { max-width: 600px; margin: 0 auto; padding: 24px; }
+            .content { padding: 24px; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="content">
+              ${buildEmailLogoHtml()}
               ${emailContentHtml}
-            </div>
-            <div class="footer">
-              <p>This is an automated notification from Grün Power.</p>
             </div>
           </div>
         </body>

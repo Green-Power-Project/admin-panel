@@ -23,6 +23,8 @@ interface Project {
   projectNumber?: string;
   enabled?: boolean;
   notificationEmail?: string;
+  notificationTarget?: 'login' | 'project';
+  siteManagerName?: string;
 }
 
 export default function EditProjectPage() {
@@ -44,12 +46,16 @@ function EditProjectContent() {
   const [year, setYear] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [notificationEmail, setNotificationEmail] = useState('');
+  const [notificationTarget, setNotificationTarget] = useState<'login' | 'project'>('project');
+  const [siteManagerName, setSiteManagerName] = useState('');
   const [enabled, setEnabled] = useState(true);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+
+  const selectedCustomer = customers.find((c) => c.uid === customerId) ?? null;
 
   useEffect(() => {
     if (!projectId || !db) return;
@@ -66,6 +72,8 @@ function EditProjectContent() {
           setYear(projectData.year?.toString() || '');
           setCustomerId(projectData.customerId);
           setNotificationEmail(projectData.notificationEmail || '');
+          setNotificationTarget(projectData.notificationTarget === 'login' ? 'login' : 'project');
+          setSiteManagerName(projectData.siteManagerName || '');
           setEnabled(projectData.enabled !== false);
           setError('');
         } else {
@@ -135,9 +143,18 @@ function EditProjectContent() {
       return;
     }
 
+    if (!notificationEmail.trim()) {
+      setError('Project notification email is required so we know where to send notifications.');
+      setSaving(false);
+      return;
+    }
+
     try {
       const updateData: any = {
         name: name.trim(),
+        notificationEmail: notificationEmail.trim(),
+        notificationTarget: notificationTarget,
+        siteManagerName: (siteManagerName || '').trim(),
         enabled: enabled,
         // Customer ID is not updated - it cannot be changed
       };
@@ -149,12 +166,6 @@ function EditProjectContent() {
         }
       } else {
         updateData.year = null;
-      }
-
-      if (notificationEmail.trim()) {
-        updateData.notificationEmail = notificationEmail.trim();
-      } else {
-        updateData.notificationEmail = null;
       }
 
       await updateDoc(doc(dbInstance, 'projects', projectId), updateData);
@@ -239,17 +250,69 @@ function EditProjectContent() {
 
               <div>
                 <label htmlFor="notificationEmail" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Notification email (optional)
+                  Notification email <span className="text-red-500" aria-hidden="true">*</span>
                 </label>
                 <input
                   id="notificationEmail"
                   type="email"
                   value={notificationEmail}
                   onChange={(e) => setNotificationEmail(e.target.value)}
+                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
                   placeholder="e.g., project-contact@example.com"
+                  aria-required="true"
                 />
-                
+                <p className="mt-1 text-xs text-gray-500">
+                  Notifications (e.g. project created, files uploaded) are sent to this email. Required.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Send file notifications to
+                </label>
+                <div className="flex gap-4">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="notificationTarget"
+                      checked={notificationTarget === 'project'}
+                      onChange={() => setNotificationTarget('project')}
+                      className="rounded-full border-gray-300 text-green-power-600 focus:ring-green-power-500"
+                    />
+                    <span className="text-sm text-gray-700">Project email (e.g. site manager)</span>
+                  </label>
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="notificationTarget"
+                      checked={notificationTarget === 'login'}
+                      onChange={() => {
+                        setNotificationTarget('login');
+                        const customerEmail = selectedCustomer?.email?.trim();
+                        if (customerEmail && customerEmail !== 'N/A') {
+                          setNotificationEmail(customerEmail);
+                        }
+                      }}
+                      className="rounded-full border-gray-300 text-green-power-600 focus:ring-green-power-500"
+                    />
+                    <span className="text-sm text-gray-700">Main login email</span>
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="siteManagerName" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Site Manager (Bauleiter) name
+                </label>
+                <input
+                  id="siteManagerName"
+                  type="text"
+                  value={siteManagerName}
+                  onChange={(e) => setSiteManagerName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  placeholder="e.g., Max Mustermann"
+                />
               </div>
 
               <div>
@@ -339,7 +402,7 @@ function EditProjectContent() {
                 </Link>
                 <button
                   type="submit"
-                  disabled={saving || loadingCustomers}
+                  disabled={saving || loadingCustomers || !notificationEmail.trim()}
                   className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {saving ? 'Saving...' : 'Save Changes'}

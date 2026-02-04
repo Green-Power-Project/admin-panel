@@ -155,5 +155,5 @@ npm start
 - This admin panel uses the same Firebase project as the window-app
 - Admin accounts must be created manually and added to the `admins` collection
 - Customer emails require Firebase Admin SDK to fetch (currently shows placeholder)
-- File upload size limit is 50 MB for admins (vs 5 MB for customers)
+- File upload size limit is 20 MB for admins and customers (client-side validation in files, gallery, and customer portal)
 

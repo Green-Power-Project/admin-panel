@@ -37,6 +37,8 @@ function NewProjectContent() {
   const [customerId, setCustomerId] = useState('');
   const [projectNumber, setProjectNumber] = useState('');
   const [notificationEmail, setNotificationEmail] = useState('');
+  const [notificationTarget, setNotificationTarget] = useState<'login' | 'project'>('project');
+  const [siteManagerName, setSiteManagerName] = useState('');
   const [notifyCustomerByEmail, setNotifyCustomerByEmail] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
@@ -139,11 +141,20 @@ function NewProjectContent() {
       return;
     }
 
+    if (!notificationEmail.trim()) {
+      setError(t('projectsNew.notificationEmailRequired'));
+      setLoading(false);
+      return;
+    }
+
     try {
       const projectData: any = {
         name: name.trim(),
         customerId: customerId.trim(),
         projectNumber: projectNumber.trim(),
+        notificationEmail: notificationEmail.trim(),
+        notificationTarget: notificationTarget,
+        siteManagerName: (siteManagerName || '').trim(),
         enabled: true,
       };
 
@@ -152,9 +163,6 @@ function NewProjectContent() {
         if (!isNaN(yearNum)) {
           projectData.year = yearNum;
         }
-      }
-      if (notificationEmail.trim()) {
-        projectData.notificationEmail = notificationEmail.trim();
       }
 
       // Create project document in Firestore
@@ -309,8 +317,18 @@ function NewProjectContent() {
                     )}
                   </div>
                 )}
-              
               </div>
+
+              {selectedCustomer && (
+                <div className="rounded-lg border border-green-power-200 bg-green-power-50/50 px-4 py-3">
+                  <p className="text-sm font-medium text-gray-700">
+                    <span className="text-green-power-700">✓</span> {t('projectsNew.customerNameLabel')}: {selectedCustomer.name?.trim() || '—'}
+                  </p>
+                  <p className="text-sm font-medium text-gray-700 mt-1">
+                    <span className="text-green-power-700">✓</span> {t('projectsNew.customerNumberLabel')}: {selectedCustomer.customerNumber || '—'}
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label htmlFor="projectNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
@@ -347,18 +365,71 @@ function NewProjectContent() {
               <div>
                 <label htmlFor="notificationEmail" className="block text-sm font-medium text-gray-700 mb-1.5">
                   {t('projectsNew.notificationEmailLabel')}
+                  <span className="text-red-500 ml-0.5" aria-hidden="true">*</span>
                 </label>
                 <input
                   id="notificationEmail"
                   type="email"
                   value={notificationEmail}
                   onChange={(e) => setNotificationEmail(e.target.value)}
+                  required
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
                   placeholder={t('projectsNew.notificationEmailPlaceholder')}
+                  aria-required="true"
                 />
                 <p className="mt-1 text-xs text-gray-500">
                   {t('projectsNew.notificationEmailHelp')}
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('projectsNew.notificationTargetLabel')}
+                </label>
+                <div className="flex gap-4">
+                  <label className="inline-flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="notificationTarget"
+                      checked={notificationTarget === 'project'}
+                      onChange={() => setNotificationTarget('project')}
+                      className="rounded-full border-gray-300 text-green-power-600 focus:ring-green-power-500"
+                    />
+                    <span className="text-sm text-gray-700">{t('projectsNew.notificationTargetProject')}</span>
+                  </label>
+                    <label className="inline-flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="notificationTarget"
+                        checked={notificationTarget === 'login'}
+                        onChange={() => {
+                          setNotificationTarget('login');
+                          const customerEmail = selectedCustomer?.email?.trim();
+                          if (customerEmail && customerEmail !== 'N/A') {
+                            setNotificationEmail(customerEmail);
+                          }
+                        }}
+                        className="rounded-full border-gray-300 text-green-power-600 focus:ring-green-power-500"
+                      />
+                      <span className="text-sm text-gray-700">{t('projectsNew.notificationTargetLogin')}</span>
+                    </label>
+                </div>
+                <p className="mt-1 text-xs text-gray-500">{t('projectsNew.notificationTargetHelp')}</p>
+              </div>
+
+              <div>
+                <label htmlFor="siteManagerName" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('projectsNew.siteManagerNameLabel')}
+                </label>
+                <input
+                  id="siteManagerName"
+                  type="text"
+                  value={siteManagerName}
+                  onChange={(e) => setSiteManagerName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  placeholder={t('projectsNew.siteManagerNamePlaceholder')}
+                />
+                <p className="mt-1 text-xs text-gray-500">{t('projectsNew.siteManagerNameHelp')}</p>
               </div>
 
               <div className="flex items-center gap-3">
@@ -401,7 +472,7 @@ function NewProjectContent() {
                 </Link>
                 <button
                   type="submit"
-                  disabled={loading || loadingCustomers || customers.length === 0 || !customerId || !projectNumber.trim()}
+                  disabled={loading || loadingCustomers || customers.length === 0 || !customerId || !projectNumber.trim() || !notificationEmail.trim()}
                   className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {loading ? 'Creating...' : 'Create Project'}

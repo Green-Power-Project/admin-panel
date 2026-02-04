@@ -1,19 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 
 const PORTAL_URL_DEFAULT = 'https://window-app-roan.vercel.app';
 const CONTACT_EMAIL = 'info@gruen-power.de';
 
-/** Customer portal login URL – from env (CUSTOMER_PORTAL_URL, PORTAL_URL, or NEXT_PUBLIC_CUSTOMER_APP_ORIGIN). */
-function getPortalLoginUrl(): string {
+/** Customer portal base URL (no trailing slash). */
+function getPortalBaseUrl(): string {
   const base =
     process.env.CUSTOMER_PORTAL_URL ||
     process.env.PORTAL_URL ||
     process.env.NEXT_PUBLIC_CUSTOMER_APP_ORIGIN ||
     PORTAL_URL_DEFAULT;
-  const url = base.replace(/\/$/, '');
-  return `${url}/login`;
+  return base.replace(/\/$/, '');
+}
+
+function getPortalLoginUrl(): string {
+  return `${getPortalBaseUrl()}/login`;
+}
+
+function getForgotPasswordUrl(): string {
+  return `${getPortalBaseUrl()}/forgot-password`;
 }
 
 export async function POST(request: NextRequest) {
@@ -48,6 +56,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, skipped: true }, { status: 200 });
     }
 
+    const contact = await getContactForEmail(db);
+    const closing = buildGermanEmailClosing(contact);
+    const contactEmailForBody = contact.email || CONTACT_EMAIL;
+
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -56,40 +68,54 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Welcome customer email is always in German (Deutsch).
     const loginEmail = customerEmail.trim();
     const hasPassword = password && String(password).trim();
-    const passwordLine = hasPassword
-      ? `Ihr Passwort: ${password}`
-      : 'Ihr Passwort wurde automatisch generiert. Sie können es nach der ersten Anmeldung im Portal ändern.';
+    const passwordValue = hasPassword ? String(password).trim() : '(automatisch generiert – siehe Link unten zum Setzen)';
+    const forgotPasswordUrl = getForgotPasswordUrl();
 
-    const subject = 'Ihr Kundenkonto im Grün Power Kundenportal';
+    const subject = 'Ihr Zugang zum Grün Power Kundenportal – Login-Daten';
 
-    const emailContentHtml = `<p>Sehr geehrte Damen und Herren,</p>
+    const emailContentHtml = `
+<p>Sehr geehrte Damen und Herren,</p>
 <p>wir haben für Sie ein Kundenkonto in unserem Grün Power Kundenportal erstellt.</p>
-<p><strong>Link zum Kundenportal:</strong><br><a href="${portalLoginUrl}">${portalLoginUrl}</a></p>
-<p><strong>Anmeldung (E-Mail):</strong> ${loginEmail}</p>
-<p><strong>${passwordLine}</strong></p>
-<p>Sie können sich ab sofort mit Ihrer E-Mail-Adresse im Portal anmelden und die für Ihr Projekt bereitgestellten Unterlagen einsehen.</p>
-<p>Bei Fragen oder Problemen mit dem Login können Sie sich jederzeit gerne bei uns melden oder uns eine E-Mail an ${CONTACT_EMAIL} schreiben.</p>
-<p>Mit freundlichen Grüßen<br>Grün Power Garten- und Landschaftsbau</p>`;
+<p>Dort finden Sie alle Unterlagen und Informationen zu Ihrem Projekt.</p>
+
+<p style="margin: 16px 0 8px 0;"><strong>📌 Kundenportal:</strong></p>
+<p style="margin: 12px 0 16px 0;"><a href="${portalLoginUrl}" style="display: inline-block; padding: 12px 24px; background-color: #2e7d32; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-weight: bold;">Zum Kundenportal — Login</a></p>
+
+<div style="background-color: #e8f5e9; padding: 16px 20px; margin: 20px 0; border-left: 4px solid #2e7d32; border-radius: 4px;">
+  <p style="margin: 0 0 10px 0; font-weight: bold; color: #1b5e20;">🔐 Ihre Zugangsdaten (Login):</p>
+  <p style="margin: 6px 0;"><strong>E-Mail:</strong> ${loginEmail}</p>
+  <p style="margin: 6px 0;"><strong>Passwort:</strong> ${passwordValue}</p>
+  ${!hasPassword ? `<p style="margin: 12px 0 0 0;"><a href="${forgotPasswordUrl}" style="display: inline-block; padding: 10px 20px; background-color: #1b5e20; color: #ffffff !important; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: bold;">Passwort setzen / zurücksetzen</a></p>` : ''}
+</div>
+
+<p>Sie können sich ab sofort mit diesen Daten anmelden und die Dokumente, Fotos sowie alle projektbezogenen Informationen einsehen.</p>
+<p>Das Portal dient der Transparenz und einer klaren Kommunikation, damit Sie jederzeit über den aktuellen Stand Ihres Projekts informiert sind.</p>
+<p>Bei Fragen oder Problemen mit der Anmeldung können Sie uns jederzeit kontaktieren oder eine E-Mail schreiben an:</p>
+<p style="margin: 8px 0 0 0;">📧 <a href="mailto:${contactEmailForBody}">${contactEmailForBody}</a></p>
+${closing.html}`;
 
     const emailContentText = `Sehr geehrte Damen und Herren,
 
 wir haben für Sie ein Kundenkonto in unserem Grün Power Kundenportal erstellt.
+Dort finden Sie alle Unterlagen und Informationen zu Ihrem Projekt.
 
-Link zum Kundenportal:
+📌 Link zum Kundenportal:
 ${portalLoginUrl}
 
-Anmeldung (E-Mail): ${loginEmail}
-${passwordLine}
+🔐 Ihre Zugangsdaten (Login):
+E-Mail: ${loginEmail}
+Passwort: ${passwordValue}
+${!hasPassword ? `\nPasswort setzen: ${forgotPasswordUrl}` : ''}
 
-Sie können sich ab sofort mit Ihrer E-Mail-Adresse im Portal anmelden und die für Ihr Projekt bereitgestellten Unterlagen einsehen.
+Sie können sich ab sofort mit diesen Daten anmelden und die Dokumente, Fotos sowie alle projektbezogenen Informationen einsehen.
+Das Portal dient der Transparenz und einer klaren Kommunikation, damit Sie jederzeit über den aktuellen Stand Ihres Projekts informiert sind.
 
-Bei Fragen oder Problemen mit dem Login können Sie sich jederzeit gerne bei uns melden oder uns eine E-Mail an ${CONTACT_EMAIL} schreiben.
+Bei Fragen oder Problemen mit der Anmeldung können Sie uns jederzeit kontaktieren oder eine E-Mail schreiben an:
+📧 ${contactEmailForBody}
 
-Mit freundlichen Grüßen
-Grün Power Garten- und Landschaftsbau`;
+${closing.text}`;
 
     const EMAIL_CC = process.env.EMAIL_CC || 'grunpower462@gmail.com';
     const mailOptions = {
@@ -103,19 +129,16 @@ Grün Power Garten- und Landschaftsbau`;
         <head>
           <meta charset="utf-8">
           <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .content { background-color: #f9f9f9; padding: 20px; }
-            .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; }
+            .container { max-width: 600px; margin: 0 auto; padding: 24px; }
+            .content { padding: 24px; }
           </style>
         </head>
         <body>
           <div class="container">
             <div class="content">
+              ${buildEmailLogoHtml()}
               ${emailContentHtml}
-            </div>
-            <div class="footer">
-              <p>Dies ist eine automatische Benachrichtigung von Grün Power.</p>
             </div>
           </div>
         </body>

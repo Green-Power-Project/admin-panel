@@ -48,6 +48,22 @@ interface DashboardStats {
   approvedReports: number;
 }
 
+const CUSTOMER_UPLOADS_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const customerUploadsCountCache: { key: string; total: number; ts: number }[] = [];
+
+function getCachedCustomerUploadsCount(projectIdsKey: string): number | null {
+  const entry = customerUploadsCountCache.find((e) => e.key === projectIdsKey);
+  if (!entry || Date.now() - entry.ts > CUSTOMER_UPLOADS_CACHE_TTL_MS) return null;
+  return entry.total;
+}
+
+function setCachedCustomerUploadsCount(projectIdsKey: string, total: number) {
+  const idx = customerUploadsCountCache.findIndex((e) => e.key === projectIdsKey);
+  if (idx >= 0) customerUploadsCountCache.splice(idx, 1);
+  customerUploadsCountCache.push({ key: projectIdsKey, total, ts: Date.now() });
+  if (customerUploadsCountCache.length > 20) customerUploadsCountCache.shift();
+}
+
 export default function DashboardPage() {
   return (
     <ProtectedRoute>
@@ -104,6 +120,12 @@ function DashboardContent() {
 
   const loadCustomerUploadsCount = useCallback(async (projectsList: Project[]) => {
     if (!db || projectsList.length === 0) return;
+    const projectIdsKey = projectsList.map((p) => p.id).sort().join(',');
+    const cached = getCachedCustomerUploadsCount(projectIdsKey);
+    if (cached !== null) {
+      setStats((prev) => ({ ...prev, totalCustomerUploads: cached }));
+      return;
+    }
     const customerUploadFolders = [
       '01_Customer_Uploads',
       '01_Customer_Uploads/Photos',
@@ -125,6 +147,7 @@ function DashboardContent() {
           }
         }
       }
+      setCachedCustomerUploadsCount(projectIdsKey, total);
       setStats((prev) => ({
         ...prev,
         totalCustomerUploads: total,

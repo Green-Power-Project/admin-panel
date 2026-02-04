@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 
 interface FileUploadNotificationPayload {
   projectId: string;
@@ -151,9 +152,14 @@ export async function POST(request: NextRequest) {
         console.error('[file-upload-notification] Error fetching admin emails:', error);
       }
     } else {
-      // Admin uploaded → notify CUSTOMER: use project notification email if set, else customer email
+      // Admin uploaded → notify CUSTOMER: use notificationTarget to choose recipient
+      const target = projectData.notificationTarget === 'login' ? 'login' : 'project';
       const projectNotificationEmail = (projectData.notificationEmail && String(projectData.notificationEmail).trim()) || null;
-      recipientEmail = projectNotificationEmail || customerEmail;
+      if (target === 'login') {
+        recipientEmail = customerEmail;
+      } else {
+        recipientEmail = projectNotificationEmail || customerEmail;
+      }
       recipientType = 'customer';
     }
 
@@ -185,6 +191,9 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('[file-upload-notification] Creating email transporter...');
+    const contact = await getContactForEmail(db);
+    const closing = buildGermanEmailClosing(contact);
+
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -194,20 +203,24 @@ export async function POST(request: NextRequest) {
     });
 
     const folderName = folderPath.split('/').pop() || folderPath;
+    const projectLocation = (projectData.location || projectData.ort || '').trim();
+    const projectDisplay = projectLocation ? `${projectName} – ${projectLocation}` : projectName;
+    const dateStr = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const portalLoginUrl = `${PORTAL_URL.replace(/\/$/, '')}/login`;
 
     // Different email content based on recipient type
     let subject: string;
     let emailContent: string;
-    let fromName: string = 'Grün Power'; // Default value
+    let emailContentText: string;
+    let fromName: string = 'Grün Power';
     let replyTo: string | undefined;
 
     if (isCustomerUpload) {
-      // Customer uploaded → notify admin (email appears to come from customer)
+      // Customer uploaded → notify admin (unchanged)
       const customerDisplayName = customerName || customerNumber || 'Customer';
       subject = `New File Uploaded - ${projectName}`;
       fromName = customerDisplayName;
       replyTo = customerEmail || undefined;
-      
       emailContent = `
         <p>Hello,</p>
         <p>I have uploaded a new file to my project.</p>
@@ -226,50 +239,61 @@ export async function POST(request: NextRequest) {
         <p style="margin-top: 20px; color: #666; font-size: 12px;">This email was sent from the Customer Portal.</p>
         <a href="${process.env.ADMIN_PANEL_URL || 'http://localhost:3000'}" class="button">View in Admin Panel</a>
       `;
+      emailContentText = `Hello,\n\nI have uploaded a new file to my project.\n\nCustomer Information:\n${customerName ? `Name: ${customerName}\n` : ''}${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${customerEmail ? `Email: ${customerEmail}\n` : ''}\nProject: ${projectName}\nFolder: ${folderName}\nFile Name: ${fileName}\n\nPlease review the uploaded file in the admin panel.\n\nThis email was sent from the Customer Portal.\n\n${process.env.ADMIN_PANEL_URL || 'http://localhost:3000'}`;
     } else {
-      // Admin uploaded → notify customer
-      subject = isReport
-        ? `Work Report Available for Approval: ${projectName}`
-        : `New File Available: ${projectName}`;
+      // Admin uploaded → notify customer (German content)
+      if (isReport) {
+        subject = 'Neuer Upload im Kundenportal – bitte prüfen und ggf. kommentieren';
+        emailContent = `
+          <p>Sehr geehrte Damen und Herren,</p>
+          <p>wir möchten Sie darüber informieren, dass in Ihrem Kundenportal zu Ihrem Projekt <strong>${projectDisplay}</strong> ein neues Dokument hochgeladen wurde.</p>
+          <p style="margin: 12px 0;"><strong>📄 Dokumentname:</strong> ${fileName}</p>
+          <p style="margin: 16px 0; font-size: 14px; color: #555;">z.&nbsp;B. Nachtrag, Arbeitszettel, Rapport, Regiebericht, Mehraufwand o.&nbsp;Ä.</p>
+          <p>Bitte prüfen Sie das Dokument. Sollten Sie Hinweise, Anmerkungen oder Einwände haben, können Sie diese direkt im Dokument über den Button „Kommentar / Comment“ hinterlegen.</p>
+          <p>Ein Kommentar im Dokument gilt als schriftliche Rückmeldung.</p>
+          <p>Sofern wir innerhalb von 5 Werktagen ab dem Datum dieser Mitteilung (<strong>${dateStr}</strong>) keine Rückmeldung (Kommentar oder Einwand) erhalten, gilt das Dokument als angenommen und bestätigt.</p>
+          <p style="margin: 16px 0; font-size: 13px; color: #555;">Hinweis: Gemäß § 16 Abs. 1 VOB/B und § 15 Abs. 3 VOB/B bitten wir um Kenntnisnahme.</p>
+          <p>Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.</p>
+          ${closing.html}`;
+        emailContentText = `Sehr geehrte Damen und Herren,
 
-      emailContent = isReport
-        ? `
-          <p>Hello,</p>
-          <p>A new <strong>Work Report</strong> has been uploaded to your project and requires your review.</p>
-          <div style="background-color: #e8f5e9; padding: 15px; margin: 15px 0; border-left: 4px solid #5d7a5d; border-radius: 4px;">
-            <p style="margin: 5px 0; font-weight: bold; color: #2e7d32;">Your Login Information:</p>
-            ${customerNumber ? `<p style="margin: 5px 0;"><strong>Customer Number:</strong> ${customerNumber}</p>` : ''}
-            ${projectNumber ? `<p style="margin: 5px 0;"><strong>Project Number:</strong> ${projectNumber}</p>` : ''}
-          </div>
-          <div class="file-info">
-            <p><strong>Project:</strong> ${projectName}</p>
-            <p><strong>Report:</strong> ${fileName}</p>
-            <p><strong>Folder:</strong> ${folderName}</p>
-          </div>
-          <p><strong>Important:</strong> Please review and approve this report within 5 working days. If no objection is received, the report will be automatically approved.</p>
-          <p>Please log in to your customer portal to view and approve the report.</p>
-          <div style="text-align: center; margin: 20px 0;">
-            <a href="${PORTAL_URL}/login" style="display: inline-block; padding: 12px 24px; background-color: #5d7a5d; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">Review & Approve Report</a>
-          </div>
-        `
-        : `
-          <p>Hello,</p>
-          <p>A new file has been uploaded to your project.</p>
-          <div style="background-color: #e8f5e9; padding: 15px; margin: 15px 0; border-left: 4px solid #5d7a5d; border-radius: 4px;">
-            <p style="margin: 5px 0; font-weight: bold; color: #2e7d32;">Your Login Information:</p>
-            ${customerNumber ? `<p style="margin: 5px 0;"><strong>Customer Number:</strong> ${customerNumber}</p>` : ''}
-            ${projectNumber ? `<p style="margin: 5px 0;"><strong>Project Number:</strong> ${projectNumber}</p>` : ''}
-          </div>
-          <div class="file-info">
-            <p><strong>Project:</strong> ${projectName}</p>
-            <p><strong>Folder:</strong> ${folderName}</p>
-            <p><strong>File Name:</strong> ${fileName}</p>
-          </div>
-          <p>Please log in to your customer portal to view and download the file.</p>
-          <div style="text-align: center; margin: 20px 0;">
-            <a href="${PORTAL_URL}/login" style="display: inline-block; padding: 12px 24px; background-color: #5d7a5d; color: white; text-decoration: none; border-radius: 4px; font-weight: bold;">Access Customer Portal</a>
-          </div>
-        `;
+wir möchten Sie darüber informieren, dass in Ihrem Kundenportal zu Ihrem Projekt ${projectDisplay} ein neues Dokument hochgeladen wurde.
+
+📄 Dokumentname: ${fileName}
+
+z. B. Nachtrag, Arbeitszettel, Rapport, Regiebericht, Mehraufwand o. Ä.
+
+Bitte prüfen Sie das Dokument. Sollten Sie Hinweise, Anmerkungen oder Einwände haben, können Sie diese direkt im Dokument über den Button „Kommentar / Comment“ hinterlegen.
+Ein Kommentar im Dokument gilt als schriftliche Rückmeldung.
+
+Sofern wir innerhalb von 5 Werktagen ab dem Datum dieser Mitteilung (${dateStr}) keine Rückmeldung (Kommentar oder Einwand) erhalten, gilt das Dokument als angenommen und bestätigt.
+
+Hinweis: Gemäß § 16 Abs. 1 VOB/B und § 15 Abs. 3 VOB/B bitten wir um Kenntnisnahme.
+
+Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.
+
+${closing.text}`;
+      } else {
+        subject = 'Neue Dateien in Ihrem Kundenportal';
+        emailContent = `
+          <p>Sehr geehrte Damen und Herren,</p>
+          <p>wir möchten Sie kurz darüber informieren, dass neue Dateien in Ihrem Kundenportal zu Ihrem Projekt <strong>${projectDisplay}</strong> hochgeladen wurden.</p>
+          <p style="margin: 12px 0;"><strong>📄 Dateiname(n):</strong> ${fileName}</p>
+          <p>Bitte prüfen Sie die Dokumente bei Gelegenheit.</p>
+          <p>Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.</p>
+          ${closing.html}`;
+        emailContentText = `Sehr geehrte Damen und Herren,
+
+wir möchten Sie kurz darüber informieren, dass neue Dateien in Ihrem Kundenportal zu Ihrem Projekt ${projectDisplay} hochgeladen wurden.
+
+📄 Dateiname(n): ${fileName}
+
+Bitte prüfen Sie die Dokumente bei Gelegenheit.
+
+Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.
+
+${closing.text}`;
+      }
     }
 
     const EMAIL_CC = process.env.EMAIL_CC || 'grunpower462@gmail.com';
@@ -299,23 +323,17 @@ export async function POST(request: NextRequest) {
         <body>
           <div class="container">
             <div class="header">
-              <h2>${isReport ? 'New Work Report Available' : 'New File Available'}</h2>
+              <h2>${isCustomerUpload ? 'New File Uploaded' : isReport ? 'Neues Dokument im Kundenportal' : 'Neue Dateien im Kundenportal'}</h2>
             </div>
             <div class="content">
+              ${buildEmailLogoHtml()}
               ${emailContent}
-            </div>
-            <div class="footer">
-              <p>This is an automated notification from Grün Power.</p>
             </div>
           </div>
         </body>
         </html>
       `,
-      text: isCustomerUpload
-        ? `Hello,\n\nI have uploaded a new file to my project.\n\nCustomer Information:\n${customerName ? `Name: ${customerName}\n` : ''}${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${customerEmail ? `Email: ${customerEmail}\n` : ''}\nProject: ${projectName}\nFolder: ${folderName}\nFile Name: ${fileName}\n\nPlease review the uploaded file in the admin panel.\n\nThis email was sent from the Customer Portal.\n\n${process.env.ADMIN_PANEL_URL || 'http://localhost:3000'}`
-        : isReport
-        ? `A new work report has been uploaded for project ${projectName}.\n\nYour Login Information:\n${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${projectNumber ? `Project Number: ${projectNumber}\n` : ''}\nReport: ${fileName}\nFolder: ${folderName}\n\nPlease log in to your customer portal to review and approve it.\n\nPortal Link: ${PORTAL_URL}/login`
-        : `A new file has been uploaded for project ${projectName}.\n\nYour Login Information:\n${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${projectNumber ? `Project Number: ${projectNumber}\n` : ''}\nFile: ${fileName}\nFolder: ${folderName}\n\nPlease log in to your customer portal to view it.\n\nPortal Link: ${PORTAL_URL}/login`,
+      text: emailContentText,
     };
 
     console.log('[file-upload-notification] ========================================');

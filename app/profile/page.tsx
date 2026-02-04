@@ -11,6 +11,22 @@ import { updatePassword, reauthenticateWithCredential, EmailAuthProvider } from 
 import { auth } from '@/lib/firebase';
 import { getContactSettings, setContactSettings, type ContactSettingsData } from '@/lib/contactSettings';
 
+const PROFILE_ADMIN_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const profileAdminCache: { uid: string; name: string; ts: number }[] = [];
+
+function getCachedAdminName(uid: string): string | null {
+  const entry = profileAdminCache.find((e) => e.uid === uid);
+  if (!entry || Date.now() - entry.ts > PROFILE_ADMIN_CACHE_TTL_MS) return null;
+  return entry.name;
+}
+
+function setCachedAdminName(uid: string, name: string) {
+  const idx = profileAdminCache.findIndex((e) => e.uid === uid);
+  if (idx >= 0) profileAdminCache.splice(idx, 1);
+  profileAdminCache.push({ uid, name, ts: Date.now() });
+  if (profileAdminCache.length > 20) profileAdminCache.shift();
+}
+
 export default function ProfilePage() {
   const { t } = useLanguage();
   return (
@@ -42,6 +58,9 @@ function ProfileContent() {
   const [contactEmail, setContactEmail] = useState('');
   const [contactWhatsApp, setContactWhatsApp] = useState('');
   const [contactWebsite, setContactWebsite] = useState('');
+  const [contactCompanyName, setContactCompanyName] = useState('');
+  const [contactAddress, setContactAddress] = useState('');
+  const [contactManagingDirector, setContactManagingDirector] = useState('');
   const [savingContact, setSavingContact] = useState(false);
 
   useEffect(() => {
@@ -53,16 +72,26 @@ function ProfileContent() {
     const dbInstance = db;
     setLoading(true);
     try {
-      const adminDoc = await getDoc(doc(dbInstance, 'admins', currentUser.uid));
-      if (adminDoc.exists()) {
-        const data = adminDoc.data();
-        setName(data.name || '');
+      const cachedName = getCachedAdminName(currentUser.uid);
+      if (cachedName !== null) {
+        setName(cachedName);
+      } else {
+        const adminDoc = await getDoc(doc(dbInstance, 'admins', currentUser.uid));
+        if (adminDoc.exists()) {
+          const data = adminDoc.data();
+          const loadedName = data.name || '';
+          setName(loadedName);
+          setCachedAdminName(currentUser.uid, loadedName);
+        }
       }
       const contact = await getContactSettings(dbInstance);
       setContactPhone(contact.phone ?? '');
       setContactEmail(contact.email ?? '');
       setContactWhatsApp(contact.whatsApp ?? '');
       setContactWebsite(contact.website ?? '');
+      setContactCompanyName(contact.companyName ?? '');
+      setContactAddress(contact.address ?? '');
+      setContactManagingDirector(contact.managingDirector ?? '');
     } catch (err) {
       console.error('Error loading profile:', err);
       setError(t('profile.loadingProfile'));
@@ -87,6 +116,7 @@ function ProfileContent() {
       } else {
         await setDoc(adminDocRef, { name: displayName, email: currentUser.email || '', createdAt: new Date(), updatedAt: new Date() });
       }
+      setCachedAdminName(currentUser.uid, displayName);
       setSuccess(t('profile.nameUpdated'));
       setTimeout(() => setSuccess(''), 3000);
     } catch (err: unknown) {
@@ -104,7 +134,15 @@ function ProfileContent() {
     setError('');
     setSuccess('');
     try {
-      await setContactSettings(db, { phone: contactPhone, email: contactEmail, whatsApp: contactWhatsApp, website: contactWebsite });
+      await setContactSettings(db, {
+        phone: contactPhone,
+        email: contactEmail,
+        whatsApp: contactWhatsApp,
+        website: contactWebsite,
+        companyName: contactCompanyName,
+        address: contactAddress,
+        managingDirector: contactManagingDirector,
+      });
       setSuccess(t('contactSettings.saved'));
       setTimeout(() => setSuccess(''), 3000);
     } catch (err) {
@@ -367,6 +405,18 @@ function ProfileContent() {
               <div>
                 <label htmlFor="contact-website" className="block text-sm font-medium text-gray-700 mb-1.5">{t('contactSettings.website')}</label>
                 <input id="contact-website" type="url" value={contactWebsite} onChange={(e) => setContactWebsite(e.target.value)} placeholder={t('contactSettings.websitePlaceholder')} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-green-power-500/40 focus:border-green-power-500 transition-all" />
+              </div>
+              <div className="sm:col-span-2">
+                <label htmlFor="contact-companyName" className="block text-sm font-medium text-gray-700 mb-1.5">{t('contactSettings.companyName')}</label>
+                <input id="contact-companyName" type="text" value={contactCompanyName} onChange={(e) => setContactCompanyName(e.target.value)} placeholder={t('contactSettings.companyNamePlaceholder')} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-green-power-500/40 focus:border-green-power-500 transition-all" />
+              </div>
+              <div className="sm:col-span-2">
+                <label htmlFor="contact-address" className="block text-sm font-medium text-gray-700 mb-1.5">{t('contactSettings.address')}</label>
+                <input id="contact-address" type="text" value={contactAddress} onChange={(e) => setContactAddress(e.target.value)} placeholder={t('contactSettings.addressPlaceholder')} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-green-power-500/40 focus:border-green-power-500 transition-all" />
+              </div>
+              <div>
+                <label htmlFor="contact-managingDirector" className="block text-sm font-medium text-gray-700 mb-1.5">{t('contactSettings.managingDirector')}</label>
+                <input id="contact-managingDirector" type="text" value={contactManagingDirector} onChange={(e) => setContactManagingDirector(e.target.value)} placeholder={t('contactSettings.managingDirectorPlaceholder')} className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-gray-900 placeholder-gray-400 focus:ring-2 focus:ring-green-power-500/40 focus:border-green-power-500 transition-all" />
               </div>
             </div>
             <div className="mt-5 flex justify-end">

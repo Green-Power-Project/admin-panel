@@ -38,13 +38,13 @@ import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
 import Pagination from '@/components/Pagination';
 import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
 import { deleteFileRelatedData } from '@/lib/cascadeDelete';
-
 interface Project {
   id: string;
   name: string;
   year?: number;
   customerId?: string;
   folderDisplayNames?: Record<string, string>;
+  customFolders?: string[];
 }
 
 interface FileMetadata {
@@ -63,6 +63,10 @@ interface CustomerMessageItem {
   createdAt: Date | null;
   status: string;
   resolvedAt?: Date | null;
+  readAt?: Date | null;
+  subject?: string;
+  fileName?: string;
+  filePath?: string;
 }
 
 function getFolderSegments(folderPath: string): string[] {
@@ -112,7 +116,17 @@ function getFolderIcon(path: string): string {
   if (path.startsWith('07_')) return '📦';
   if (path.startsWith('08_')) return '📋';
   if (path.startsWith('09_')) return '🔒';
+  if (path.startsWith('10_')) return '📂';
   return '📁';
+}
+
+function isCustomFolderPath(path: string): boolean {
+  return path.startsWith('10_Custom/');
+}
+
+function getCustomFolderDisplayName(path: string): string {
+  const segment = path.split('/').pop() || path;
+  return segment.replace(/_/g, ' ');
 }
 
 function isCustomerUploadsFolder(folderPath: string): boolean {
@@ -122,6 +136,8 @@ function isCustomerUploadsFolder(folderPath: string): boolean {
 function formatFolderName(nameOrPath: string, t: (key: string) => string, folderDisplayNames?: Record<string, string> | null): string {
   return getProjectFolderDisplayName(nameOrPath, folderDisplayNames, t);
 }
+
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 
 export default function ProjectFilesPage() {
   return (
@@ -146,9 +162,13 @@ function ProjectFilesContent() {
   const [customersMap, setCustomersMap] = useState<Map<string, string>>(new Map());
   const [customerMessagesList, setCustomerMessagesList] = useState<CustomerMessageItem[]>([]);
   const [resolvingMessageId, setResolvingMessageId] = useState<string | null>(null);
-  const [selectedFolder, setSelectedFolder] = useState<string>(() =>
-    folderFromUrl && isValidFolderPath(folderFromUrl) ? folderFromUrl : getDefaultFilesFolderPath()
-  );
+  const [selectedFolder, setSelectedFolder] = useState<string>(() => {
+    if (folderFromUrl) {
+      if (isValidFolderPath(folderFromUrl)) return folderFromUrl;
+      if (isCustomFolderPath(folderFromUrl)) return folderFromUrl; // project not loaded yet; will sync from URL when project has customFolders
+    }
+    return getDefaultFilesFolderPath();
+  });
   const [files, setFiles] = useState<FileMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -172,7 +192,6 @@ function ProjectFilesContent() {
   const [viewerFile, setViewerFile] = useState<FileMetadata | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [contentReady, setContentReady] = useState(false);
-
   // Avoid flash of folder UI (sidebar with "Emails" etc.) during navigation – show content only after a short delay once project is loaded
   useEffect(() => {
     if (!loading && project) {
@@ -184,12 +203,17 @@ function ProjectFilesContent() {
   }, [loading, project]);
 
   // Sync selectedFolder from URL when navigating (e.g. from project page with ?folder=)
+  // Accept fixed-structure paths and project custom folders (10_Custom/...)
   useEffect(() => {
     const folder = searchParams.get('folder') || '';
-    if (folder && isValidFolderPath(folder)) {
+    if (!folder) return;
+    const isCustom = isCustomFolderPath(folder);
+    if (isValidFolderPath(folder)) {
+      setSelectedFolder(folder);
+    } else if (isCustom && project?.customFolders?.includes(folder)) {
       setSelectedFolder(folder);
     }
-  }, [searchParams]);
+  }, [searchParams, project?.customFolders]);
 
   useEffect(() => {
     if (!projectId || !db) return;
@@ -274,6 +298,10 @@ function ProjectFilesContent() {
           createdAt: data.createdAt?.toDate?.() ?? null,
           status: (data.status as string) || 'unread',
           resolvedAt: data.resolvedAt?.toDate?.() ?? null,
+          readAt: data.readAt?.toDate?.() ?? null,
+          subject: (data.subject as string) || undefined,
+          fileName: (data.fileName as string) || undefined,
+          filePath: (data.filePath as string) || undefined,
         };
       });
       list.sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
@@ -284,6 +312,19 @@ function ProjectFilesContent() {
     });
     return () => unsub();
   }, [projectId, selectedFolder]);
+
+  async function handleMarkMessageAsRead(msgId: string) {
+    if (!db || !currentUser?.uid) return;
+    try {
+      await updateDoc(doc(db, 'customerMessages', msgId), {
+        status: 'read',
+        readAt: serverTimestamp(),
+        readBy: currentUser.uid,
+      });
+    } catch (err) {
+      console.error('Error marking message as read:', err);
+    }
+  }
 
   async function handleResolveMessage(msgId: string) {
     if (!db || !currentUser?.uid) return;
@@ -335,8 +376,14 @@ function ProjectFilesContent() {
 
   async function handleUploadConfirm() {
     if (!selectedFiles.length || !selectedFiles[0] || !selectedFolder || !projectId || !db) return;
-    if (!isValidFolderPath(selectedFolder)) {
+    const validPath = isValidFolderPath(selectedFolder) || (isCustomFolderPath(selectedFolder) && project?.customFolders?.includes(selectedFolder));
+    if (!validPath) {
       setUploadError(t('files.invalidFolderPath'));
+      return;
+    }
+    const tooBig = selectedFiles.find((f) => f.size > MAX_FILE_SIZE_BYTES);
+    if (tooBig) {
+      setUploadError(t('files.fileSizeTooLarge'));
       return;
     }
     setShowUploadPreview(false);
@@ -484,7 +531,7 @@ function ProjectFilesContent() {
                 <h3 className="text-sm font-bold text-gray-900">{t('files.thisFolder')}</h3>
                 <p className="text-xs text-gray-600 mt-1">{t('files.switchWithinFolderOnly')}</p>
               </div>
-              <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto">
+              <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto space-y-4">
                 {scopeFolder && (() => {
                   const hasSelectedChild = scopeFolder.children?.some((c) => selectedFolder === c.path);
                   const isParentSelected = selectedFolder === scopeFolder.path && !hasSelectedChild;
@@ -528,6 +575,28 @@ function ProjectFilesContent() {
                     </div>
                   );
                 })()}
+                {project?.customFolders && project.customFolders.length > 0 && (
+                  <div className="border-t border-gray-200 pt-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">{t('files.customerFolders')}</p>
+                    <div className="space-y-1">
+                      {project.customFolders.map((path) => (
+                        <button
+                          key={path}
+                          type="button"
+                          onClick={() => setSelectedFolder(path)}
+                          className={`w-full text-left px-3 py-2 text-xs rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                            selectedFolder === path
+                              ? 'bg-amber-100 text-amber-800 font-semibold'
+                              : 'text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          <span className="text-sm">{getFolderIcon(path)}</span>
+                          <span className="flex-1 truncate">{project?.folderDisplayNames?.[path] ?? getCustomFolderDisplayName(path)}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -535,9 +604,12 @@ function ProjectFilesContent() {
           <div className="lg:col-span-9 space-y-6">
             {/* Upload */}
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="bg-gradient-to-r from-green-power-50 to-green-power-100 px-6 py-4 border-b border-green-power-200">
-                <h3 className="text-base font-bold text-gray-900 mb-1">{t('files.uploadFiles')}</h3>
-                <p className="text-xs text-gray-600">{formatFolderName(selectedFolder, t, project?.folderDisplayNames)}</p>
+              <div className="bg-gradient-to-r from-green-power-50 to-green-power-100 px-6 py-4 border-b border-green-power-200 flex items-center gap-3">
+                <img src="/logo.png" alt="" className="w-10 h-10 object-contain flex-shrink-0" aria-hidden />
+                <div>
+                  <h3 className="text-base font-bold text-gray-900 mb-1">{t('files.uploadFiles')}</h3>
+                  <p className="text-xs text-gray-600">{formatFolderName(selectedFolder, t, project?.folderDisplayNames)}</p>
+                </div>
               </div>
               <div className="p-6">
                 {uploadError && (
@@ -564,12 +636,17 @@ function ProjectFilesContent() {
                       className="hidden"
                       onChange={(e) => {
                         const fl = Array.from(e.target.files || []);
-                        if (fl.length) {
-                          setSelectedFiles(fl);
-                          setSelectedFile(fl[0]);
-                          setShowUploadPreview(true);
-                          setUploadError('');
+                        if (fl.length === 0) return;
+                        const tooBig = fl.find((f) => f.size > MAX_FILE_SIZE_BYTES);
+                        if (tooBig) {
+                          setUploadError(t('files.fileSizeTooLarge'));
+                          if (fileInputRef.current) fileInputRef.current.value = '';
+                          return;
                         }
+                        setSelectedFiles(fl);
+                        setSelectedFile(fl[0]);
+                        setShowUploadPreview(true);
+                        setUploadError('');
                       }}
                     />
                     <div
@@ -581,12 +658,16 @@ function ProjectFilesContent() {
                         e.stopPropagation();
                         setDragOver(false);
                         const fl = Array.from(e.dataTransfer.files || []);
-                        if (fl.length) {
-                          setSelectedFiles(fl);
-                          setSelectedFile(fl[0]);
-                          setShowUploadPreview(true);
-                          setUploadError('');
+                        if (fl.length === 0) return;
+                        const tooBig = fl.find((f) => f.size > MAX_FILE_SIZE_BYTES);
+                        if (tooBig) {
+                          setUploadError(t('files.fileSizeTooLarge'));
+                          return;
                         }
+                        setSelectedFiles(fl);
+                        setSelectedFile(fl[0]);
+                        setShowUploadPreview(true);
+                        setUploadError('');
                       }}
                       className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
                         dragOver ? 'border-green-power-500 bg-green-power-50' : 'border-gray-300 hover:border-green-power-400 hover:bg-green-power-50/30'
@@ -627,7 +708,6 @@ function ProjectFilesContent() {
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-200">
                 <h3 className="text-base font-bold text-gray-900">{t('files.filesListTitle')}</h3>
-                <p className="text-xs text-gray-600">{t('files.filesInFolderCount', { count: files.length })}</p>
               </div>
               <div className="p-4">
                 {files.length === 0 ? (
@@ -710,6 +790,14 @@ function ProjectFilesContent() {
                       <li key={msg.id} className="py-3 first:pt-0">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
+                            {msg.fileName && (
+                              <p className="text-xs font-semibold text-blue-800 mb-1">
+                                ✅ {t('files.customerMessages.commentedOnFile')}: {msg.fileName}
+                              </p>
+                            )}
+                            {msg.subject && (
+                              <p className="text-xs text-gray-700 mb-1">{t('files.customerMessages.subject')}: {msg.subject}</p>
+                            )}
                             <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{msg.message}</p>
                             <p className="text-xs text-gray-500 mt-1">
                               {customersMap.get(msg.customerId) || msg.customerId}
@@ -717,10 +805,28 @@ function ProjectFilesContent() {
                             </p>
                             {msg.status === 'resolved' ? (
                               <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                {t('files.customerMessages.resolved')}
+                                ✅ {t('files.customerMessages.resolved')}
+                              </span>
+                            ) : msg.status === 'read' ? (
+                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                                ✅ {t('files.customerMessages.read')}
                               </span>
                             ) : (
-                              <div className="mt-2">
+                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                                ✅ {t('files.customerMessages.new')}
+                              </span>
+                            )}
+                            {msg.status !== 'resolved' && (
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {msg.status === 'unread' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMarkMessageAsRead(msg.id)}
+                                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                                  >
+                                    {t('files.customerMessages.markAsRead')}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handleResolveMessage(msg.id)}

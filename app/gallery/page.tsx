@@ -1,21 +1,23 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, collection, getDocs } from 'firebase/firestore';
 import {
   DEFAULT_CATEGORY_KEYS,
   getGalleryCategoryLabels,
   setGalleryCategoryLabels,
+  getGalleryCategoryKeys,
+  setGalleryCategoryKeys,
   getCategoryDisplayName,
   type CategoryLabelsMap,
 } from '@/lib/galleryCategoryLabels';
 
-const GALLERY_HEADER_TITLE = 'Grün Power – Galerie';
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 
 interface GalleryImage {
   id: string;
@@ -25,6 +27,27 @@ interface GalleryImage {
   uploadedAt: Date;
   uploadedBy: string;
   isActive: boolean;
+}
+
+const GALLERY_IMAGES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
+const galleryImagesCache: { key: string; data: GalleryImage[]; ts: number }[] = [];
+
+function getCachedGalleryImages(): GalleryImage[] | null {
+  const entry = galleryImagesCache.find((e) => e.key === 'gallery');
+  if (!entry || Date.now() - entry.ts > GALLERY_IMAGES_CACHE_TTL_MS) return null;
+  return entry.data;
+}
+
+function setCachedGalleryImages(data: GalleryImage[]) {
+  const idx = galleryImagesCache.findIndex((e) => e.key === 'gallery');
+  if (idx >= 0) galleryImagesCache.splice(idx, 1);
+  galleryImagesCache.push({ key: 'gallery', data: [...data], ts: Date.now() });
+  if (galleryImagesCache.length > 5) galleryImagesCache.shift();
+}
+
+function clearCachedGalleryImages() {
+  const idx = galleryImagesCache.findIndex((e) => e.key === 'gallery');
+  if (idx >= 0) galleryImagesCache.splice(idx, 1);
 }
 
 export default function GalleryManagementPage() {
@@ -43,8 +66,13 @@ function GalleryManagementContent() {
   const [images, setImages] = useState<GalleryImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [categoryKeys, setCategoryKeys] = useState<string[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadCategory, setUploadCategory] = useState<string>(DEFAULT_CATEGORY_KEYS[0]);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [showAddCategoryModal, setShowAddCategoryModal] = useState(false);
+  const [deletingCategoryKey, setDeletingCategoryKey] = useState<string | null>(null);
   const [uploadTitle, setUploadTitle] = useState<string>('');
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -53,6 +81,41 @@ function GalleryManagementContent() {
   const [imageToDelete, setImageToDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [uploadPreviewIndex, setUploadPreviewIndex] = useState<number | null>(null);
+  const [uploadPreviewObjectUrl, setUploadPreviewObjectUrl] = useState<string | null>(null);
+  const uploadPreviewUrlRef = useRef<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const galleryFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Create/revoke object URL for upload-modal lightbox; close if file at index was removed
+  useEffect(() => {
+    if (uploadPreviewIndex === null) {
+      if (uploadPreviewUrlRef.current) {
+        URL.revokeObjectURL(uploadPreviewUrlRef.current);
+        uploadPreviewUrlRef.current = null;
+      }
+      setUploadPreviewObjectUrl(null);
+      return;
+    }
+    const file = selectedFiles[uploadPreviewIndex];
+    if (!file) {
+      setUploadPreviewIndex(null);
+      if (uploadPreviewUrlRef.current) {
+        URL.revokeObjectURL(uploadPreviewUrlRef.current);
+        uploadPreviewUrlRef.current = null;
+      }
+      setUploadPreviewObjectUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    uploadPreviewUrlRef.current = url;
+    setUploadPreviewObjectUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+      uploadPreviewUrlRef.current = null;
+      setUploadPreviewObjectUrl(null);
+    };
+  }, [uploadPreviewIndex, selectedFiles]);
 
   // Category labels from Firestore (edit in admin → reflected in customer)
   const [categoryLabels, setCategoryLabels] = useState<CategoryLabelsMap>({});
@@ -60,7 +123,7 @@ function GalleryManagementContent() {
   const [editingValue, setEditingValue] = useState('');
   const [savingCategoryName, setSavingCategoryName] = useState(false);
 
-  // Subscribe to gallery config for category labels (live update)
+  // Subscribe to gallery config for category keys and labels (live update)
   useEffect(() => {
     if (!db) return;
     const ref = doc(db, 'config', 'gallery');
@@ -68,14 +131,23 @@ function GalleryManagementContent() {
       ref,
       (snap) => {
         const labels: CategoryLabelsMap = {};
+        let keys: string[] = [];
         if (snap.exists()) {
           const data = snap.data();
           const raw = data?.categoryLabels;
           if (typeof raw === 'object' && raw !== null) Object.assign(labels, raw);
+          if (Array.isArray(data?.categoryKeys) && data.categoryKeys.length > 0) {
+            keys = data.categoryKeys.filter((k: unknown) => typeof k === 'string');
+          }
         }
+        if (keys.length === 0) keys = [...DEFAULT_CATEGORY_KEYS];
+        setCategoryKeys(keys);
         setCategoryLabels(labels);
       },
-      () => setCategoryLabels({})
+      () => {
+        setCategoryLabels({});
+        setCategoryKeys([...DEFAULT_CATEGORY_KEYS]);
+      }
     );
     return unsub;
   }, []);
@@ -96,28 +168,89 @@ function GalleryManagementContent() {
     }
   }
 
+  async function onAddCategory() {
+    const name = newCategoryName.trim();
+    if (!db || !name || categoryKeys.includes(name)) return;
+    setAddingCategory(true);
+    try {
+      const nextKeys = [...categoryKeys, name];
+      const nextLabels = { ...categoryLabels, [name]: name };
+      await setGalleryCategoryKeys(db, nextKeys, nextLabels);
+      setCategoryKeys(nextKeys);
+      setCategoryLabels(nextLabels);
+      setNewCategoryName('');
+      setShowAddCategoryModal(false);
+    } catch (e) {
+      console.error('Error adding category:', e);
+    } finally {
+      setAddingCategory(false);
+    }
+  }
+
+  async function onDeleteCategory(key: string) {
+    if (!db) return;
+    const count = images.filter((img) => img.category === key).length;
+    if (count > 0 && !window.confirm(t('gallery.deleteCategoryConfirm', { count }))) return;
+    if (count === 0 && !window.confirm(t('gallery.deleteCategoryConfirmEmpty'))) return;
+    setDeletingCategoryKey(key);
+    try {
+      const nextKeys = categoryKeys.filter((k) => k !== key);
+      const nextLabels = { ...categoryLabels };
+      delete nextLabels[key];
+      await setGalleryCategoryKeys(db, nextKeys, nextLabels);
+      setCategoryKeys(nextKeys);
+      setCategoryLabels(nextLabels);
+      if (selectedCategory === key) setSelectedCategory('all');
+      if (uploadCategory === key) setUploadCategory(nextKeys[0] || 'all');
+    } catch (e) {
+      console.error('Error deleting category:', e);
+    } finally {
+      setDeletingCategoryKey(null);
+    }
+  }
+
   function openUploadModal() {
+    setUploadError(null);
+    setUploadProgress(0);
     if (selectedCategory !== 'all') setUploadCategory(selectedCategory);
     setShowUploadModal(true);
   }
 
-  // Load images from Firestore
-  useEffect(() => {
-    async function loadImages() {
-      try {
-        const response = await fetch('/api/gallery');
-        if (response.ok) {
-          const galleryImages = await response.json();
-          setImages(galleryImages);
-        }
-      } catch (error) {
-        console.error('Error loading gallery images:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
+  // Load gallery images from Firestore (client SDK – same as customer panel, avoids server quota)
+  async function loadGalleryImages() {
+    if (!db) return [];
+    const cached = getCachedGalleryImages();
+    if (cached) return cached;
+    const snapshot = await getDocs(collection(db, 'gallery'));
+    const list = snapshot.docs
+      .filter((d) => d.data().isActive !== false)
+      .map((d) => {
+        const data = d.data();
+        const uploadedAt = data.uploadedAt?.toDate?.() ?? data.uploadedAt ?? new Date();
+        return {
+          id: d.id,
+          url: data.url ?? '',
+          category: data.category ?? '',
+          title: data.title ?? '',
+          uploadedAt: uploadedAt instanceof Date ? uploadedAt : new Date(uploadedAt),
+          uploadedBy: data.uploadedBy ?? '',
+          isActive: data.isActive !== false,
+        };
+      })
+      .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
+    setCachedGalleryImages(list);
+    return list;
+  }
 
-    loadImages();
+  useEffect(() => {
+    let cancelled = false;
+    loadGalleryImages()
+      .then((list) => {
+        if (!cancelled) setImages(list);
+      })
+      .catch((err) => console.error('Error loading gallery images:', err))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const filteredImages = selectedCategory === 'all' 
@@ -126,7 +259,12 @@ function GalleryManagementContent() {
 
   async function handleUpload() {
     if (selectedFiles.length === 0) return;
-
+    const tooBig = selectedFiles.find((f) => f.size > MAX_FILE_SIZE_BYTES);
+    if (tooBig) {
+      setUploadError(t('files.fileSizeTooLarge'));
+      return;
+    }
+    setUploadError(null);
     setUploading(true);
     setUploadProgress(0);
     const progressInterval = setInterval(() => {
@@ -134,6 +272,7 @@ function GalleryManagementContent() {
     }, 400);
 
     try {
+      setUploadError(null);
       const formData = new FormData();
       selectedFiles.forEach(file => formData.append('files', file));
       formData.append('category', uploadCategory);
@@ -146,14 +285,9 @@ function GalleryManagementContent() {
       });
 
       if (response.ok) {
-        const result = await response.json();
-        // Reload images
-        const imagesResponse = await fetch('/api/gallery');
-        if (imagesResponse.ok) {
-          const galleryImages = await imagesResponse.json();
-          setImages(galleryImages);
-        }
-
+        await response.json();
+        clearCachedGalleryImages();
+        loadGalleryImages().then(setImages);
         setUploadProgress(100);
         setSelectedFiles([]);
         setUploadTitle('');
@@ -162,10 +296,13 @@ function GalleryManagementContent() {
           setUploadProgress(0);
         }, 400);
       } else {
-        throw new Error(t('gallery.uploadFailed'));
+        const errBody = await response.json().catch(() => ({ error: response.statusText }));
+        const message = (errBody && typeof errBody.error === 'string') ? errBody.error : t('gallery.uploadFailed');
+        setUploadError(message);
       }
     } catch (error) {
       console.error('Error uploading images:', error);
+      setUploadError(error instanceof Error ? error.message : t('gallery.uploadFailed'));
     } finally {
       clearInterval(progressInterval);
       setUploading(false);
@@ -176,7 +313,10 @@ function GalleryManagementContent() {
     e.preventDefault();
     setDragOver(false);
     const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
-    if (files.length) setSelectedFiles((prev) => [...prev, ...files]);
+    const valid = files.filter((f) => f.size <= MAX_FILE_SIZE_BYTES);
+    const rejected = files.length - valid.length;
+    if (rejected > 0) setUploadError(t('files.fileSizeTooLarge'));
+    if (valid.length) setSelectedFiles((prev) => [...prev, ...valid]);
   }
 
   function handleDragOver(e: React.DragEvent) {
@@ -201,6 +341,7 @@ function GalleryManagementContent() {
       });
 
       if (response.ok) {
+        clearCachedGalleryImages();
         setImages((prev) => prev.filter((img) => img.id !== imageToDelete));
         setImageToDelete(null);
       } else {
@@ -231,6 +372,7 @@ function GalleryManagementContent() {
       });
 
       if (response.ok) {
+        clearCachedGalleryImages();
         setImages((prev) =>
           prev.map((img) =>
             img.id === imageId ? { ...img, isActive: !img.isActive } : img
@@ -284,8 +426,18 @@ function GalleryManagementContent() {
         <div className="flex flex-1 min-h-0 overflow-hidden">
           {/* Left sidebar – Categories (scrollable, fixed height) */}
           <aside className="w-64 sm:w-72 flex-shrink-0 min-h-0 border-r border-gray-200 bg-gray-50/50 flex flex-col overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0">
+            <div className="px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0 flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-gray-900">{t('gallery.categories')}</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddCategoryModal(true)}
+                className="flex-shrink-0 p-1.5 rounded-lg text-green-power-600 hover:bg-green-power-50 transition-colors"
+                title={t('gallery.addCategory')}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
             </div>
             <nav className="flex-1 min-h-0 overflow-y-auto py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {/* All */}
@@ -300,7 +452,7 @@ function GalleryManagementContent() {
                 <span className="truncate">{t('gallery.allCategories', { count: images.length })}</span>
               </button>
               {/* Category list */}
-              {DEFAULT_CATEGORY_KEYS.map((category) => {
+              {(categoryKeys.length > 0 ? categoryKeys : DEFAULT_CATEGORY_KEYS).map((category) => {
                 const count = images.filter((img) => img.category === category).length;
                 const displayName = getCategoryDisplayName(categoryLabels, category);
                 const isEditing = editingCategoryKey === category;
@@ -357,20 +509,33 @@ function GalleryManagementContent() {
                           <span className={`text-xs flex-shrink-0 ${isSelected ? 'text-white/90' : 'text-gray-500'}`}>({count})</span>
                         </button>
                         {isSelected && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setEditingCategoryKey(category);
-                              setEditingValue(displayName);
-                            }}
-                            className="flex-shrink-0 p-2 rounded-lg text-gray-900 hover:bg-black/10 transition-colors mr-1"
-                            title={t('gallery.editName')}
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingCategoryKey(category);
+                                setEditingValue(displayName);
+                              }}
+                              className="flex-shrink-0 p-2 rounded-lg text-gray-900 hover:bg-black/10 transition-colors"
+                              title={t('gallery.editName')}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                              </svg>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.stopPropagation(); onDeleteCategory(category); }}
+                              disabled={deletingCategoryKey === category}
+                              className="flex-shrink-0 p-2 rounded-lg text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                              title={t('gallery.deleteCategory')}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          </>
                         )}
                       </div>
                     )}
@@ -488,22 +653,69 @@ function GalleryManagementContent() {
         </div>
       </div>
 
+      {/* Add Category Modal */}
+      {showAddCategoryModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => setShowAddCategoryModal(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">{t('gallery.addCategory')}</h3>
+              <button
+                type="button"
+                onClick={() => setShowAddCategoryModal(false)}
+                className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onAddCategory();
+                  if (e.key === 'Escape') setShowAddCategoryModal(false);
+                }}
+                placeholder={t('gallery.newCategoryPlaceholder')}
+                className="flex-1 min-w-0 px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={onAddCategory}
+                disabled={addingCategory || !newCategoryName.trim() || categoryKeys.includes(newCategoryName.trim())}
+                className="px-4 py-2.5 bg-green-power-600 text-white text-sm font-medium rounded-lg hover:bg-green-power-700 disabled:opacity-50"
+              >
+                {addingCategory ? '...' : t('common.add')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <div>
-                  <h3 className="text-2xl font-bold text-gray-900">{t('gallery.uploadModalTitle')}</h3>
-                  <p className="text-gray-600 mt-1">{t('gallery.uploadModalDescription')}</p>
-                </div>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">{t('gallery.uploadModalTitle')}</h3>
                 <button
                   onClick={() => {
                     setShowUploadModal(false);
                     setSelectedFiles([]);
                     setUploadTitle('');
                     setUploadProgress(0);
+                    setUploadError(null);
+                    setUploadPreviewIndex(null);
                   }}
                   className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
                 >
@@ -512,9 +724,9 @@ function GalleryManagementContent() {
                   </svg>
                 </button>
               </div>
-              
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4">
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-2">
                       {t('gallery.category')}
@@ -525,7 +737,7 @@ function GalleryManagementContent() {
                         onChange={(e) => setUploadCategory(e.target.value)}
                         className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:border-transparent text-sm"
                       >
-                        {DEFAULT_CATEGORY_KEYS.map((category) => (
+                        {(categoryKeys.length > 0 ? categoryKeys : DEFAULT_CATEGORY_KEYS).map((category) => (
                           <option key={category} value={category}>{getCategoryDisplayName(categoryLabels, category)}</option>
                         ))}
                       </select>
@@ -554,28 +766,35 @@ function GalleryManagementContent() {
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     {t('gallery.selectImages')}
                   </label>
+                  <input
+                    ref={galleryFileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => {
+                      const list = Array.from(e.target.files || []);
+                      const valid = list.filter((f) => f.size <= MAX_FILE_SIZE_BYTES);
+                      if (valid.length < list.length) setUploadError(t('files.fileSizeTooLarge'));
+                      if (valid.length) setSelectedFiles((prev) => [...prev, ...valid]);
+                      e.target.value = '';
+                    }}
+                    className="hidden"
+                    id="gallery-upload"
+                  />
                   <div
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
                     onDragLeave={handleDragLeave}
-                    className={`border-2 border-dashed rounded-xl p-8 transition-colors bg-gray-50 cursor-pointer ${
+                    className={`border-2 border-dashed rounded-lg p-5 transition-colors bg-gray-50 cursor-pointer ${
                       dragOver ? 'border-green-power-500 bg-green-power-50' : 'border-gray-300 hover:border-green-power-400'
                     }`}
-                    onClick={() => document.getElementById('gallery-upload')?.click()}
+                    onClick={() => galleryFileInputRef.current?.click()}
                   >
-                    <input
-                      type="file"
-                      multiple
-                      accept="image/*"
-                      onChange={(e) => setSelectedFiles((prev) => [...prev, ...Array.from(e.target.files || [])])}
-                      className="hidden"
-                      id="gallery-upload"
-                    />
                     <div className="text-center pointer-events-none">
-                      <svg className="mx-auto h-16 w-16 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                      <svg className="mx-auto h-10 w-10 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
                         <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
-                      <p className="mt-4 text-lg text-gray-600">
+                      <p className="mt-2 text-sm text-gray-600">
                         {selectedFiles.length > 0
                           ? t('gallery.filesSelected', { count: selectedFiles.length })
                           : dragOver
@@ -583,10 +802,13 @@ function GalleryManagementContent() {
                             : t('gallery.clickToUploadOrDrop')
                         }
                       </p>
-                      <p className="text-sm text-gray-500 mt-2">{t('gallery.fileTypesAndSize')}</p>
+                      <p className="text-xs text-gray-400 mt-1">{t('gallery.fileTypesAndSize')}</p>
                     </div>
                   </div>
                 </div>
+                {uploadError && (
+                  <p className="mt-2 text-sm text-red-600" role="alert">{uploadError}</p>
+                )}
 
                 {/* Image Preview */}
                 {selectedFiles.length > 0 && (
@@ -603,18 +825,24 @@ function GalleryManagementContent() {
                     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
                       {selectedFiles.map((file, index) => (
                         <div key={index} className="relative group">
-                          <div className="aspect-square overflow-hidden rounded-lg border border-gray-200 shadow-sm">
+                          <button
+                            type="button"
+                            onClick={() => setUploadPreviewIndex(index)}
+                            className="w-full aspect-square overflow-hidden rounded-lg border border-gray-200 shadow-sm block cursor-pointer text-left hover:ring-2 hover:ring-green-power-500 focus:ring-2 focus:ring-green-power-500 focus:outline-none"
+                          >
                             <img
                               src={URL.createObjectURL(file)}
                               alt={`Preview ${index + 1}`}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 pointer-events-none"
                             />
-                          </div>
+                          </button>
                           <button
-                            onClick={() => {
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
                               setSelectedFiles(prev => prev.filter((_, i) => i !== index));
                             }}
-                            className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg hover:bg-red-600"
+                            className="absolute top-2 right-2 p-1.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 shadow-lg hover:bg-red-600 z-10"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -647,13 +875,15 @@ function GalleryManagementContent() {
                 )}
               </div>
 
-              <div className="flex gap-4 mt-8 pt-6 border-t border-gray-200">
+              <div className="flex gap-3 mt-5 pt-4 border-t border-gray-200">
                 <button
                   onClick={() => {
                     setShowUploadModal(false);
                     setSelectedFiles([]);
                     setUploadTitle('');
                     setUploadProgress(0);
+                    setUploadError(null);
+                    setUploadPreviewIndex(null);
                   }}
                   disabled={uploading}
                   className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 font-medium"
@@ -670,6 +900,59 @@ function GalleryManagementContent() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Upload modal: full-size preview with Previous/Next when clicking a selected image */}
+      {showUploadModal && uploadPreviewIndex !== null && uploadPreviewObjectUrl && selectedFiles.length > 0 && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setUploadPreviewIndex(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setUploadPreviewIndex(null)}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            aria-label={t('common.close')}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          {uploadPreviewIndex > 0 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setUploadPreviewIndex(uploadPreviewIndex - 1); }}
+              className="absolute left-4 top-1/2 -translate-y-1/2 p-3 text-white hover:bg-white/10 rounded-full transition-colors z-10"
+              aria-label={t('common.previous')}
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
+            </button>
+          )}
+          {uploadPreviewIndex < selectedFiles.length - 1 && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setUploadPreviewIndex(uploadPreviewIndex + 1); }}
+              className="absolute right-4 top-1/2 -translate-y-1/2 p-3 text-white hover:bg-white/10 rounded-full transition-colors z-10"
+              aria-label={t('common.next')}
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          )}
+          <div className="relative max-w-[95vw] max-h-[90vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+            <img
+              src={uploadPreviewObjectUrl}
+              alt={selectedFiles[uploadPreviewIndex]?.name ?? ''}
+              className="max-h-[90vh] w-auto object-contain rounded-lg"
+            />
+          </div>
+          <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/90 text-sm">
+            {uploadPreviewIndex + 1} / {selectedFiles.length}
+          </p>
         </div>
       )}
 

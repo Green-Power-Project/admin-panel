@@ -540,8 +540,8 @@ function CustomerUploadsContent() {
                         <div className="flex items-center gap-1 whitespace-nowrap">
                           {upload.adminReadStatus === 'unread' ? (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200">
-                              <div className="w-1.5 h-1.5 rounded-full bg-amber-600"></div>
-                              {t('customerUploads.unread')}
+                              <span aria-hidden>✅</span>
+                              {t('customerUploads.new')}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-green-100 text-green-800 border border-green-200">

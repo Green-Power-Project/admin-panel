@@ -9,6 +9,7 @@ import { db } from '@/lib/firebase';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { PROJECT_FOLDER_STRUCTURE, Folder } from '@/lib/folderStructure';
 import AlertModal from '@/components/AlertModal';
+
 import { useLanguage } from '@/contexts/LanguageContext';
 import { getProjectFolderDisplayName } from '@/lib/translations';
 
@@ -172,7 +173,7 @@ function ChildList({
                 </div>
               ) : (
                 <>
-                  <div className="flex-1 text-sm font-semibold text-gray-800 group-hover:text-gray-900 transition-colors duration-200">
+                  <div className="flex-1 text-sm font-semibold text-gray-800 group-hover:text-gray-900 transition-colors duration-200 min-w-0">
                     {displayName}
                   </div>
                   <button
@@ -381,7 +382,6 @@ function ProjectFoldersSection({
   const folders = useMemo(() => PROJECT_FOLDER_STRUCTURE.filter(
     (folder) => folder.path !== '00_New_Not_Viewed_Yet_' && folder.path !== '01_Customer_Uploads'
   ), []);
-
   if (loading) {
     return (
       <div className="mb-6">
