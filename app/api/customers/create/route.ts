@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb, getAdminApp } from '@/lib/server/firebaseAdmin';
 import { getAuth } from 'firebase-admin/auth';
+import { getAdminServerBaseUrl } from '@/lib/serverBaseUrl';
 
 export async function POST(request: NextRequest) {
   try {
@@ -57,7 +58,7 @@ export async function POST(request: NextRequest) {
     // Send welcome email only when notifyCustomer is true
     if (notifyCustomer === true) {
       try {
-        const baseUrl = process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL || 'http://localhost:3000';
+        const baseUrl = getAdminServerBaseUrl();
         const welcomeResponse = await fetch(`${baseUrl}/api/notifications/welcome-customer`, {
           method: 'POST',
           headers: {
