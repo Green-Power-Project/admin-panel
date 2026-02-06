@@ -91,18 +91,22 @@ function deriveFileType(fileName: string): 'pdf' | 'image' | 'file' {
   return 'file';
 }
 
-function getFolderConfig(path: string) {
-  const configs: Record<string, { gradient: string; icon: string; description: string }> = {
-    '02_Photos': { gradient: 'from-purple-500 to-pink-500', icon: '📷', description: 'Progress photos and visual documentation' },
-    '03_Reports': { gradient: 'from-green-500 to-emerald-500', icon: '📄', description: 'Daily and weekly reports from the team' },
-    '04_Emails': { gradient: 'from-blue-500 to-cyan-500', icon: '✉️', description: 'Email communications and correspondence' },
-    '05_Quotations': { gradient: 'from-yellow-500 to-orange-500', icon: '💰', description: 'Quotes, estimates and pricing documents' },
-    '06_Invoices': { gradient: 'from-red-500 to-rose-500', icon: '🧾', description: 'Invoices and billing documents' },
-    '07_Delivery_Notes': { gradient: 'from-teal-500 to-cyan-500', icon: '📦', description: 'Delivery notes and material tracking' },
-    '08_General': { gradient: 'from-gray-500 to-slate-500', icon: '📋', description: 'General documents and miscellaneous files' },
-    '09_Admin_Only': { gradient: 'from-amber-600 to-orange-600', icon: '🔒', description: 'Private – only visible to admins (e.g. material prices, internal notes)' },
+function getFolderConfig(path: string, t: (key: string) => string) {
+  const configs: Record<string, { gradient: string; icon: string }> = {
+    '02_Photos': { gradient: 'from-purple-500 to-pink-500', icon: '📷' },
+    '03_Reports': { gradient: 'from-green-500 to-emerald-500', icon: '📄' },
+    '04_Emails': { gradient: 'from-blue-500 to-cyan-500', icon: '✉️' },
+    '05_Quotations': { gradient: 'from-yellow-500 to-orange-500', icon: '💰' },
+    '06_Invoices': { gradient: 'from-red-500 to-rose-500', icon: '🧾' },
+    '07_Delivery_Notes': { gradient: 'from-teal-500 to-cyan-500', icon: '📦' },
+    '08_General': { gradient: 'from-gray-500 to-slate-500', icon: '📋' },
+    '09_Admin_Only': { gradient: 'from-amber-600 to-orange-600', icon: '🔒' },
   };
-  return configs[path] || { gradient: 'from-gray-400 to-gray-500', icon: '📁', description: 'Project folder' };
+  const base = configs[path] || { gradient: 'from-gray-400 to-gray-500', icon: '📁' };
+  const descKey = `folders.${path}.description`;
+  const translated = t(descKey);
+  const description = translated !== descKey ? translated : t('files.projectFolderFallback');
+  return { ...base, description };
 }
 
 function getFolderIcon(path: string): string {
@@ -535,7 +539,7 @@ function ProjectFilesContent() {
                 {scopeFolder && (() => {
                   const hasSelectedChild = scopeFolder.children?.some((c) => selectedFolder === c.path);
                   const isParentSelected = selectedFolder === scopeFolder.path && !hasSelectedChild;
-                  const config = getFolderConfig(scopeFolder.path);
+                  const config = getFolderConfig(scopeFolder.path, t);
                   return (
                     <div className="space-y-1">
                       <button

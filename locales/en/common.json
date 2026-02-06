@@ -38,7 +38,12 @@
     "showingToOf": "Showing {{start}} to {{end}} of {{total}} results",
     "previous": "Previous",
     "next": "Next",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "alert": "Alert",
+    "untitledFile": "Untitled file",
+    "editName": "Edit name",
+    "toggleMenu": "Toggle menu",
+    "na": "N/A"
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -151,7 +156,9 @@
     "recentCustomers": "Recent Customers",
     "recentProjects": "Recent Projects",
     "approvals": "Approvals",
-    "viewAll": "View all"
+    "viewAll": "View all",
+    "quickActions": "Quick Actions",
+    "unknownProject": "Unknown"
   },
   "folders": {
     "00_New_Not_Viewed_Yet_": "New Not Viewed Yet",
@@ -224,7 +231,11 @@
     "deleteProject": "Delete Project",
     "deleteConfirm": "Are you sure you want to delete this project? This will also delete all associated files. This action cannot be undone.",
     "projectDeleted": "Project deleted successfully",
-    "projectDeleteFailed": "Failed to delete project"
+    "projectDeleteFailed": "Failed to delete project",
+    "projectName": "Project Name",
+    "active": "Active",
+    "inactive": "Inactive",
+    "createFirstProjectLink": "Create your first project"
   },
   "customers": {
     "title": "Customers",
@@ -266,7 +277,46 @@
     "emailReadOnly": "Email (read-only)",
     "emailCannotBeChanged": "Email cannot be changed",
     "allowViewAllProjects": "Allow customer to view all projects",
-    "allowViewAllProjectsDescription": "If enabled, customer can see all projects for their customer number. If disabled, customer can only see the specific project they logged in with."
+    "allowViewAllProjectsDescription": "If enabled, customer can see all projects for their customer number. If disabled, customer can only see the specific project they logged in with.",
+    "success": "Success",
+    "customerDeletedSuccessfully": "Customer deleted successfully",
+    "deleteFailed": "Delete Failed",
+    "failedToDeleteCustomer": "Failed to delete customer. Please try again.",
+    "viewDetails": "View Details"
+  },
+  "customersNew": {
+    "title": "Create Customer",
+    "createCustomerAccount": "Create Customer Account",
+    "createCustomerAccountDescription": "Create a new customer account for the portal",
+    "backToCustomers": "Back to Customers",
+    "enterCustomerFullName": "Enter customer full name",
+    "customerNumberHelp": "Enter a unique customer number (e.g., 204729, 204730).",
+    "city": "City",
+    "minimumCharacters": "Minimum 6 characters",
+    "reenterPassword": "Re-enter password",
+    "creating": "Creating...",
+    "createAccount": "Create Account",
+    "databaseNotInitialized": "Database not initialized",
+    "customerNameRequired": "Customer Name is required",
+    "emailRequired": "Email is required",
+    "passwordsDoNotMatch": "Passwords do not match",
+    "passwordMinLength": "Password must be at least 6 characters",
+    "customerNumberRequired": "Customer Number is required",
+    "failedToCreateCustomer": "Failed to create customer account. Please try again.",
+    "emailAlreadyRegistered": "This email is already registered",
+    "invalidEmailAddress": "Invalid email address",
+    "customerMobileOptional": "Customer Mobile Number (Optional)",
+    "notifyCustomerHelp": "Notify customer (send welcome email with portal link, login email and password)",
+    "emailPlaceholder": "customer@example.com",
+    "autoGenerate": "Auto-generate"
+  },
+  "customersDetail": {
+    "unnamedProject": "Unnamed Project",
+    "failedToLoadCustomer": "Failed to load customer data",
+    "databaseNotInitialized": "Database not initialized",
+    "customerNumberRequired": "Customer number is required",
+    "customerNumberExists": "Customer number already exists. Please use a different number.",
+    "failedToUpdateCustomer": "Failed to update customer. Please try again."
   },
   "files": {
     "title": "Files",
@@ -279,6 +329,7 @@
     "createFirstProject": "Get started by creating your first project to manage files",
     "createProject": "Create Project",
     "projectLabel": "Project",
+    "projectFolderFallback": "Project folder",
     "manageFiles": "Manage Files",
     "projectFolders": "Project Folders",
     "clickOnFolderToManageFiles": "Click on any folder to manage files",
@@ -383,7 +434,8 @@
     "notApprovedYet": "Not approved yet",
     "autoApproveLabel": "Auto-approve",
     "noApprovalsFound": "No report approvals found for the selected filters.",
-    "tryAdjustingFilters": "Try adjusting the project, status, or customer filters to widen your search."
+    "tryAdjustingFilters": "Try adjusting the project, status, or customer filters to widen your search.",
+    "unknownProject": "Unknown Project"
   },
   "auditLogs": {
     "title": "Read Documentation / Audit Logs",
@@ -499,6 +551,26 @@
     "folderNameSaved": "Saved",
     "folderNameSavedMessage": "Folder name updated. Customer panel will show this name."
   },
+  "projectsEdit": {
+    "title": "Edit Project",
+    "updateProjectDetails": "Update project details",
+    "loadingProject": "Loading project...",
+    "backToProjects": "Back to Projects",
+    "backToProject": "Back to Project",
+    "projectNotFound": "Project not found",
+    "failedToLoadProject": "Failed to load project",
+    "databaseNotInitialized": "Database not initialized",
+    "customerIdRequired": "Customer ID is required",
+    "notificationEmailRequired": "Project notification email is required.",
+    "failedToUpdateProject": "Failed to update project. Please try again.",
+    "projectNumber": "Project Number",
+    "deactivateActivateProject": "Deactivate / Activate project",
+    "projectEmailSiteManager": "Project email (e.g. site manager)",
+    "mainLoginEmail": "Main login email",
+    "saving": "Saving...",
+    "saveChanges": "Save Changes",
+    "customerCannotBeChanged": "Customer cannot be changed after project creation. To assign a different customer, create a new project."
+  },
   "projectsNew": {
     "backToProjects": "Back to Projects",
     "description": "Add a new project and assign it to a customer",
@@ -527,6 +599,12 @@
     "projectThumbnailChoose": "Choose thumbnail image",
     "projectThumbnailChange": "Change image",
     "uploadingThumbnail": "Uploading thumbnail...",
-    "createFailed": "Failed to create project. Please try again."
+    "createFailed": "Failed to create project. Please try again.",
+    "noCustomersAvailable": "No customers available.",
+    "createCustomerFirst": "Create a customer first",
+    "noMatchingCustomers": "No matching customers",
+    "creatingProject": "Creating...",
+    "createProjectButton": "Create Project",
+    "toggleDropdown": "Toggle dropdown"
   }
 }

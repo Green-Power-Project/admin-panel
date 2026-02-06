@@ -133,6 +133,21 @@ admin-panel/
 - View approval timestamps
 - Track workflow progress
 
+## Email notifications (admin ↔ customer)
+
+For automatic emails to work in both directions, set these environment variables.
+
+**Admin panel (this app) `.env.local`:**
+- `EMAIL_USER` – Gmail address used to send (e.g. `your@gmail.com`)
+- `EMAIL_PASSWORD` – Gmail app password (not the normal password)
+- `FIREBASE_SERVICE_ACCOUNT_KEY` – JSON string for Firebase Admin SDK (needed to look up customer/project data)
+- `NEXT_PUBLIC_CUSTOMER_APP_ORIGIN` – Full URL of the customer panel (e.g. `http://localhost:3001` or `https://your-customer-app.vercel.app`). Required so the customer app can call the admin notification APIs (file-upload, customer-message) from a different origin (CORS).
+
+**Customer panel (window-app) `.env.local`:**
+- `NEXT_PUBLIC_ADMIN_API_BASE_URL` – Full URL of the admin panel (e.g. `http://localhost:3000` or `https://your-admin.vercel.app`). Required so the customer app can notify the admin when the customer uploads a file or sends a comment/message.
+
+Without these, admin uploads will not email the customer, and customer uploads/comments will not email the admin.
+
 ## Security
 
 - **Admin-Only Access** - Only users in the `admins` Firestore collection can access the panel

@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
+import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
 import { doc, onSnapshot, updateDoc, getDocs, query, orderBy, collection } from 'firebase/firestore';
 
@@ -28,9 +29,10 @@ interface Project {
 }
 
 export default function EditProjectPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="Edit Project">
+      <AdminLayout title={t('projectsEdit.title')}>
         <EditProjectContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -40,6 +42,7 @@ export default function EditProjectPage() {
 function EditProjectContent() {
   const params = useParams();
   const router = useRouter();
+  const { t } = useLanguage();
   const projectId = params.id as string;
   const [project, setProject] = useState<Project | null>(null);
   const [name, setName] = useState('');
@@ -77,13 +80,13 @@ function EditProjectContent() {
           setEnabled(projectData.enabled !== false);
           setError('');
         } else {
-          setError('Project not found');
+          setError(t('projectsEdit.projectNotFound'));
         }
         setLoading(false);
       },
       (error) => {
         console.error('Error listening to project:', error);
-        setError('Failed to load project');
+        setError(t('projectsEdit.failedToLoadProject'));
         setLoading(false);
       }
     );
@@ -131,20 +134,20 @@ function EditProjectContent() {
     setSaving(true);
 
     if (!db) {
-      setError('Database not initialized');
+      setError(t('projectsEdit.databaseNotInitialized'));
       setSaving(false);
       return;
     }
     const dbInstance = db; // Store for TypeScript narrowing
 
     if (!customerId) {
-      setError('Customer ID is required');
+      setError(t('projectsEdit.customerIdRequired'));
       setSaving(false);
       return;
     }
 
     if (!notificationEmail.trim()) {
-      setError('Project notification email is required so we know where to send notifications.');
+      setError(t('projectsEdit.notificationEmailRequired'));
       setSaving(false);
       return;
     }
@@ -172,7 +175,7 @@ function EditProjectContent() {
       router.push(`/projects/${projectId}`);
     } catch (err: any) {
       console.error('Error updating project:', err);
-      setError(err.message || 'Failed to update project. Please try again.');
+      setError(err.message || t('projectsEdit.failedToUpdateProject'));
     } finally {
       setSaving(false);
     }
@@ -184,7 +187,7 @@ function EditProjectContent() {
         <div className="max-w-3xl mx-auto">
           <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
             <div className="inline-block h-8 w-8 border-3 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
-            <p className="mt-4 text-sm text-gray-500">Loading project...</p>
+            <p className="mt-4 text-sm text-gray-500">{t('projectsEdit.loadingProject')}</p>
           </div>
         </div>
       </div>
@@ -203,7 +206,7 @@ function EditProjectContent() {
               href="/projects"
               className="text-sm text-green-power-600 hover:text-green-power-700 font-medium"
             >
-              ← Back to Projects
+              ← {t('projectsEdit.backToProjects')}
             </Link>
           </div>
         </div>
@@ -219,10 +222,10 @@ function EditProjectContent() {
             href={`/projects/${projectId}`}
             className="text-sm text-gray-600 hover:text-gray-900 mb-4 inline-block"
           >
-            ← Back to Project
+            ← {t('projectsEdit.backToProject')}
           </Link>
-          <h2 className="text-2xl font-semibold text-gray-900 mt-2">Edit Project</h2>
-          <p className="text-sm text-gray-500 mt-1">Update project details</p>
+          <h2 className="text-2xl font-semibold text-gray-900 mt-2">{t('projectsEdit.title')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('projectsEdit.updateProjectDetails')}</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-sm">
@@ -236,7 +239,7 @@ function EditProjectContent() {
 
               <div>
                 <label htmlFor="projectNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Project Number
+                  {t('projectsEdit.projectNumber')}
                 </label>
                 <input
                   id="projectNumber"
@@ -280,7 +283,7 @@ function EditProjectContent() {
                       onChange={() => setNotificationTarget('project')}
                       className="rounded-full border-gray-300 text-green-power-600 focus:ring-green-power-500"
                     />
-                    <span className="text-sm text-gray-700">Project email (e.g. site manager)</span>
+                    <span className="text-sm text-gray-700">{t('projectsNew.notificationTargetProject')}</span>
                   </label>
                   <label className="inline-flex items-center gap-2 cursor-pointer">
                     <input
@@ -296,7 +299,7 @@ function EditProjectContent() {
                       }}
                       className="rounded-full border-gray-300 text-green-power-600 focus:ring-green-power-500"
                     />
-                    <span className="text-sm text-gray-700">Main login email</span>
+                    <span className="text-sm text-gray-700">{t('projectsNew.notificationTargetLogin')}</span>
                   </label>
                 </div>
               </div>
@@ -327,7 +330,7 @@ function EditProjectContent() {
                     onClick={() => setEnabled(!enabled)}
                     className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 ${enabled ? 'bg-green-power-500' : 'bg-gray-200'}`}
                   >
-                    <span className="sr-only">Deactivate / Activate project</span>
+                    <span className="sr-only">{t('projectsEdit.deactivateActivateProject')}</span>
                     <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition ${enabled ? 'translate-x-5' : 'translate-x-1'}`} />
                   </button>
                 </div>
@@ -353,18 +356,18 @@ function EditProjectContent() {
                         return num ? num.charAt(0).toUpperCase() + num.slice(1) : '';
                       })()} - ${customers.find(c => c.uid === customerId)?.email}`
                     ) : (
-                      'Loading...'
+                      t('common.loading')
                     )}
                   </div>
                 )}
                 <p className="mt-1 text-xs text-gray-500">
-                  Customer cannot be changed after project creation. To assign a different customer, create a new project.
+                  {t('projectsEdit.customerCannotBeChanged')}
                 </p>
               </div>
 
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Project Name <span className="text-red-500">*</span>
+<label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1.5">
+                {t('projects.projectName')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="name"
@@ -405,7 +408,7 @@ function EditProjectContent() {
                   disabled={saving || loadingCustomers || !notificationEmail.trim()}
                   className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Saving...' : 'Save Changes'}
+                  {saving ? t('projectsEdit.saving') : t('projectsEdit.saveChanges')}
                 </button>
               </div>
             </form>

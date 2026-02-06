@@ -80,16 +80,8 @@ function replaceParams(text: string, params?: Record<string, string | number>): 
 
 export function LanguageProvider({ children }: { children: ReactNode }) {
   const { currentUser } = useAuth();
-  const [language, setLanguageState] = useState<Language>(() => {
-    // Initialize from localStorage if available; otherwise default to German
-    if (typeof window !== 'undefined') {
-      const savedLang = localStorage.getItem('admin-language') as Language;
-      if (savedLang === 'en' || savedLang === 'de') {
-        return savedLang;
-      }
-    }
-    return 'de';
-  });
+  // Always start with 'de' so server and client match on first render (avoids hydration mismatch).
+  const [language, setLanguageState] = useState<Language>('de');
   const [loading, setLoading] = useState(true);
 
   // Load language preference from Firestore or localStorage

@@ -3,16 +3,30 @@ import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { buildEmailLogoHtml } from '@/lib/emailSignature';
 
+// CORS: allow customer panel (different origin) to call this API
+function withCors(response: NextResponse) {
+  const allowedOrigin = (process.env.NEXT_PUBLIC_CUSTOMER_APP_ORIGIN || 'http://localhost:3001').trim();
+  response.headers.set('Access-Control-Allow-Origin', allowedOrigin);
+  response.headers.set('Access-Control-Allow-Methods', 'POST,OPTIONS');
+  response.headers.set('Access-Control-Allow-Headers', 'Content-Type');
+  response.headers.set('Access-Control-Allow-Credentials', 'true');
+  return response;
+}
+
+export async function OPTIONS() {
+  return withCors(new NextResponse(null, { status: 204 }));
+}
+
 export async function POST(request: NextRequest) {
   try {
     const db = getAdminDb();
     if (!db) {
-      return NextResponse.json({ success: false, skipped: true }, { status: 200 });
+      return withCors(NextResponse.json({ success: false, skipped: true }, { status: 200 }));
     }
 
     const body = await request.json().catch(() => null);
     if (!body || typeof body !== 'object') {
-      return NextResponse.json({ success: false }, { status: 400 });
+      return withCors(NextResponse.json({ success: false }, { status: 400 }));
     }
 
     const { projectId, projectName, customerId, message, folderPath, fileName, subject } = body;
@@ -28,13 +42,13 @@ export async function POST(request: NextRequest) {
     });
 
     if (adminEmails.length === 0) {
-      return NextResponse.json({ success: false, skipped: true }, { status: 200 });
+      return withCors(NextResponse.json({ success: false, skipped: true }, { status: 200 }));
     }
 
     const EMAIL_USER = process.env.EMAIL_USER;
     const EMAIL_PASSWORD = process.env.EMAIL_PASSWORD;
     if (!EMAIL_USER || !EMAIL_PASSWORD) {
-      return NextResponse.json({ success: false, skipped: true }, { status: 200 });
+      return withCors(NextResponse.json({ success: false, skipped: true }, { status: 200 }));
     }
 
     const transporter = nodemailer.createTransport({
@@ -70,9 +84,9 @@ export async function POST(request: NextRequest) {
       text,
     });
 
-    return NextResponse.json({ success: true }, { status: 200 });
+    return withCors(NextResponse.json({ success: true }, { status: 200 }));
   } catch (error) {
     console.error('[customer-message] Error:', error);
-    return NextResponse.json({ success: false }, { status: 200 });
+    return withCors(NextResponse.json({ success: false }, { status: 200 }));
   }
 }

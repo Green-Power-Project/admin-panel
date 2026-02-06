@@ -122,7 +122,7 @@ function CustomerDetailContent() {
       },
       (error) => {
         console.error('Error listening to customer:', error);
-        setError('Failed to load customer data');
+        setError(t('customersDetail.failedToLoadCustomer'));
         setLoading(false);
       }
     );
@@ -142,7 +142,7 @@ function CustomerDetailContent() {
           if (data.customerId === customerId) {
             projectsList.push({ 
               id: doc.id, 
-              name: data.name || 'Unnamed Project',
+              name: data.name || t('customersDetail.unnamedProject'),
               year: data.year,
             } as Project);
           }
@@ -172,7 +172,7 @@ function CustomerDetailContent() {
 
   async function handleSave() {
     if (!db) {
-      setError('Database not initialized');
+      setError(t('customersDetail.databaseNotInitialized'));
       return;
     }
     const dbInstance = db; // Store for TypeScript narrowing
@@ -181,7 +181,7 @@ function CustomerDetailContent() {
     setError('');
 
     if (!customerNumber.trim()) {
-      setError('Customer Number is required');
+      setError(t('customersDetail.customerNumberRequired'));
       setSaving(false);
       return;
     }
@@ -196,7 +196,7 @@ function CustomerDetailContent() {
         const existingSnapshot = await getDocs(existingQuery);
         
         if (!existingSnapshot.empty && existingSnapshot.docs[0].id !== customerId) {
-          setError('Customer Number already exists. Please use a different number.');
+          setError(t('customersDetail.customerNumberExists'));
           setSaving(false);
           return;
         }
@@ -244,7 +244,7 @@ function CustomerDetailContent() {
       setEditing(false);
     } catch (err: any) {
       console.error('Error updating customer:', err);
-      setError(err.message || 'Failed to update customer. Please try again.');
+      setError(err.message || t('customersDetail.failedToUpdateCustomer'));
     } finally {
       setSaving(false);
     }

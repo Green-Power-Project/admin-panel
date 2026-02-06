@@ -93,12 +93,12 @@ function DashboardContent() {
       filePath: a.filePath,
       fileName: a.filePath.split('/').pop() || a.filePath,
       projectId: a.projectId,
-      projectName: projects.find((p) => p.id === a.projectId)?.name ?? 'Unknown',
+      projectName: projects.find((p) => p.id === a.projectId)?.name ?? t('dashboard.unknownProject'),
       status: a.status,
       approvedAt: a.approvedAt,
       uploadedAt: a.uploadedAt,
     }));
-  }, [rawReportApprovals, projects]);
+  }, [rawReportApprovals, projects, t]);
 
   function getFolderSegments(folderPath: string): string[] {
     return folderPath.split('/').filter(Boolean);
@@ -528,7 +528,7 @@ function DashboardContent() {
         {/* Quick Actions */}
         <div className="mt-6 bg-white rounded-xl shadow-lg overflow-hidden">
           <div className="px-6 py-4 bg-gradient-to-r from-green-power-50 to-green-power-100 border-b border-green-power-200">
-            <h3 className="text-base font-semibold text-gray-900">Quick Actions</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t('dashboard.quickActions')}</h3>
           </div>
           <div className="p-4 sm:p-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">

@@ -166,8 +166,8 @@ function ProjectsContent() {
     if (!deleteProjectId) return;
     if (!db) {
       setAlertData({
-        title: 'Delete Failed',
-        message: 'Database not initialized',
+        title: t('customers.deleteFailed'),
+        message: t('projectsEdit.databaseNotInitialized'),
         type: 'error',
       });
       setShowAlert(true);
@@ -186,8 +186,8 @@ function ProjectsContent() {
     } catch (error) {
       console.error('Error deleting project:', error);
       setAlertData({
-        title: 'Delete Failed',
-        message: 'Failed to delete project. Please try again.',
+        title: t('customers.deleteFailed'),
+        message: t('projects.projectDeleteFailed'),
         type: 'error',
       });
       setShowAlert(true);
@@ -277,17 +277,17 @@ function ProjectsContent() {
           ) : filteredProjects.length === 0 ? (
             <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
               <p className="text-sm font-medium text-gray-700">
-                No projects found for the selected filters.
+                {t('projects.noProjectsFound')}
               </p>
               <p className="mt-1 text-xs text-gray-500">
-                {filterSearch ? 'Try adjusting your search query.' : 'Create your first project to get started.'}
+                {filterSearch ? t('projects.tryAdjustingSearch') : t('projects.createFirstProject')}
               </p>
               {!filterSearch && (
                 <Link
                   href="/projects/new"
                   className="mt-4 inline-block text-sm text-green-power-600 hover:text-green-power-700 font-medium"
                 >
-                  Create your first project →
+                  {t('projects.createFirstProjectLink')} →
                 </Link>
               )}
             </div>
@@ -298,19 +298,19 @@ function ProjectsContent() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
-                      Project Name
+                      {t('projects.projectName')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
-                      Year
+                      {t('projects.year')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
-                      Customer
+                      {t('projects.customer')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
-                      Status
+                      {t('common.status')}
                     </th>
                     <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
-                      Actions
+                      {t('common.actions')}
                     </th>
                   </tr>
                 </thead>
@@ -354,7 +354,7 @@ function ProjectsContent() {
                       <div className="text-xs font-medium text-gray-900 truncate">
                         {project.customerNumber 
                           ? project.customerNumber.charAt(0).toUpperCase() + project.customerNumber.slice(1)
-                          : 'N/A'}
+                          : t('common.na')}
                       </div>
                       {project.customerEmail && (
                         <div className="text-[10px] text-gray-500 mt-0.5 truncate">{project.customerEmail}</div>
@@ -362,7 +362,7 @@ function ProjectsContent() {
                     </td>
                     <td className="px-3 py-2.5">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${project.enabled !== false ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-                        {project.enabled !== false ? 'Active' : 'Inactive'}
+                        {project.enabled !== false ? t('projects.active') : t('projects.inactive')}
                       </span>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
@@ -373,7 +373,7 @@ function ProjectsContent() {
                         <Link
                           href={`/projects/${project.id}`}
                           className="w-7 h-7 rounded-md bg-green-power-50 hover:bg-green-power-100 flex items-center justify-center text-green-power-600 hover:text-green-power-700 transition-colors group/icon"
-                          title="View"
+                          title={t('common.view')}
                         >
                           <svg className="w-4 h-4 group-hover/icon:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -383,7 +383,7 @@ function ProjectsContent() {
                         <Link
                           href={`/projects/${project.id}/edit`}
                           className="w-7 h-7 rounded-md bg-gray-100 hover:bg-gray-200 flex items-center justify-center text-gray-600 hover:text-gray-700 transition-colors group/icon"
-                          title="Edit"
+                          title={t('common.edit')}
                         >
                           <svg className="w-4 h-4 group-hover/icon:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -393,7 +393,7 @@ function ProjectsContent() {
                           onClick={() => handleDeleteClick(project.id)}
                           disabled={deleting === project.id}
                           className="w-7 h-7 rounded-md bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-600 hover:text-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors group/icon"
-                          title="Delete"
+                          title={t('common.delete')}
                         >
                           {deleting === project.id ? (
                             <div className="w-3 h-3 border-2 border-red-600 border-t-transparent rounded-full animate-spin"></div>
@@ -429,10 +429,10 @@ function ProjectsContent() {
       {/* Confirmation Modal */}
       <ConfirmationModal
         isOpen={showDeleteConfirm}
-        title="Delete Project"
-        message="Are you sure you want to delete this project? This action cannot be undone."
-        confirmText="Delete"
-        cancelText="Cancel"
+        title={t('projects.deleteProject')}
+        message={t('projects.deleteConfirm')}
+        confirmText={t('common.delete')}
+        cancelText={t('common.cancel')}
         type="danger"
         onConfirm={confirmDelete}
         onCancel={() => {
@@ -444,7 +444,7 @@ function ProjectsContent() {
       {/* Alert Modal */}
       <AlertModal
         isOpen={showAlert}
-        title={alertData?.title || 'Alert'}
+        title={alertData?.title || t('common.alert')}
         message={alertData?.message || ''}
         type={alertData?.type || 'info'}
         onClose={() => {

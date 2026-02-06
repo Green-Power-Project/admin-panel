@@ -296,7 +296,7 @@ function NewProjectContent() {
                   </div>
                 ) : customers.length === 0 ? (
                   <div className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm text-gray-500 bg-gray-50">
-                    No customers available. <Link href="/customers/new" className="text-green-power-600 hover:text-green-power-700">Create a customer first</Link>
+                    {t('projectsNew.noCustomersAvailable')} <Link href="/customers/new" className="text-green-power-600 hover:text-green-power-700">{t('projectsNew.createCustomerFirst')}</Link>
                   </div>
                 ) : (
                   <div className="relative">
@@ -320,7 +320,7 @@ function NewProjectContent() {
                           if (!customerDropdownOpen) setCustomerSearchQuery('');
                         }}
                         className="px-2 text-gray-400 hover:text-gray-600 border-l border-gray-200"
-                        aria-label="Toggle dropdown"
+                        aria-label={t('projectsNew.toggleDropdown')}
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -330,7 +330,7 @@ function NewProjectContent() {
                     {customerDropdownOpen && (
                       <ul className="absolute z-10 mt-1 w-full max-h-60 overflow-auto bg-white border border-gray-300 rounded-sm shadow-lg text-sm">
                         {filteredCustomers.length === 0 ? (
-                          <li className="px-3 py-2 text-gray-500">No matching customers</li>
+                          <li className="px-3 py-2 text-gray-500">{t('projectsNew.noMatchingCustomers')}</li>
                         ) : (
                           filteredCustomers.map((customer) => (
                             <li
@@ -559,14 +559,14 @@ function NewProjectContent() {
                   href="/projects"
                   className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-sm hover:bg-gray-50 font-medium"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Link>
                 <button
                   type="submit"
                   disabled={loading || thumbnailUploading || loadingCustomers || customers.length === 0 || !customerId || !projectNumber.trim() || !notificationEmail.trim()}
                   className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading || thumbnailUploading ? (thumbnailUploading ? t('projectsNew.uploadingThumbnail') : 'Creating...') : 'Create Project'}
+                  {loading || thumbnailUploading ? (thumbnailUploading ? t('projectsNew.uploadingThumbnail') : t('projectsNew.creatingProject')) : t('projectsNew.createProjectButton')}
                 </button>
               </div>
             </form>

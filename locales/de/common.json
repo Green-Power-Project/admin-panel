@@ -38,7 +38,12 @@
     "showingToOf": "{{start}} bis {{end}} von {{total}} Ergebnissen",
     "previous": "Vorherige",
     "next": "Weiter",
-    "signOut": "Abmelden"
+    "signOut": "Abmelden",
+    "alert": "Hinweis",
+    "untitledFile": "Unbenannte Datei",
+    "editName": "Name bearbeiten",
+    "toggleMenu": "Menü ein-/ausblenden",
+    "na": "–"
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -151,7 +156,9 @@
     "recentCustomers": "Aktuelle Kunden",
     "recentProjects": "Aktuelle Projekte",
     "approvals": "Genehmigungen",
-    "viewAll": "Alle anzeigen"
+    "viewAll": "Alle anzeigen",
+    "quickActions": "Schnellaktionen",
+    "unknownProject": "Unbekannt"
   },
   "folders": {
     "00_New_Not_Viewed_Yet_": "Neu, noch nicht angesehen",
@@ -224,7 +231,11 @@
     "deleteProject": "Projekt löschen",
     "deleteConfirm": "Sind Sie sicher, dass Sie dieses Projekt löschen möchten? Dies löscht auch alle zugehörigen Dateien. Diese Aktion kann nicht rückgängig gemacht werden.",
     "projectDeleted": "Projekt erfolgreich gelöscht",
-    "projectDeleteFailed": "Projekt konnte nicht gelöscht werden"
+    "projectDeleteFailed": "Projekt konnte nicht gelöscht werden",
+    "projectName": "Projektname",
+    "active": "Aktiv",
+    "inactive": "Inaktiv",
+    "createFirstProjectLink": "Erstellen Sie Ihr erstes Projekt"
   },
   "customers": {
     "title": "Kunden",
@@ -266,7 +277,46 @@
     "emailReadOnly": "E-Mail (nur Leseansicht)",
     "emailCannotBeChanged": "E-Mail kann nicht geändert werden",
     "allowViewAllProjects": "Kunde darf alle Projekte anzeigen",
-    "allowViewAllProjectsDescription": "Wenn aktiviert, sieht der Kunde alle Projekte für seine Kundennummer. Wenn deaktiviert, sieht der Kunde nur das Projekt, mit dem er sich angemeldet hat."
+    "allowViewAllProjectsDescription": "Wenn aktiviert, sieht der Kunde alle Projekte für seine Kundennummer. Wenn deaktiviert, sieht der Kunde nur das Projekt, mit dem er sich angemeldet hat.",
+    "success": "Erfolg",
+    "customerDeletedSuccessfully": "Kunde erfolgreich gelöscht",
+    "deleteFailed": "Löschen fehlgeschlagen",
+    "failedToDeleteCustomer": "Kunde konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
+    "viewDetails": "Details anzeigen"
+  },
+  "customersNew": {
+    "title": "Kunde anlegen",
+    "createCustomerAccount": "Kundenkonto anlegen",
+    "createCustomerAccountDescription": "Neues Kundenkonto für das Portal anlegen",
+    "backToCustomers": "Zurück zu Kunden",
+    "enterCustomerFullName": "Vollständigen Kundennamen eingeben",
+    "customerNumberHelp": "Eindeutige Kundennummer eingeben (z. B. 204729, 204730).",
+    "city": "Ort",
+    "minimumCharacters": "Mindestens 6 Zeichen",
+    "reenterPassword": "Passwort wiederholen",
+    "creating": "Wird erstellt...",
+    "createAccount": "Konto erstellen",
+    "databaseNotInitialized": "Datenbank nicht initialisiert",
+    "customerNameRequired": "Kundenname ist erforderlich",
+    "emailRequired": "E-Mail ist erforderlich",
+    "passwordsDoNotMatch": "Passwörter stimmen nicht überein",
+    "passwordMinLength": "Passwort muss mindestens 6 Zeichen lang sein",
+    "customerNumberRequired": "Kundennummer ist erforderlich",
+    "failedToCreateCustomer": "Kundenkonto konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
+    "emailAlreadyRegistered": "Diese E-Mail ist bereits registriert",
+    "invalidEmailAddress": "Ungültige E-Mail-Adresse",
+    "customerMobileOptional": "Kunden-Handynummer (optional)",
+    "notifyCustomerHelp": "Kunde benachrichtigen (Willkommens-E-Mail mit Portal-Link, Anmelde-E-Mail und Passwort senden)",
+    "emailPlaceholder": "kunde@beispiel.de",
+    "autoGenerate": "Automatisch erzeugen"
+  },
+  "customersDetail": {
+    "unnamedProject": "Unbenanntes Projekt",
+    "failedToLoadCustomer": "Kundendaten konnten nicht geladen werden",
+    "databaseNotInitialized": "Datenbank nicht initialisiert",
+    "customerNumberRequired": "Kundennummer ist erforderlich",
+    "customerNumberExists": "Diese Kundennummer existiert bereits. Bitte verwenden Sie eine andere Nummer.",
+    "failedToUpdateCustomer": "Kunde konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut."
   },
   "files": {
     "title": "Dateien",
@@ -279,6 +329,7 @@
     "createFirstProject": "Beginnen Sie, indem Sie Ihr erstes Projekt zur Dateiverwaltung erstellen",
     "createProject": "Projekt erstellen",
     "projectLabel": "Projekt",
+    "projectFolderFallback": "Projektordner",
     "manageFiles": "Dateien verwalten",
     "projectFolders": "Projektordner",
     "clickOnFolderToManageFiles": "Klicken Sie auf einen Ordner, um Dateien zu verwalten",
@@ -383,7 +434,8 @@
     "notApprovedYet": "Noch nicht genehmigt",
     "autoApproveLabel": "Automatisch genehmigen",
     "noApprovalsFound": "Keine Berichtsgenehmigungen für die ausgewählten Filter gefunden.",
-    "tryAdjustingFilters": "Versuchen Sie, die Projekt-, Status- oder Kundenfilter anzupassen, um Ihre Suche zu erweitern."
+    "tryAdjustingFilters": "Versuchen Sie, die Projekt-, Status- oder Kundenfilter anzupassen, um Ihre Suche zu erweitern.",
+    "unknownProject": "Unbekanntes Projekt"
   },
   "auditLogs": {
     "title": "Dokumentationslesen / Prüfprotokolle",
@@ -497,6 +549,26 @@
     "folderNameSaved": "Gespeichert",
     "folderNameSavedMessage": "Ordnername aktualisiert. Das Kundenportal zeigt diesen Namen an."
   },
+  "projectsEdit": {
+    "title": "Projekt bearbeiten",
+    "updateProjectDetails": "Projektdetails aktualisieren",
+    "loadingProject": "Projekt wird geladen...",
+    "backToProjects": "Zurück zu Projekten",
+    "backToProject": "Zurück zum Projekt",
+    "projectNotFound": "Projekt nicht gefunden",
+    "failedToLoadProject": "Projekt konnte nicht geladen werden",
+    "databaseNotInitialized": "Datenbank nicht initialisiert",
+    "customerIdRequired": "Kunden-ID ist erforderlich",
+    "notificationEmailRequired": "Projekt-Benachrichtigungs-E-Mail ist erforderlich.",
+    "failedToUpdateProject": "Projekt konnte nicht aktualisiert werden. Bitte versuchen Sie es erneut.",
+    "projectNumber": "Projektnummer",
+    "deactivateActivateProject": "Projekt deaktivieren / aktivieren",
+    "projectEmailSiteManager": "Projekt-E-Mail (z. B. Bauleiter)",
+    "mainLoginEmail": "Haupt-Login-E-Mail",
+    "saving": "Speichert...",
+    "saveChanges": "Änderungen speichern",
+    "customerCannotBeChanged": "Der Kunde kann nach der Projekterstellung nicht geändert werden. Um einen anderen Kunden zuzuweisen, erstellen Sie ein neues Projekt."
+  },
   "projectsNew": {
     "backToProjects": "Zurück zu Projekten",
     "description": "Neues Projekt anlegen und einem Kunden zuweisen",
@@ -525,6 +597,12 @@
     "projectThumbnailChoose": "Vorschaubild wählen",
     "projectThumbnailChange": "Bild ändern",
     "uploadingThumbnail": "Vorschaubild wird hochgeladen...",
-    "createFailed": "Projekt konnte nicht erstellt werden. Bitte versuchen Sie es erneut."
+    "createFailed": "Projekt konnte nicht erstellt werden. Bitte versuchen Sie es erneut.",
+    "noCustomersAvailable": "Keine Kunden vorhanden.",
+    "createCustomerFirst": "Erstellen Sie zuerst einen Kunden",
+    "noMatchingCustomers": "Keine passenden Kunden",
+    "creatingProject": "Wird erstellt...",
+    "createProjectButton": "Projekt erstellen",
+    "toggleDropdown": "Dropdown ein-/ausblenden"
   }
 }

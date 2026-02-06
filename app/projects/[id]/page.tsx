@@ -158,7 +158,7 @@ function ChildList({
                     onClick={() => onSaveFolderName(child.path, editingValue)}
                     disabled={savingFolderName}
                     className="p-1.5 rounded-lg text-green-600 hover:bg-green-50 disabled:opacity-50"
-                    title="Save"
+                    title={t('common.save')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                   </button>
@@ -166,7 +166,7 @@ function ChildList({
                     type="button"
                     onClick={onCancelEdit}
                     className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"
-                    title="Cancel"
+                    title={t('common.cancel')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
@@ -180,7 +180,7 @@ function ChildList({
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onStartEdit(child.path, displayName); }}
                     className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                    title="Edit name"
+                    title={t('common.editName')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                   </button>
@@ -280,7 +280,7 @@ function FolderCard({
                     onClick={(e) => { e.stopPropagation(); onSaveFolderName(folder.path, editingValue); }}
                     disabled={savingFolderName}
                     className="p-2 rounded-lg text-green-600 hover:bg-green-50 disabled:opacity-50 flex-shrink-0"
-                    title="Save"
+                    title={t('common.save')}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                   </button>
@@ -288,7 +288,7 @@ function FolderCard({
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onCancelEdit(); }}
                     className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 flex-shrink-0"
-                    title="Cancel"
+                    title={t('common.cancel')}
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
@@ -301,7 +301,7 @@ function FolderCard({
                       type="button"
                       onClick={(e) => { e.stopPropagation(); onStartEdit(folder.path, displayName); }}
                       className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                      title="Edit name"
+                      title={t('common.editName')}
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
@@ -583,7 +583,7 @@ function ProjectDetailContent() {
       {/* Alert Modal */}
       <AlertModal
         isOpen={showAlert}
-        title={alertData?.title || 'Alert'}
+        title={alertData?.title || t('common.alert')}
         message={alertData?.message || ''}
         type={alertData?.type || 'info'}
         onClose={() => {

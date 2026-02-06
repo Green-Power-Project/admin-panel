@@ -231,7 +231,7 @@ function ApprovalsContent() {
       return {
         ...approval,
         fileName: approval.filePath.split('/').pop() || approval.filePath,
-        projectName: projectsMap.get(approval.projectId) || 'Unknown Project',
+        projectName: projectsMap.get(approval.projectId) || t('approvals.unknownProject'),
         customerNumber: customerInfo?.customerNumber,
         customerEmail: customerInfo?.email,
       };
@@ -278,13 +278,13 @@ function ApprovalsContent() {
       customerNumber: a.customerNumber
     })));
     setAllApprovals(finalApprovals);
-  }, [rawApprovals, projectsMap, customersMap]);
+  }, [rawApprovals, projectsMap, customersMap, t]);
 
-  function formatDate(timestamp?: Timestamp): string {
-    if (!timestamp) return 'N/A';
-    const date = timestamp.toDate();
-    return date.toLocaleString();
-  }
+function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
+  if (!timestamp) return t('common.na');
+  const date = timestamp.toDate();
+  return date.toLocaleString();
+}
 
   /** If status is pending but autoApproveDate has passed, treat as auto-approved for display and counts */
   function getEffectiveStatus(approval: ReportApprovalDisplay): 'pending' | 'approved' | 'auto-approved' {
@@ -552,7 +552,7 @@ function ApprovalsContent() {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="text-xs font-medium text-gray-900 truncate">
-                          {approval.fileName || 'Untitled file'}
+                          {approval.fileName || t('common.untitledFile')}
                         </div>
                       </td>
                       <td className="px-3 py-2.5">
@@ -568,17 +568,17 @@ function ApprovalsContent() {
                       
                       <td className="px-3 py-2.5">
                         {approval.approvedAt ? (
-                          <div className="text-xs text-gray-900">
-                            {formatDate(approval.approvedAt)}
+                        <div className="text-xs text-gray-900">
+                          {formatDate(t, approval.approvedAt)}
                           </div>
                         ) : getEffectiveStatus(approval) === 'auto-approved' && approval.autoApproveDate ? (
-                          <div className="text-xs text-gray-900">
-                            {formatDate(approval.autoApproveDate)}
+                        <div className="text-xs text-gray-900">
+                          {formatDate(t, approval.autoApproveDate)}
                           </div>
                         ) : approval.status === 'pending' && approval.autoApproveDate ? (
                           <div>
                             <div className="text-xs text-gray-500">{t('approvals.autoApproveLabel')}:</div>
-                            <div className="text-[10px] text-gray-400">{formatDate(approval.autoApproveDate)}</div>
+                          <div className="text-[10px] text-gray-400">{formatDate(t, approval.autoApproveDate)}</div>
                           </div>
                         ) : (
                           <span className="text-xs text-gray-400">{t('approvals.notApprovedYet')}</span>

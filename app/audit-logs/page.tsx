@@ -272,7 +272,7 @@ function AuditLogsContent() {
           const readStatus = readStatuses.length > 0 ? readStatuses[0] : null;
           const isRead = readStatus !== null;
 
-          let readAtFormatted = 'Not read yet';
+          let readAtFormatted = t('auditLogs.notReadYet');
           if (readStatus && readStatus.readAt) {
             const date = readStatus.readAt.toDate();
             readAtFormatted = date.toLocaleString();
@@ -393,7 +393,7 @@ function AuditLogsContent() {
     const blob = exportFilteredLogsToPDFBlob(exportData, filterProject, filterStatus, projects, pdfLanguage);
     const url = URL.createObjectURL(blob);
     setViewerUrl(url);
-    setViewerFileName('Audit-Log.pdf');
+    setViewerFileName(`${t('auditLogs.title')}.pdf`);
     setViewerBlobUrl(url);
   }
 
@@ -404,7 +404,7 @@ function AuditLogsContent() {
   function handleRowClick(log: AuditLogData) {
     if (log.downloadUrl) {
       setViewerUrl(log.downloadUrl);
-      setViewerFileName(log.fileName || 'file');
+      setViewerFileName(log.fileName || t('common.untitledFile'));
       setViewerBlobUrl(null);
       return;
     }
@@ -606,7 +606,7 @@ function AuditLogsContent() {
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="text-xs font-medium text-gray-900 truncate">
-                          {log.fileName || 'Untitled file'}
+                          {log.fileName || t('common.untitledFile')}
                         </div>
                       </td>
                       <td className="px-3 py-2.5">

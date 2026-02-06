@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLanguage } from '@/contexts/LanguageContext';
 
 const REDIRECT_DELAY_MS = 150;
 const MAX_LOADING_MS = 5000;
@@ -10,6 +11,7 @@ const MAX_LOADING_MS = 5000;
 export default function Home() {
   const router = useRouter();
   const { currentUser, loading } = useAuth();
+  const { t } = useLanguage();
   const mountedAt = useRef<number>(Date.now());
 
   useEffect(() => {
@@ -81,7 +83,7 @@ export default function Home() {
           ))}
         </div>
         
-        <p className="text-xl font-semibold text-gray-800">Loading</p>
+        <p className="text-xl font-semibold text-gray-800">{t('common.loading')}</p>
       </div>
     </div>
   );

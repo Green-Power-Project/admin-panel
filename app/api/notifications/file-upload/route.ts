@@ -40,7 +40,7 @@ function validatePayload(body: any): FileUploadNotificationPayload | null {
 
 // Helper to add CORS headers (for customer app on a different origin)
 function withCors(response: NextResponse) {
-  const allowedOrigin = process.env.NEXT_PUBLIC_CUSTOMER_APP_ORIGIN || 'http://localhost:3001';
+  const allowedOrigin = (process.env.NEXT_PUBLIC_CUSTOMER_APP_ORIGIN || 'http://localhost:3001').trim();
   response.headers.set('Access-Control-Allow-Origin', allowedOrigin);
   response.headers.set('Access-Control-Allow-Methods', 'POST,OPTIONS');
   response.headers.set('Access-Control-Allow-Headers', 'Content-Type');

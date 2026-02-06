@@ -225,16 +225,16 @@ function CustomersContent() {
       setShowDeleteConfirm(false);
       setCustomerToDelete(null);
       setAlertData({
-        title: 'Success',
-        message: 'Customer deleted successfully',
+        title: t('customers.success'),
+        message: t('customers.customerDeletedSuccessfully'),
         type: 'success',
       });
       setShowAlert(true);
     } catch (error: unknown) {
       console.error('Error deleting customer:', error);
       setAlertData({
-        title: 'Delete Failed',
-        message: error instanceof Error ? error.message : 'Failed to delete customer. Please try again.',
+        title: t('customers.deleteFailed'),
+        message: error instanceof Error ? error.message : t('customers.failedToDeleteCustomer'),
         type: 'error',
       });
       setShowAlert(true);
@@ -413,7 +413,7 @@ function CustomersContent() {
                           href={`/customers/${customer.uid}`}
                           onClick={(e) => e.stopPropagation()}
                           className="w-7 h-7 rounded-md bg-green-power-50 hover:bg-green-power-100 flex items-center justify-center text-green-power-600 hover:text-green-power-700 transition-colors group/icon"
-                          title="View Details"
+                          title={t('customers.viewDetails')}
                         >
                           <svg className="w-4 h-4 group-hover/icon:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -424,7 +424,7 @@ function CustomersContent() {
                           href={`/customers/${customer.uid}`}
                           onClick={(e) => e.stopPropagation()}
                           className="w-7 h-7 rounded-md bg-blue-50 hover:bg-blue-100 flex items-center justify-center text-blue-600 hover:text-blue-700 transition-colors group/icon"
-                          title="Edit Customer"
+                          title={t('customers.editCustomer')}
                         >
                           <svg className="w-4 h-4 group-hover/icon:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -436,7 +436,7 @@ function CustomersContent() {
                             handleDeleteClick(customer);
                           }}
                           className="w-7 h-7 rounded-md bg-red-50 hover:bg-red-100 flex items-center justify-center text-red-600 hover:text-red-700 transition-colors group/icon"
-                          title="Delete Customer"
+                          title={t('customers.deleteCustomer')}
                         >
                           <svg className="w-4 h-4 group-hover/icon:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -487,7 +487,7 @@ function CustomersContent() {
       {/* Alert Modal */}
       <AlertModal
         isOpen={showAlert}
-        title={alertData?.title || 'Alert'}
+        title={alertData?.title || t('common.alert')}
         message={alertData?.message || ''}
         type={alertData?.type || 'info'}
         onClose={() => {

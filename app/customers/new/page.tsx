@@ -11,9 +11,10 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 
 export default function NewCustomerPage() {
+  const { t } = useLanguage();
   return (
     <ProtectedRoute>
-      <AdminLayout title="Create Customer">
+      <AdminLayout title={t('customersNew.title')}>
         <NewCustomerContent />
       </AdminLayout>
     </ProtectedRoute>
@@ -22,7 +23,7 @@ export default function NewCustomerPage() {
 
 function NewCustomerContent() {
   const router = useRouter();
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   const [name, setName] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
@@ -53,34 +54,34 @@ function NewCustomerContent() {
     setError('');
 
     if (!db) {
-      setError('Database not initialized');
+      setError(t('customersNew.databaseNotInitialized'));
       return;
     }
     const dbInstance = db; // Store for TypeScript narrowing
 
     // Validation
     if (!name.trim()) {
-      setError('Customer Name is required');
+      setError(t('customersNew.customerNameRequired'));
       return;
     }
 
     if (!email.trim()) {
-      setError('Email is required');
+      setError(t('customersNew.emailRequired'));
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('customersNew.passwordsDoNotMatch'));
       return;
     }
 
     if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+      setError(t('customersNew.passwordMinLength'));
       return;
     }
 
     if (!customerNumber.trim()) {
-      setError('Customer Number is required');
+      setError(t('customersNew.customerNumberRequired'));
       return;
     }
 
@@ -108,7 +109,7 @@ function NewCustomerContent() {
 
       if (!createResponse.ok) {
         const errorData = await createResponse.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Failed to create customer account');
+        throw new Error(errorData.error || t('customersNew.failedToCreateCustomer'));
       }
 
       const result = await createResponse.json();
@@ -119,11 +120,11 @@ function NewCustomerContent() {
       console.error('Error creating customer:', err);
       const errorCode = err?.code || '';
       if (errorCode === 'auth/email-already-in-use') {
-        setError('This email is already registered');
+        setError(t('customersNew.emailAlreadyRegistered'));
       } else if (errorCode === 'auth/invalid-email') {
-        setError('Invalid email address');
+        setError(t('customersNew.invalidEmailAddress'));
       } else {
-        setError(err.message || 'Failed to create customer account. Please try again.');
+        setError(err.message || t('customersNew.failedToCreateCustomer'));
       }
     } finally {
       setLoading(false);
@@ -138,10 +139,10 @@ function NewCustomerContent() {
             href="/customers"
             className="text-sm text-gray-600 hover:text-gray-900 mb-4 inline-block"
           >
-            ← Back to Customers
+            ← {t('customersNew.backToCustomers')}
           </Link>
-          <h2 className="text-2xl font-semibold text-gray-900 mt-2">Create Customer Account</h2>
-          <p className="text-sm text-gray-500 mt-1">Create a new customer account for the portal</p>
+          <h2 className="text-2xl font-semibold text-gray-900 mt-2">{t('customersNew.createCustomerAccount')}</h2>
+          <p className="text-sm text-gray-500 mt-1">{t('customersNew.createCustomerAccountDescription')}</p>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-sm">
@@ -155,7 +156,7 @@ function NewCustomerContent() {
 
               <div>
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Customer Name <span className="text-red-500">*</span>
+                  {t('customers.customerName')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="name"
@@ -164,13 +165,13 @@ function NewCustomerContent() {
                   onChange={(e) => setName(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                  placeholder="Enter customer full name"
+                  placeholder={t('customersNew.enterCustomerFullName')}
                 />
               </div>
 
               <div>
                 <label htmlFor="customerNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Customer Number <span className="text-red-500">*</span>
+                  {t('customers.customerNumber')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="customerNumber"
@@ -181,13 +182,13 @@ function NewCustomerContent() {
                   placeholder="e.g., 204729"
                 />
                 <p className="mt-1 text-xs text-gray-500">
-                  Enter a unique customer number (e.g., 204729, 204730).
+                  {t('customersNew.customerNumberHelp')}
                 </p>
               </div>
 
               <div>
                 <label htmlFor="mobileNumber" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Customer Mobile Number (Optional)
+                  {t('customersNew.customerMobileOptional')}
                 </label>
                 <input
                   id="mobileNumber"
@@ -221,7 +222,7 @@ function NewCustomerContent() {
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                      placeholder="City"
+                      placeholder={t('customersNew.city')}
                     />
                   </div>
                 </div>
@@ -229,7 +230,7 @@ function NewCustomerContent() {
 
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Email Address <span className="text-red-500">*</span>
+                  {t('common.email')} <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="email"
@@ -238,7 +239,7 @@ function NewCustomerContent() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                  placeholder="customer@example.com"
+                  placeholder={t('customersNew.emailPlaceholder')}
                 />
               </div>
 
@@ -251,13 +252,13 @@ function NewCustomerContent() {
                   className="h-4 w-4 rounded border-gray-300 text-green-power-600 focus:ring-green-power-500"
                 />
                 <label htmlFor="notifyCustomer" className="text-sm font-medium text-gray-700">
-                  Notify customer (send welcome email with portal link, login email and password)
+                  {t('customersNew.notifyCustomerHelp')}
                 </label>
               </div>
 
               <div>
                 <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Password <span className="text-red-500">*</span>
+                  {t('common.password')} <span className="text-red-500">*</span>
                 </label>
                 <div className="flex items-center gap-2 mb-1.5">
                   <div className="relative flex-1">
@@ -269,7 +270,7 @@ function NewCustomerContent() {
                     required
                     minLength={6}
                     className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                    placeholder="Minimum 6 characters"
+                    placeholder={t('customersNew.minimumCharacters')}
                   />
                   <button
                     type="button"
@@ -293,17 +294,17 @@ function NewCustomerContent() {
                     onClick={generatePassword}
                     className="px-3 py-2 text-sm font-medium text-green-power-700 bg-green-power-50 border border-green-power-200 rounded-sm hover:bg-green-power-100 focus:outline-none focus:ring-1 focus:ring-green-power-500 whitespace-nowrap"
                   >
-                    Auto-generate
+                    {t('customersNew.autoGenerate')}
                   </button>
                 </div>
                 <p className="mt-1 text-xs text-gray-500">
-                  Password must be at least 6 characters long
+                  {t('customersNew.passwordMinLength')}
                 </p>
               </div>
 
               <div>
                 <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1.5">
-                  Confirm Password <span className="text-red-500">*</span>
+                  {t('profile.confirmPassword')} <span className="text-red-500">*</span>
                 </label>
                 <div className="relative">
                   <input
@@ -314,7 +315,7 @@ function NewCustomerContent() {
                     required
                     minLength={6}
                     className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
-                    placeholder="Re-enter password"
+                    placeholder={t('customersNew.reenterPassword')}
                   />
                   <button
                     type="button"
@@ -340,14 +341,14 @@ function NewCustomerContent() {
                   href="/customers"
                   className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-sm hover:bg-gray-50 font-medium"
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Link>
                 <button
                   type="submit"
                   disabled={loading}
                   className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {loading ? 'Creating...' : 'Create Account'}
+                  {loading ? t('customersNew.creating') : t('customersNew.createAccount')}
                 </button>
               </div>
             </form>

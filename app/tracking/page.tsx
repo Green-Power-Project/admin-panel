@@ -598,7 +598,7 @@ function TrackingContent() {
                       </td>
                       <td className="px-3 py-2.5 overflow-hidden">
                         <div className="text-xs font-medium text-gray-900 truncate min-w-0" title={file.fileName || undefined}>
-                          {file.fileName || 'Untitled file'}
+                          {file.fileName || t('common.untitledFile')}
                         </div>
                       </td>
                       <td className="px-3 py-2.5">

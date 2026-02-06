@@ -35,6 +35,7 @@ function getPdfLabels(lang: PdfLanguage) {
       notRead: 'Nicht gelesen',
       page: 'Seite',
       of: 'von',
+      only: 'Nur',
     };
   }
   return {
@@ -54,6 +55,7 @@ function getPdfLabels(lang: PdfLanguage) {
     notRead: 'Not read',
     page: 'Page',
     of: 'of',
+    only: 'Only',
   };
 }
 
@@ -62,11 +64,12 @@ function getPdfLabels(lang: PdfLanguage) {
  */
 export function exportAuditLogsToPDF(
   logs: AuditLogEntry[],
-  title: string = 'File Read Audit Logs',
-  language: PdfLanguage = 'en'
+  title: string | undefined,
+  language: PdfLanguage = 'de'
 ): void {
   const labels = getPdfLabels(language);
-  const doc = new jsPDF();
+  const resolvedTitle = title || labels.title;
+  const doc = new jsPDF({ orientation: 'landscape' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
@@ -81,11 +84,11 @@ export function exportAuditLogsToPDF(
 
   doc.setFontSize(14);
   doc.setFont('helvetica', 'normal');
-  doc.text(title, pageWidth / 2, yPosition, { align: 'center' });
+  doc.text(resolvedTitle, pageWidth / 2, yPosition, { align: 'center' });
   yPosition += lineHeight;
 
   doc.setFontSize(10);
-  doc.text(`${labels.generated}: ${new Date().toLocaleString()}`, pageWidth / 2, yPosition, { align: 'center' });
+  doc.text(`${labels.generated}: ${new Date().toLocaleString('de-DE')}`, pageWidth / 2, yPosition, { align: 'center' });
   yPosition += lineHeight * 2;
 
   // Summary
@@ -106,11 +109,12 @@ export function exportAuditLogsToPDF(
   doc.text(`${labels.unread}: ${unreadCount}`, margin, yPosition);
   yPosition += lineHeight * 2;
 
-  // Table headers (with Uploaded column)
+  // Table headers – fileName column wide so name stays in one row
   doc.setFontSize(10);
   doc.setFont('helvetica', 'bold');
   const headers = [labels.fileName, labels.project, labels.customer, labels.folder, labels.status, labels.uploadedAt, labels.readAt];
-  const colWidths = [32, 28, 24, 24, 16, 26, 26];
+  // File name one row; date columns wide; others slightly reduced to fit landscape
+  const colWidths = [88, 20, 16, 18, 12, 38, 38];
   let xPosition = margin;
 
   headers.forEach((header, index) => {
@@ -124,48 +128,57 @@ export function exportAuditLogsToPDF(
   doc.line(margin, yPosition - 2, pageWidth - margin, yPosition - 2);
   yPosition += 2;
 
-  // Table rows
+  // Table rows – file name in one row only (truncate with ellipsis if needed)
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
 
+  const maxFileNameWidth = colWidths[0] - 1;
+  function oneLineFileName(name: string): string {
+    if (doc.getTextWidth(name) <= maxFileNameWidth) return name;
+    let s = name;
+    while (s.length > 0 && doc.getTextWidth(s + '…') > maxFileNameWidth) s = s.slice(0, -1);
+    return s.length < name.length ? s + '…' : name;
+  }
+
   logs.forEach((log) => {
-    if (yPosition > pageHeight - margin - lineHeight * 3) {
+    if (yPosition > pageHeight - margin - lineHeight * 4) {
       doc.addPage();
       yPosition = margin;
     }
 
+    const rowYStart = yPosition;
     xPosition = margin;
 
-    const fileName = log.fileName.length > 18 ? log.fileName.substring(0, 15) + '...' : log.fileName;
-    doc.text(fileName, xPosition, yPosition);
+    const fileNameOneLine = oneLineFileName(log.fileName);
+    doc.text(fileNameOneLine, xPosition, rowYStart);
     xPosition += colWidths[0];
 
-    const projectName = log.projectName.length > 14 ? log.projectName.substring(0, 11) + '...' : log.projectName;
-    doc.text(projectName, xPosition, yPosition);
+    const projectName = log.projectName.length > 12 ? log.projectName.substring(0, 9) + '…' : log.projectName;
+    doc.text(projectName, xPosition, rowYStart);
     xPosition += colWidths[1];
 
-    const customer = log.customerNumber 
+    const customer = log.customerNumber
       ? log.customerNumber.charAt(0).toUpperCase() + log.customerNumber.slice(1)
       : 'N/A';
-    doc.text(customer.length > 12 ? customer.substring(0, 9) + '...' : customer, xPosition, yPosition);
+    doc.text(customer.length > 10 ? customer.substring(0, 8) + '…' : customer, xPosition, rowYStart);
     xPosition += colWidths[2];
 
     const folderName = log.folderPath.split('/').pop() || log.folderPath;
-    const folderDisplay = folderName.length > 14 ? folderName.substring(0, 11) + '...' : folderName;
-    doc.text(folderDisplay, xPosition, yPosition);
+    const folderDisplay = folderName.length > 12 ? folderName.substring(0, 9) + '…' : folderName;
+    doc.text(folderDisplay, xPosition, rowYStart);
     xPosition += colWidths[3];
 
     doc.setFont('helvetica', 'bold');
-    doc.text(log.isRead ? labels.read : labels.unread, xPosition, yPosition);
+    doc.text(log.isRead ? labels.read : labels.unread, xPosition, rowYStart);
     doc.setFont('helvetica', 'normal');
     xPosition += colWidths[4];
 
     const uploadedAt = log.uploadedAt || '—';
-    doc.text(uploadedAt.length > 18 ? uploadedAt.substring(0, 15) + '...' : uploadedAt, xPosition, yPosition);
+    doc.text(uploadedAt, xPosition, rowYStart);
     xPosition += colWidths[5];
 
     const readAt = log.isRead ? log.readAt : labels.notRead;
-    doc.text(readAt.length > 18 ? readAt.substring(0, 15) + '...' : readAt, xPosition, yPosition);
+    doc.text(readAt, xPosition, rowYStart);
 
     yPosition += lineHeight;
   });
@@ -194,10 +207,10 @@ export function exportAuditLogsToPDF(
 export function exportAuditLogsToPDFBlob(
   logs: AuditLogEntry[],
   title: string,
-  language: PdfLanguage = 'en'
+  language: PdfLanguage = 'de'
 ): Blob {
   const labels = getPdfLabels(language);
-  const doc = new jsPDF();
+  const doc = new jsPDF({ orientation: 'landscape' });
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 15;
@@ -215,7 +228,7 @@ export function exportAuditLogsToPDFBlob(
   yPosition += lineHeight;
 
   doc.setFontSize(10);
-  doc.text(`${labels.generated}: ${new Date().toLocaleString()}`, pageWidth / 2, yPosition, { align: 'center' });
+  doc.text(`${labels.generated}: ${new Date().toLocaleString('de-DE')}`, pageWidth / 2, yPosition, { align: 'center' });
   yPosition += lineHeight * 2;
 
   const readCount = logs.filter(log => log.isRead).length;
@@ -236,7 +249,8 @@ export function exportAuditLogsToPDFBlob(
   yPosition += lineHeight * 2;
 
   const headers = [labels.fileName, labels.project, labels.customer, labels.folder, labels.status, labels.uploadedAt, labels.readAt];
-  const colWidths = [32, 28, 24, 24, 16, 26, 26];
+  // File name one row; match column widths with main export
+  const colWidths = [88, 20, 16, 18, 12, 38, 38];
   let xPosition = margin;
 
   headers.forEach((header, index) => {
@@ -252,44 +266,53 @@ export function exportAuditLogsToPDFBlob(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7);
 
+  const maxFileNameWidthBlob = colWidths[0] - 1;
+  function oneLineFileNameBlob(name: string): string {
+    if (doc.getTextWidth(name) <= maxFileNameWidthBlob) return name;
+    let s = name;
+    while (s.length > 0 && doc.getTextWidth(s + '…') > maxFileNameWidthBlob) s = s.slice(0, -1);
+    return s.length < name.length ? s + '…' : name;
+  }
+
   logs.forEach((log) => {
-    if (yPosition > pageHeight - margin - lineHeight * 3) {
+    if (yPosition > pageHeight - margin - lineHeight * 4) {
       doc.addPage();
       yPosition = margin;
     }
 
+    const rowYStart = yPosition;
     xPosition = margin;
 
-    const fileName = log.fileName.length > 18 ? log.fileName.substring(0, 15) + '...' : log.fileName;
-    doc.text(fileName, xPosition, yPosition);
+    const fileNameOneLine = oneLineFileNameBlob(log.fileName);
+    doc.text(fileNameOneLine, xPosition, rowYStart);
     xPosition += colWidths[0];
 
-    const projectName = log.projectName.length > 14 ? log.projectName.substring(0, 11) + '...' : log.projectName;
-    doc.text(projectName, xPosition, yPosition);
+    const projectName = log.projectName.length > 12 ? log.projectName.substring(0, 9) + '…' : log.projectName;
+    doc.text(projectName, xPosition, rowYStart);
     xPosition += colWidths[1];
 
-    const customer = log.customerNumber 
+    const customer = log.customerNumber
       ? log.customerNumber.charAt(0).toUpperCase() + log.customerNumber.slice(1)
       : 'N/A';
-    doc.text(customer.length > 12 ? customer.substring(0, 9) + '...' : customer, xPosition, yPosition);
+    doc.text(customer.length > 10 ? customer.substring(0, 8) + '…' : customer, xPosition, rowYStart);
     xPosition += colWidths[2];
 
     const folderName = log.folderPath.split('/').pop() || log.folderPath;
-    const folderDisplay = folderName.length > 14 ? folderName.substring(0, 11) + '...' : folderName;
-    doc.text(folderDisplay, xPosition, yPosition);
+    const folderDisplay = folderName.length > 12 ? folderName.substring(0, 9) + '…' : folderName;
+    doc.text(folderDisplay, xPosition, rowYStart);
     xPosition += colWidths[3];
 
     doc.setFont('helvetica', 'bold');
-    doc.text(log.isRead ? labels.read : labels.unread, xPosition, yPosition);
+    doc.text(log.isRead ? labels.read : labels.unread, xPosition, rowYStart);
     doc.setFont('helvetica', 'normal');
     xPosition += colWidths[4];
 
     const uploadedAt = log.uploadedAt || '—';
-    doc.text(uploadedAt.length > 18 ? uploadedAt.substring(0, 15) + '...' : uploadedAt, xPosition, yPosition);
+    doc.text(uploadedAt, xPosition, rowYStart);
     xPosition += colWidths[5];
 
     const readAt = log.isRead ? log.readAt : labels.notRead;
-    doc.text(readAt.length > 18 ? readAt.substring(0, 15) + '...' : readAt, xPosition, yPosition);
+    doc.text(readAt, xPosition, rowYStart);
 
     yPosition += lineHeight;
   });
@@ -325,7 +348,7 @@ function buildFilteredTitle(
   }
   
   if (filterStatus !== 'all') {
-    title += ` (${filterStatus === 'read' ? labels.read : labels.unread} Only)`;
+    title += ` (${labels.only} ${filterStatus === 'read' ? labels.read : labels.unread})`;
   }
 
   return title;
@@ -339,7 +362,7 @@ export function exportFilteredLogsToPDF(
   filterProject: string,
   filterStatus: string,
   projects: Array<{ id: string; name: string }>,
-  language: PdfLanguage = 'en'
+  language: PdfLanguage = 'de'
 ): void {
   const title = buildFilteredTitle(filterProject, filterStatus, projects, language);
   exportAuditLogsToPDF(logs, title, language);
@@ -353,7 +376,7 @@ export function exportFilteredLogsToPDFBlob(
   filterProject: string,
   filterStatus: string,
   projects: Array<{ id: string; name: string }>,
-  language: PdfLanguage = 'en'
+  language: PdfLanguage = 'de'
 ): Blob {
   const title = buildFilteredTitle(filterProject, filterStatus, projects, language);
   return exportAuditLogsToPDFBlob(logs, title, language);
