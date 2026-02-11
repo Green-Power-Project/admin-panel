@@ -32,7 +32,14 @@ export async function GET() {
         title: data.title || '',
         uploadedAt: data.uploadedAt?.toDate() || new Date(),
         uploadedBy: data.uploadedBy,
-        isActive: data.isActive !== false, // Default to true
+        isActive: data.isActive !== false,
+        offerEligible: data.offerEligible === true,
+        offerItemName: data.offerItemName || '',
+        offerThickness: data.offerThickness || '',
+        offerLength: data.offerLength || '',
+        offerWidth: data.offerWidth || '',
+        offerHeight: data.offerHeight || '',
+        offerColorOptions: Array.isArray(data.offerColorOptions) ? data.offerColorOptions : [],
       };
     });
 

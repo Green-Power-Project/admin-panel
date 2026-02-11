@@ -23,6 +23,9 @@ async function getGalleryConfigDoc(db: Firestore): Promise<Record<string, unknow
   return data;
 }
 
+/** Category key for offer-only items; hidden from normal customer gallery, shown only in offers section. */
+export const OFFERS_CATEGORY_KEY = 'Offers';
+
 /** Default category keys (same as galleryConstants – single source for storage keys). */
 export const DEFAULT_CATEGORY_KEYS = [
   'Pflaster & Einfahrten',
@@ -39,6 +42,7 @@ export const DEFAULT_CATEGORY_KEYS = [
   'Außenanlagen Komplett',
   'Vorher / Nachher',
   'Highlights & Referenzprojekte',
+  OFFERS_CATEGORY_KEY,
 ] as const;
 
 export type GalleryCategoryKey = (typeof DEFAULT_CATEGORY_KEYS)[number];

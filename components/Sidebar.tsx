@@ -21,6 +21,7 @@ const navigation: NavItem[] = [
   { nameKey: 'navigation.projects', href: '/projects', icon: '📁' },
   { nameKey: 'navigation.customers', href: '/customers', icon: '👥' },
   { nameKey: 'navigation.gallery', href: '/gallery', icon: '🖼️' },
+  { nameKey: 'navigation.offers', href: '/offers', icon: '📩' },
   { nameKey: 'navigation.tracking', href: '/tracking', icon: '👁️' },
   { nameKey: 'navigation.approvals', href: '/approvals', icon: '✅' },
   { nameKey: 'navigation.auditLogs', href: '/audit-logs', icon: '📋' },

@@ -79,20 +79,25 @@ export async function PUT(
 
     const imageId = params.id;
     const body = await request.json();
-    const isActive = body.isActive;
 
-    if (!imageId || typeof isActive !== 'boolean') {
+    if (!imageId) {
       return NextResponse.json(
-        { error: 'Image ID (path) and isActive (body) are required' },
+        { error: 'Image ID is required' },
         { status: 400 }
       );
     }
 
-    // Update image status in Firestore
-    await adminDb.collection('gallery').doc(imageId).update({
-      isActive,
-      updatedAt: new Date(),
-    });
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (typeof body.isActive === 'boolean') updates.isActive = body.isActive;
+    if (typeof body.offerEligible === 'boolean') updates.offerEligible = body.offerEligible;
+    if (typeof body.offerItemName === 'string') updates.offerItemName = body.offerItemName;
+    if (typeof body.offerThickness === 'string') updates.offerThickness = body.offerThickness;
+    if (typeof body.offerLength === 'string') updates.offerLength = body.offerLength;
+    if (typeof body.offerWidth === 'string') updates.offerWidth = body.offerWidth;
+    if (typeof body.offerHeight === 'string') updates.offerHeight = body.offerHeight;
+    if (Array.isArray(body.offerColorOptions)) updates.offerColorOptions = body.offerColorOptions;
+
+    await adminDb.collection('gallery').doc(imageId).update(updates);
 
     return NextResponse.json({ success: true });
   } catch (error) {
