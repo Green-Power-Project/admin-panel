@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 
+// Ensure this API route is always dynamic and never cached
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
     const db = getAdminDb();
@@ -25,7 +29,11 @@ export async function GET() {
       };
     });
 
-    return NextResponse.json(list);
+    return NextResponse.json(list, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      },
+    });
   } catch (error) {
     console.error('[offers] GET error:', error);
     return NextResponse.json({ error: 'Failed to fetch offers' }, { status: 500 });
