@@ -230,7 +230,7 @@ export async function POST(request: NextRequest) {
             contentType: 'application/pdf',
           },
         ],
-      });
+      } as any);
 
       // Send confirmation email to the customer at the address they entered
       const customerHtml = `
@@ -266,7 +266,7 @@ export async function POST(request: NextRequest) {
             contentType: 'application/pdf',
           },
         ],
-      });
+      } as any);
     }
 
     return withCors(NextResponse.json({ success: true, id: docRef.id }));
