@@ -64,6 +64,67 @@ export async function DELETE(
   }
 }
 
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      return NextResponse.json(
+        { error: 'Database not available' },
+        { status: 500 }
+      );
+    }
+
+    const imageId = params.id;
+    if (!imageId) {
+      return NextResponse.json(
+        { error: 'Image ID is required' },
+        { status: 400 }
+      );
+    }
+
+    const docSnap = await adminDb.collection('gallery').doc(imageId).get();
+    if (!docSnap.exists) {
+      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
+    }
+
+    const data = docSnap.data()!;
+    const normalizeStringArray = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => String(v).trim())
+            .filter((v) => v.length > 0)
+        : [];
+
+    return NextResponse.json({
+      id: docSnap.id,
+      url: data.url ?? '',
+      category: data.category ?? '',
+      title: data.title ?? '',
+      offerEligible: data.offerEligible === true,
+      offerItemName: data.offerItemName ?? '',
+      offerThickness: data.offerThickness ?? '',
+      offerLength: data.offerLength ?? '',
+      offerWidth: data.offerWidth ?? '',
+      offerHeight: data.offerHeight ?? '',
+      offerColorOptions: normalizeStringArray(data.offerColorOptions),
+      offerThicknessOptions: normalizeStringArray(data.offerThicknessOptions),
+      offerLengthOptions: normalizeStringArray(data.offerLengthOptions),
+      offerWidthOptions: normalizeStringArray(data.offerWidthOptions),
+      offerHeightOptions: normalizeStringArray(data.offerHeightOptions),
+    });
+  } catch (error) {
+    console.error('Error fetching gallery image:', error);
+    return NextResponse.json(
+      { error: 'Failed to fetch image' },
+      { status: 500 }
+    );
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -88,6 +149,8 @@ export async function PUT(
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (typeof body.title === 'string') updates.title = body.title.trim();
+    if (typeof body.category === 'string' && body.category.trim()) updates.category = body.category.trim();
     if (typeof body.isActive === 'boolean') updates.isActive = body.isActive;
     if (typeof body.offerEligible === 'boolean') updates.offerEligible = body.offerEligible;
     if (typeof body.offerItemName === 'string') updates.offerItemName = body.offerItemName;
@@ -95,7 +158,25 @@ export async function PUT(
     if (typeof body.offerLength === 'string') updates.offerLength = body.offerLength;
     if (typeof body.offerWidth === 'string') updates.offerWidth = body.offerWidth;
     if (typeof body.offerHeight === 'string') updates.offerHeight = body.offerHeight;
-    if (Array.isArray(body.offerColorOptions)) updates.offerColorOptions = body.offerColorOptions;
+    const normalizeStringArray = (value: unknown): string[] | undefined =>
+      Array.isArray(value)
+        ? value
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0)
+        : undefined;
+
+    const colorOptions = normalizeStringArray(body.offerColorOptions);
+    const thicknessOptions = normalizeStringArray(body.offerThicknessOptions);
+    const lengthOptions = normalizeStringArray(body.offerLengthOptions);
+    const widthOptions = normalizeStringArray(body.offerWidthOptions);
+    const heightOptions = normalizeStringArray(body.offerHeightOptions);
+
+    if (colorOptions) updates.offerColorOptions = colorOptions;
+    if (thicknessOptions) updates.offerThicknessOptions = thicknessOptions;
+    if (lengthOptions) updates.offerLengthOptions = lengthOptions;
+    if (widthOptions) updates.offerWidthOptions = widthOptions;
+    if (heightOptions) updates.offerHeightOptions = heightOptions;
 
     await adminDb.collection('gallery').doc(imageId).update(updates);
 

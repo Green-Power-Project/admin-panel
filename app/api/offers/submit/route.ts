@@ -10,6 +10,12 @@ export interface OfferRequestItem {
   color: string;
   quantityMeters?: string;
   quantityPieces?: string;
+   thickness?: string;
+   length?: string;
+   width?: string;
+   height?: string;
+   note?: string;
+   photoUrls?: string[];
 }
 
 export interface OfferSubmitPayload {
@@ -49,6 +55,15 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
       typeof item.itemName !== 'string'
     )
       continue;
+    const photoUrlsRaw = item.photoUrls;
+    const photoUrls =
+      Array.isArray(photoUrlsRaw)
+        ? photoUrlsRaw
+            .filter((v): v is string => typeof v === 'string')
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0)
+        : undefined;
+
     validItems.push({
       imageId: item.imageId as string,
       imageUrl: item.imageUrl as string,
@@ -56,6 +71,12 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
       color: typeof item.color === 'string' ? (item.color as string) : '',
       quantityMeters: typeof item.quantityMeters === 'string' ? (item.quantityMeters as string) : undefined,
       quantityPieces: typeof item.quantityPieces === 'string' ? (item.quantityPieces as string) : undefined,
+      thickness: typeof item.thickness === 'string' ? (item.thickness as string) : undefined,
+      length: typeof item.length === 'string' ? (item.length as string) : undefined,
+      width: typeof item.width === 'string' ? (item.width as string) : undefined,
+      height: typeof item.height === 'string' ? (item.height as string) : undefined,
+      note: typeof item.note === 'string' ? (item.note as string) : undefined,
+      photoUrls,
     });
   }
   if (validItems.length === 0) return null;
@@ -95,13 +116,32 @@ export async function POST(request: NextRequest) {
       return withCors(NextResponse.json({ success: false, error: 'Invalid payload' }, { status: 400 }));
     }
 
+    // Firestore does not accept undefined; strip undefined from items
+    const itemsForFirestore = payload.items.map((item) => {
+      const rec: Record<string, unknown> = {
+        imageId: item.imageId,
+        imageUrl: item.imageUrl,
+        itemName: item.itemName,
+        color: item.color,
+      };
+      if (item.quantityMeters !== undefined) rec.quantityMeters = item.quantityMeters;
+      if (item.quantityPieces !== undefined) rec.quantityPieces = item.quantityPieces;
+      if (item.thickness !== undefined) rec.thickness = item.thickness;
+      if (item.length !== undefined) rec.length = item.length;
+      if (item.width !== undefined) rec.width = item.width;
+      if (item.height !== undefined) rec.height = item.height;
+      if (item.note !== undefined) rec.note = item.note;
+      if (item.photoUrls !== undefined && item.photoUrls.length > 0) rec.photoUrls = item.photoUrls;
+      return rec;
+    });
+
     const docRef = await db.collection('offerRequests').add({
       firstName: payload.firstName,
       lastName: payload.lastName,
       email: payload.email,
       mobile: payload.mobile,
       address: payload.address,
-      items: payload.items,
+      items: itemsForFirestore,
       createdAt: new Date(),
     });
 
@@ -125,12 +165,20 @@ export async function POST(request: NextRequest) {
 
       // Basic text summary of requested items (no image links)
       const itemsText = payload.items
-        .map(
-          (i, idx) =>
-            `${idx + 1}. ${i.itemName} | Color: ${i.color || '-'}${i.quantityMeters ? ` | Meters: ${i.quantityMeters}` : ''}${
-              i.quantityPieces ? ` | Pieces: ${i.quantityPieces}` : ''
-            }`,
-        )
+        .map((i, idx) => {
+          const parts: string[] = [];
+          parts.push(`${idx + 1}. ${i.itemName}`);
+          parts.push(`Color: ${i.color || '-'}`);
+          if (i.thickness) parts.push(`Thickness: ${i.thickness}`);
+          if (i.length) parts.push(`Length: ${i.length}`);
+          if (i.width) parts.push(`Width: ${i.width}`);
+          if (i.height) parts.push(`Height: ${i.height}`);
+          if (i.quantityMeters) parts.push(`Meters: ${i.quantityMeters}`);
+          if (i.quantityPieces) parts.push(`Pieces: ${i.quantityPieces}`);
+          if (i.note) parts.push(`Note: ${i.note}`);
+          if (i.photoUrls && i.photoUrls.length) parts.push(`Photos: ${i.photoUrls.join(', ')}`);
+          return parts.join(' | ');
+        })
         .join('\n');
 
       // Simple HTML table for items (no image or image links)
@@ -138,11 +186,44 @@ export async function POST(request: NextRequest) {
         .map(
           (i, idx) => `
             <tr>
-              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee;">${idx + 1}</td>
-              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee;">${i.itemName}</td>
-              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee;">${i.color || '-'}</td>
-              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee;">${i.quantityMeters || '-'}</td>
-              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee;">${i.quantityPieces || '-'}</td>
+              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee; vertical-align: top;">${idx + 1}</td>
+              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee; vertical-align: top;">
+                <div><strong>${i.itemName}</strong></div>
+                <div style="margin-top: 4px; font-size: 12px; color: #4b5563;">
+                  <div><strong>Color:</strong> ${i.color || '-'}</div>
+                  ${
+                    i.thickness || i.length || i.width || i.height
+                      ? `<div><strong>Specs:</strong>
+                          ${i.thickness ? ` Thickness: ${i.thickness};` : ''}
+                          ${i.length ? ` Length: ${i.length};` : ''}
+                          ${i.width ? ` Width: ${i.width};` : ''}
+                          ${i.height ? ` Height: ${i.height};` : ''}
+                        </div>`
+                      : ''
+                  }
+                  ${
+                    i.quantityMeters || i.quantityPieces
+                      ? `<div><strong>Requested:</strong>
+                          ${i.quantityMeters ? ` ${i.quantityMeters} m;` : ''}
+                          ${i.quantityPieces ? ` ${i.quantityPieces} pcs;` : ''}
+                        </div>`
+                      : ''
+                  }
+                  ${i.note ? `<div><strong>Note:</strong> ${i.note}</div>` : ''}
+                  ${
+                    i.photoUrls && i.photoUrls.length
+                      ? `<div style="margin-top: 4px;"><strong>Photos:</strong> ${
+                          i.photoUrls
+                            .map(
+                              (url, photoIdx) =>
+                                `<a href="${url}" target="_blank" rel="noopener noreferrer">Photo ${photoIdx + 1}</a>`,
+                            )
+                            .join(' · ')
+                        }</div>`
+                      : ''
+                  }
+                </div>
+              </td>
             </tr>`,
         )
         .join('');
@@ -204,10 +285,7 @@ export async function POST(request: NextRequest) {
                   <thead>
                     <tr>
                       <th style="width: 40px;">#</th>
-                      <th>Item</th>
-                      <th style="width: 120px;">Color</th>
-                      <th style="width: 90px;">Meters</th>
-                      <th style="width: 90px;">Pieces</th>
+                      <th>Item & details</th>
                     </tr>
                   </thead>
                   <tbody>
