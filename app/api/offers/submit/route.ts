@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { buildEmailLogoHtml } from '@/lib/emailSignature';
+import { generateOfferPdfBuffer } from '@/lib/offerPdf';
 
 export interface OfferRequestItem {
   imageId: string;
@@ -10,12 +11,9 @@ export interface OfferRequestItem {
   color: string;
   quantityMeters?: string;
   quantityPieces?: string;
-   thickness?: string;
-   length?: string;
-   width?: string;
-   height?: string;
-   note?: string;
-   photoUrls?: string[];
+  dimension?: string;
+  note?: string;
+  photoUrls?: string[];
 }
 
 export interface OfferSubmitPayload {
@@ -24,6 +22,8 @@ export interface OfferSubmitPayload {
   email: string;
   mobile: string;
   address: string;
+  projectNote?: string;
+  projectPhotoUrls?: string[];
   items: OfferRequestItem[];
 }
 
@@ -36,6 +36,8 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
   const email = b.email;
   const mobile = b.mobile;
   const address = b.address;
+  const projectNote = b.projectNote;
+  const projectPhotoUrlsRaw = b.projectPhotoUrls;
   const items = b.items;
 
   if (typeof firstName !== 'string' || !firstName.trim()) return null;
@@ -71,15 +73,20 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
       color: typeof item.color === 'string' ? (item.color as string) : '',
       quantityMeters: typeof item.quantityMeters === 'string' ? (item.quantityMeters as string) : undefined,
       quantityPieces: typeof item.quantityPieces === 'string' ? (item.quantityPieces as string) : undefined,
-      thickness: typeof item.thickness === 'string' ? (item.thickness as string) : undefined,
-      length: typeof item.length === 'string' ? (item.length as string) : undefined,
-      width: typeof item.width === 'string' ? (item.width as string) : undefined,
-      height: typeof item.height === 'string' ? (item.height as string) : undefined,
+      dimension: typeof item.dimension === 'string' ? (item.dimension as string) : undefined,
       note: typeof item.note === 'string' ? (item.note as string) : undefined,
       photoUrls,
     });
   }
   if (validItems.length === 0) return null;
+
+  const projectPhotoUrls =
+    Array.isArray(projectPhotoUrlsRaw)
+      ? projectPhotoUrlsRaw
+          .filter((v): v is string => typeof v === 'string')
+          .map((v) => v.trim())
+          .filter((v) => v.length > 0)
+      : undefined;
 
   return {
     firstName: firstName.trim(),
@@ -87,6 +94,8 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
     email: email.trim(),
     mobile: mobile.trim(),
     address: address.trim(),
+    projectNote: typeof projectNote === 'string' && projectNote.trim() ? projectNote.trim() : undefined,
+    projectPhotoUrls: projectPhotoUrls?.length ? projectPhotoUrls : undefined,
     items: validItems,
   };
 }
@@ -126,16 +135,13 @@ export async function POST(request: NextRequest) {
       };
       if (item.quantityMeters !== undefined) rec.quantityMeters = item.quantityMeters;
       if (item.quantityPieces !== undefined) rec.quantityPieces = item.quantityPieces;
-      if (item.thickness !== undefined) rec.thickness = item.thickness;
-      if (item.length !== undefined) rec.length = item.length;
-      if (item.width !== undefined) rec.width = item.width;
-      if (item.height !== undefined) rec.height = item.height;
+      if (item.dimension !== undefined) rec.dimension = item.dimension;
       if (item.note !== undefined) rec.note = item.note;
       if (item.photoUrls !== undefined && item.photoUrls.length > 0) rec.photoUrls = item.photoUrls;
       return rec;
     });
 
-    const docRef = await db.collection('offerRequests').add({
+    const docData: Record<string, unknown> = {
       firstName: payload.firstName,
       lastName: payload.lastName,
       email: payload.email,
@@ -143,7 +149,10 @@ export async function POST(request: NextRequest) {
       address: payload.address,
       items: itemsForFirestore,
       createdAt: new Date(),
-    });
+    };
+    if (payload.projectNote !== undefined) docData.projectNote = payload.projectNote;
+    if (payload.projectPhotoUrls !== undefined && payload.projectPhotoUrls.length > 0) docData.projectPhotoUrls = payload.projectPhotoUrls;
+    const docRef = await db.collection('offerRequests').add(docData);
 
     const adminSnapshot = await db.collection('admins').get();
     const adminEmails: string[] = [];
@@ -163,70 +172,25 @@ export async function POST(request: NextRequest) {
         auth: { user: EMAIL_USER, pass: EMAIL_PASSWORD },
       } as any);
 
-      // Basic text summary of requested items (no image links)
-      const itemsText = payload.items
-        .map((i, idx) => {
-          const parts: string[] = [];
-          parts.push(`${idx + 1}. ${i.itemName}`);
-          parts.push(`Color: ${i.color || '-'}`);
-          if (i.thickness) parts.push(`Thickness: ${i.thickness}`);
-          if (i.length) parts.push(`Length: ${i.length}`);
-          if (i.width) parts.push(`Width: ${i.width}`);
-          if (i.height) parts.push(`Height: ${i.height}`);
-          if (i.quantityMeters) parts.push(`Meters: ${i.quantityMeters}`);
-          if (i.quantityPieces) parts.push(`Pieces: ${i.quantityPieces}`);
-          if (i.note) parts.push(`Note: ${i.note}`);
-          if (i.photoUrls && i.photoUrls.length) parts.push(`Photos: ${i.photoUrls.join(', ')}`);
-          return parts.join(' | ');
-        })
-        .join('\n');
-
-      // Simple HTML table for items (no image or image links)
-      const itemsRowsHtml = payload.items
-        .map(
-          (i, idx) => `
-            <tr>
-              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee; vertical-align: top;">${idx + 1}</td>
-              <td style="padding: 6px 8px; border-bottom: 1px solid #eeeeee; vertical-align: top;">
-                <div><strong>${i.itemName}</strong></div>
-                <div style="margin-top: 4px; font-size: 12px; color: #4b5563;">
-                  <div><strong>Color:</strong> ${i.color || '-'}</div>
-                  ${
-                    i.thickness || i.length || i.width || i.height
-                      ? `<div><strong>Specs:</strong>
-                          ${i.thickness ? ` Thickness: ${i.thickness};` : ''}
-                          ${i.length ? ` Length: ${i.length};` : ''}
-                          ${i.width ? ` Width: ${i.width};` : ''}
-                          ${i.height ? ` Height: ${i.height};` : ''}
-                        </div>`
-                      : ''
-                  }
-                  ${
-                    i.quantityMeters || i.quantityPieces
-                      ? `<div><strong>Requested:</strong>
-                          ${i.quantityMeters ? ` ${i.quantityMeters} m;` : ''}
-                          ${i.quantityPieces ? ` ${i.quantityPieces} pcs;` : ''}
-                        </div>`
-                      : ''
-                  }
-                  ${i.note ? `<div><strong>Note:</strong> ${i.note}</div>` : ''}
-                  ${
-                    i.photoUrls && i.photoUrls.length
-                      ? `<div style="margin-top: 4px;"><strong>Photos:</strong> ${
-                          i.photoUrls
-                            .map(
-                              (url, photoIdx) =>
-                                `<a href="${url}" target="_blank" rel="noopener noreferrer">Photo ${photoIdx + 1}</a>`,
-                            )
-                            .join(' · ')
-                        }</div>`
-                      : ''
-                  }
-                </div>
-              </td>
-            </tr>`,
-        )
-        .join('');
+      const pdfBuffer = generateOfferPdfBuffer({
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        email: payload.email,
+        address: payload.address,
+        projectNote: payload.projectNote,
+        projectPhotoUrls: payload.projectPhotoUrls,
+        items: payload.items.map((it) => ({
+          itemName: it.itemName,
+          color: it.color,
+          dimension: it.dimension,
+          quantityMeters: it.quantityMeters,
+          quantityPieces: it.quantityPieces,
+          note: it.note,
+          imageUrl: it.imageUrl,
+          photoUrls: it.photoUrls,
+        })),
+        createdAt: new Date().toISOString(),
+      });
 
       const adminPanelBase = (process.env.NEXT_PUBLIC_ADMIN_PANEL_URL || '').trim();
       const offersUrl = adminPanelBase ? `${adminPanelBase.replace(/\/+$/, '')}/offers` : '';
@@ -234,96 +198,74 @@ export async function POST(request: NextRequest) {
       const html = `
         <!DOCTYPE html>
         <html>
-          <head>
-            <meta charset="utf-8" />
-            <style>
-              body { font-family: Arial, sans-serif; color: #1a1a1a; background-color: #f3f4f6; }
-              .container { max-width: 640px; margin: 0 auto; padding: 16px; }
-              .card {
-                background: #ffffff;
-                border-radius: 12px;
-                padding: 20px 22px;
-                box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
-              }
-              h2 { margin: 0 0 8px; font-size: 20px; }
-              p { margin: 4px 0; font-size: 14px; }
-              .section-title { margin-top: 18px; margin-bottom: 6px; font-size: 15px; font-weight: 600; }
-              table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 4px; }
-              th {
-                padding: 6px 8px;
-                background: #f5f5f5;
-                border-bottom: 1px solid #e5e7eb;
-                text-align: left;
-                font-weight: 600;
-              }
-              .meta { margin-top: 16px; font-size: 12px; color: #6b7280; }
-              .link-button {
-                display: inline-block;
-                margin-top: 14px;
-                padding: 8px 14px;
-                border-radius: 999px;
-                background: #16a34a;
-                color: #ffffff !important;
-                text-decoration: none;
-                font-size: 13px;
-                font-weight: 600;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
+          <head><meta charset="utf-8" /></head>
+          <body style="font-family: Arial, sans-serif; color: #1a1a1a; background-color: #f3f4f6; margin: 0; padding: 16px;">
+            <div style="max-width: 560px; margin: 0 auto;">
               ${buildEmailLogoHtml()}
-              <div class="card">
-                <h2>New offer request</h2>
-                <p><strong>Customer:</strong> ${payload.firstName} ${payload.lastName}</p>
-                <p><strong>Email:</strong> ${payload.email}</p>
-                <p><strong>Mobile:</strong> ${payload.mobile}</p>
-                <p><strong>Address:</strong> ${payload.address}</p>
-
-                <div class="section-title">Requested items</div>
-                <table>
-                  <thead>
-                    <tr>
-                      <th style="width: 40px;">#</th>
-                      <th>Item & details</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${itemsRowsHtml}
-                  </tbody>
-                </table>
-
-                ${
-                  offersUrl
-                    ? `<a class="link-button" href="${offersUrl}" target="_blank" rel="noopener noreferrer">
-                        Open in admin panel
-                       </a>`
-                    : ''
-                }
-
-                <p class="meta">Request ID: ${docRef.id}</p>
+              <div style="background: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+                <h2 style="margin: 0 0 8px; font-size: 18px;">Neue Angebotsanfrage</h2>
+                <p style="margin: 0 0 12px; font-size: 14px; color: #4b5563;">Die Details der Anfrage finden Sie in der angehängten PDF-Datei (Deutsch, Querformat).</p>
+                <p style="margin: 0 0 8px; font-size: 14px;"><strong>Kunde:</strong> ${payload.firstName} ${payload.lastName}</p>
+                <p style="margin: 0 0 8px; font-size: 14px;"><strong>E-Mail:</strong> ${payload.email}</p>
+                ${offersUrl ? `<p style="margin-top: 16px;"><a href="${offersUrl}" style="display: inline-block; padding: 8px 16px; border-radius: 8px; background: #16a34a; color: #ffffff; text-decoration: none; font-weight: 600;">Im Admin-Bereich öffnen</a></p>` : ''}
+                <p style="margin-top: 16px; font-size: 12px; color: #6b7280;">Anfrage-ID: ${docRef.id}</p>
               </div>
             </div>
           </body>
         </html>
       `;
 
+      const text = `Neue Angebotsanfrage\n\nKunde: ${payload.firstName} ${payload.lastName}\nE-Mail: ${payload.email}\n\nDie vollständigen Details finden Sie in der angehängten PDF-Datei.\n\n${offersUrl ? `Admin-Bereich: ${offersUrl}\n\n` : ''}Anfrage-ID: ${docRef.id}`;
+
       await transporter.sendMail({
         from: `Grün Power <${EMAIL_USER}>`,
         to: adminEmails,
-        subject: `Offer request from ${payload.firstName} ${payload.lastName}`,
+        subject: `Neue Angebotsanfrage von ${payload.firstName} ${payload.lastName}`,
         html,
-        text: `New offer request
+        text,
+        attachments: [
+          {
+            filename: `Angebotsanfrage-${payload.firstName}-${payload.lastName}-${docRef.id}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          },
+        ],
+      });
 
-Customer: ${payload.firstName} ${payload.lastName}
-Email: ${payload.email}
-Mobile: ${payload.mobile}
-Address: ${payload.address}
+      // Send confirmation email to the customer at the address they entered
+      const customerHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head><meta charset="utf-8" /></head>
+          <body style="font-family: Arial, sans-serif; color: #1a1a1a; background-color: #f3f4f6; margin: 0; padding: 16px;">
+            <div style="max-width: 560px; margin: 0 auto;">
+              ${buildEmailLogoHtml()}
+              <div style="background: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
+                <h2 style="margin: 0 0 8px; font-size: 18px;">Ihre Angebotsanfrage wurde empfangen</h2>
+                <p style="margin: 0 0 12px; font-size: 14px; color: #4b5563;">Guten Tag ${payload.firstName} ${payload.lastName},</p>
+                <p style="margin: 0 0 12px; font-size: 14px; color: #4b5563;">vielen Dank für Ihre Anfrage. Wir haben Ihre Angaben erhalten und melden uns in Kürze bei Ihnen.</p>
+                <p style="margin: 0 0 12px; font-size: 14px; color: #4b5563;">Eine Kopie Ihrer Anfrage finden Sie in der angehängten PDF-Datei.</p>
+                <p style="margin-top: 16px; font-size: 12px; color: #6b7280;">Anfrage-ID: ${docRef.id}</p>
+              </div>
+            </div>
+          </body>
+        </html>
+      `;
+      const customerText = `Ihre Angebotsanfrage wurde empfangen\n\nGuten Tag ${payload.firstName} ${payload.lastName},\n\nvielen Dank für Ihre Anfrage. Wir haben Ihre Angaben erhalten und melden uns in Kürze bei Ihnen.\n\nEine Kopie Ihrer Anfrage finden Sie in der angehängten PDF-Datei.\n\nAnfrage-ID: ${docRef.id}`;
 
-Items:
-${itemsText}
-
-${offersUrl ? `Admin panel: ${offersUrl}\n\n` : ''}Request ID: ${docRef.id}`,
+      await transporter.sendMail({
+        from: `Grün Power <${EMAIL_USER}>`,
+        to: payload.email,
+        subject: `Ihre Angebotsanfrage bei Grün Power`,
+        html: customerHtml,
+        text: customerText,
+        attachments: [
+          {
+            filename: `Ihre-Angebotsanfrage-${docRef.id}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf',
+          },
+        ],
       });
     }
 

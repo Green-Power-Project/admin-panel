@@ -30,15 +30,8 @@ interface GalleryImage {
   isActive: boolean;
   offerEligible?: boolean;
   offerItemName?: string;
-  offerThickness?: string;
-  offerThicknessOptions?: string[];
-  offerLength?: string;
-  offerLengthOptions?: string[];
-  offerWidth?: string;
-  offerWidthOptions?: string[];
-  offerHeight?: string;
   offerColorOptions?: string[];
-  offerHeightOptions?: string[];
+  offerDimensionOptions?: string[];
 }
 
 const GALLERY_IMAGES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
@@ -101,15 +94,8 @@ function GalleryManagementContent() {
   const [offerEditImageId, setOfferEditImageId] = useState<string | null>(null);
   const [offerForm, setOfferForm] = useState({
     offerItemName: '',
-    offerThickness: '',
-    offerLength: '',
-    offerWidth: '',
-    offerHeight: '',
     offerColorOptionsStr: '',
-    offerThicknessOptionsStr: '',
-    offerLengthOptionsStr: '',
-    offerWidthOptionsStr: '',
-    offerHeightOptionsStr: '',
+    offerDimensionOptions: [] as string[],
   });
   const [savingOffer, setSavingOffer] = useState(false);
   const [removingFromOffers, setRemovingFromOffers] = useState(false);
@@ -262,10 +248,7 @@ function GalleryManagementContent() {
         const data = d.data();
         const uploadedAt = data.uploadedAt?.toDate?.() ?? data.uploadedAt ?? new Date();
         const colorOpts = data.offerColorOptions;
-        const thicknessOpts = data.offerThicknessOptions;
-        const lengthOpts = data.offerLengthOptions;
-        const widthOpts = data.offerWidthOptions;
-        const heightOpts = data.offerHeightOptions;
+        const dimensionOpts = data.offerDimensionOptions;
 
         const normalizeStringArray = (value: unknown): string[] =>
           Array.isArray(value) ? value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0) : [];
@@ -280,15 +263,8 @@ function GalleryManagementContent() {
           isActive: data.isActive !== false,
           offerEligible: data.offerEligible === true,
           offerItemName: data.offerItemName ?? '',
-          offerThickness: data.offerThickness ?? '',
-          offerLength: data.offerLength ?? '',
-          offerWidth: data.offerWidth ?? '',
-          offerHeight: data.offerHeight ?? '',
           offerColorOptions: normalizeStringArray(colorOpts),
-          offerThicknessOptions: normalizeStringArray(thicknessOpts),
-          offerLengthOptions: normalizeStringArray(lengthOpts),
-          offerWidthOptions: normalizeStringArray(widthOpts),
-          offerHeightOptions: normalizeStringArray(heightOpts),
+          offerDimensionOptions: normalizeStringArray(dimensionOpts),
         };
       })
       .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
@@ -453,17 +429,13 @@ function GalleryManagementContent() {
       const res = await fetch(`/api/gallery/${img.id}`);
       if (res.ok) {
         const data = await res.json();
+        const dimOpts = Array.isArray(data.offerDimensionOptions)
+          ? data.offerDimensionOptions.filter((v: unknown) => typeof v === 'string' && String(v).trim())
+          : [];
         setOfferForm({
           offerItemName: data.offerItemName ?? '',
-          offerThickness: data.offerThickness ?? '',
-          offerLength: data.offerLength ?? '',
-          offerWidth: data.offerWidth ?? '',
-          offerHeight: data.offerHeight ?? '',
           offerColorOptionsStr: joinOptions(data.offerColorOptions),
-          offerThicknessOptionsStr: joinOptions(data.offerThicknessOptions),
-          offerLengthOptionsStr: joinOptions(data.offerLengthOptions),
-          offerWidthOptionsStr: joinOptions(data.offerWidthOptions),
-          offerHeightOptionsStr: joinOptions(data.offerHeightOptions),
+          offerDimensionOptions: dimOpts.length ? dimOpts : [''],
         });
         return;
       }
@@ -471,17 +443,11 @@ function GalleryManagementContent() {
       // fall back to in-memory image
     }
 
+    const dimOpts = (img.offerDimensionOptions?.length ?? 0) > 0 ? img.offerDimensionOptions! : [''];
     setOfferForm({
       offerItemName: img.offerItemName ?? '',
-      offerThickness: img.offerThickness ?? '',
-      offerLength: img.offerLength ?? '',
-      offerWidth: img.offerWidth ?? '',
-      offerHeight: img.offerHeight ?? '',
       offerColorOptionsStr: joinOptions(img.offerColorOptions),
-      offerThicknessOptionsStr: joinOptions(img.offerThicknessOptions),
-      offerLengthOptionsStr: joinOptions(img.offerLengthOptions),
-      offerWidthOptionsStr: joinOptions(img.offerWidthOptions),
-      offerHeightOptionsStr: joinOptions(img.offerHeightOptions),
+      offerDimensionOptions: [...dimOpts],
     });
   }
 
@@ -501,10 +467,9 @@ function GalleryManagementContent() {
           .filter(Boolean);
 
       const colorOptions = toOptionsArray(offerForm.offerColorOptionsStr);
-      const thicknessOptions = toOptionsArray(offerForm.offerThicknessOptionsStr);
-      const lengthOptions = toOptionsArray(offerForm.offerLengthOptionsStr);
-      const widthOptions = toOptionsArray(offerForm.offerWidthOptionsStr);
-      const heightOptions = toOptionsArray(offerForm.offerHeightOptionsStr);
+      const dimensionOptions = offerForm.offerDimensionOptions
+        .map((s) => s.trim())
+        .filter(Boolean);
 
       const response = await fetch(`/api/gallery/${offerEditImageId}`, {
         method: 'PUT',
@@ -512,15 +477,8 @@ function GalleryManagementContent() {
         body: JSON.stringify({
           offerEligible: true,
           offerItemName: offerForm.offerItemName,
-          offerThickness: offerForm.offerThickness,
-          offerLength: offerForm.offerLength,
-          offerWidth: offerForm.offerWidth,
-          offerHeight: offerForm.offerHeight,
           offerColorOptions: colorOptions,
-          offerThicknessOptions: thicknessOptions,
-          offerLengthOptions: lengthOptions,
-          offerWidthOptions: widthOptions,
-          offerHeightOptions: heightOptions,
+          offerDimensionOptions: dimensionOptions,
         }),
       });
       if (response.ok) {
@@ -532,15 +490,8 @@ function GalleryManagementContent() {
                   ...img,
                   offerEligible: true,
                   offerItemName: offerForm.offerItemName,
-                  offerThickness: offerForm.offerThickness,
-                  offerLength: offerForm.offerLength,
-                  offerWidth: offerForm.offerWidth,
-                  offerHeight: offerForm.offerHeight,
                   offerColorOptions: colorOptions,
-                  offerThicknessOptions: thicknessOptions,
-                  offerLengthOptions: lengthOptions,
-                  offerWidthOptions: widthOptions,
-                  offerHeightOptions: heightOptions,
+                  offerDimensionOptions: dimensionOptions,
                 }
               : img
           )
@@ -1292,56 +1243,56 @@ function GalleryManagementContent() {
                 />
                 {offerFormError && <p className="text-xs text-red-600 mt-1">{offerFormError}</p>}
               </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('gallery.offerThicknessOptions')}
-                  </label>
-                  <input
-                    type="text"
-                    value={offerForm.offerThicknessOptionsStr}
-                    onChange={(e) => setOfferForm((f) => ({ ...f, offerThicknessOptionsStr: e.target.value }))}
-                    placeholder={t('gallery.offerDimensionOptionsPlaceholder')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('gallery.offerLengthOptions')}
-                  </label>
-                  <input
-                    type="text"
-                    value={offerForm.offerLengthOptionsStr}
-                    onChange={(e) => setOfferForm((f) => ({ ...f, offerLengthOptionsStr: e.target.value }))}
-                    placeholder={t('gallery.offerDimensionOptionsPlaceholder')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('gallery.offerWidthOptions')}
-                  </label>
-                  <input
-                    type="text"
-                    value={offerForm.offerWidthOptionsStr}
-                    onChange={(e) => setOfferForm((f) => ({ ...f, offerWidthOptionsStr: e.target.value }))}
-                    placeholder={t('gallery.offerDimensionOptionsPlaceholder')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('gallery.offerHeightOptions')}
-                  </label>
-                  <input
-                    type="text"
-                    value={offerForm.offerHeightOptionsStr}
-                    onChange={(e) => setOfferForm((f) => ({ ...f, offerHeightOptionsStr: e.target.value }))}
-                    placeholder={t('gallery.offerDimensionOptionsPlaceholder')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-                  />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('gallery.offerDimensions')}
+                </label>
+                <div className="space-y-2">
+                  {offerForm.offerDimensionOptions.map((line, idx) => (
+                    <div key={idx} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={line}
+                        onChange={(e) =>
+                          setOfferForm((f) => ({
+                            ...f,
+                            offerDimensionOptions: f.offerDimensionOptions.map((v, i) =>
+                              i === idx ? e.target.value : v
+                            ),
+                          }))
+                        }
+                        placeholder={t('gallery.offerDimensionLinePlaceholder')}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setOfferForm((f) => ({
+                            ...f,
+                            offerDimensionOptions: f.offerDimensionOptions.filter((_, i) => i !== idx).length
+                              ? f.offerDimensionOptions.filter((_, i) => i !== idx)
+                              : [''],
+                          }))
+                        }
+                        className="px-2 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm font-medium"
+                        aria-label={t('offer.remove')}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setOfferForm((f) => ({
+                        ...f,
+                        offerDimensionOptions: [...f.offerDimensionOptions, ''],
+                      }))
+                    }
+                    className="text-sm font-medium text-green-power-600 hover:text-green-power-700"
+                  >
+                    + {t('gallery.offerAddDimension')}
+                  </button>
                 </div>
               </div>
               <div>

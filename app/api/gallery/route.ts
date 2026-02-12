@@ -35,11 +35,8 @@ export async function GET() {
         isActive: data.isActive !== false,
         offerEligible: data.offerEligible === true,
         offerItemName: data.offerItemName || '',
-        offerThickness: data.offerThickness || '',
-        offerLength: data.offerLength || '',
-        offerWidth: data.offerWidth || '',
-        offerHeight: data.offerHeight || '',
         offerColorOptions: Array.isArray(data.offerColorOptions) ? data.offerColorOptions : [],
+        offerDimensionOptions: Array.isArray(data.offerDimensionOptions) ? data.offerDimensionOptions : [],
       };
     });
 

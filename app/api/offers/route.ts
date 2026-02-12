@@ -24,6 +24,8 @@ export async function GET() {
         email: data.email ?? '',
         mobile: data.mobile ?? '',
         address: data.address ?? '',
+        projectNote: typeof data.projectNote === 'string' ? data.projectNote : undefined,
+        projectPhotoUrls: Array.isArray(data.projectPhotoUrls) ? data.projectPhotoUrls : undefined,
         items: Array.isArray(data.items) ? data.items : [],
         createdAt: createdAt ? createdAt.toISOString() : null,
       };

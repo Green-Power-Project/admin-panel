@@ -106,15 +106,8 @@ export async function GET(
       title: data.title ?? '',
       offerEligible: data.offerEligible === true,
       offerItemName: data.offerItemName ?? '',
-      offerThickness: data.offerThickness ?? '',
-      offerLength: data.offerLength ?? '',
-      offerWidth: data.offerWidth ?? '',
-      offerHeight: data.offerHeight ?? '',
       offerColorOptions: normalizeStringArray(data.offerColorOptions),
-      offerThicknessOptions: normalizeStringArray(data.offerThicknessOptions),
-      offerLengthOptions: normalizeStringArray(data.offerLengthOptions),
-      offerWidthOptions: normalizeStringArray(data.offerWidthOptions),
-      offerHeightOptions: normalizeStringArray(data.offerHeightOptions),
+      offerDimensionOptions: normalizeStringArray(data.offerDimensionOptions),
     });
   } catch (error) {
     console.error('Error fetching gallery image:', error);
@@ -154,10 +147,6 @@ export async function PUT(
     if (typeof body.isActive === 'boolean') updates.isActive = body.isActive;
     if (typeof body.offerEligible === 'boolean') updates.offerEligible = body.offerEligible;
     if (typeof body.offerItemName === 'string') updates.offerItemName = body.offerItemName;
-    if (typeof body.offerThickness === 'string') updates.offerThickness = body.offerThickness;
-    if (typeof body.offerLength === 'string') updates.offerLength = body.offerLength;
-    if (typeof body.offerWidth === 'string') updates.offerWidth = body.offerWidth;
-    if (typeof body.offerHeight === 'string') updates.offerHeight = body.offerHeight;
     const normalizeStringArray = (value: unknown): string[] | undefined =>
       Array.isArray(value)
         ? value
@@ -167,16 +156,10 @@ export async function PUT(
         : undefined;
 
     const colorOptions = normalizeStringArray(body.offerColorOptions);
-    const thicknessOptions = normalizeStringArray(body.offerThicknessOptions);
-    const lengthOptions = normalizeStringArray(body.offerLengthOptions);
-    const widthOptions = normalizeStringArray(body.offerWidthOptions);
-    const heightOptions = normalizeStringArray(body.offerHeightOptions);
+    const dimensionOptions = normalizeStringArray(body.offerDimensionOptions);
 
     if (colorOptions) updates.offerColorOptions = colorOptions;
-    if (thicknessOptions) updates.offerThicknessOptions = thicknessOptions;
-    if (lengthOptions) updates.offerLengthOptions = lengthOptions;
-    if (widthOptions) updates.offerWidthOptions = widthOptions;
-    if (heightOptions) updates.offerHeightOptions = heightOptions;
+    if (dimensionOptions) updates.offerDimensionOptions = dimensionOptions;
 
     await adminDb.collection('gallery').doc(imageId).update(updates);
 
