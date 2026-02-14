@@ -30,6 +30,9 @@ interface GalleryImage {
   isActive: boolean;
   offerEligible?: boolean;
   offerItemName?: string;
+  offerPrice?: string;
+  /** Quantity unit key: pieces | metres | centimetres | litres; empty = default (pieces) */
+  offerQuantityUnit?: string;
   offerColorOptions?: string[];
   offerDimensionOptions?: string[];
 }
@@ -94,6 +97,8 @@ function GalleryManagementContent() {
   const [offerEditImageId, setOfferEditImageId] = useState<string | null>(null);
   const [offerForm, setOfferForm] = useState({
     offerItemName: '',
+    offerPrice: '',
+    offerQuantityUnit: '',
     offerColorOptionsStr: '',
     offerDimensionOptions: [] as string[],
   });
@@ -263,6 +268,8 @@ function GalleryManagementContent() {
           isActive: data.isActive !== false,
           offerEligible: data.offerEligible === true,
           offerItemName: data.offerItemName ?? '',
+          offerPrice: typeof data.offerPrice === 'string' ? data.offerPrice : '',
+          offerQuantityUnit: typeof data.offerQuantityUnit === 'string' ? data.offerQuantityUnit : '',
           offerColorOptions: normalizeStringArray(colorOpts),
           offerDimensionOptions: normalizeStringArray(dimensionOpts),
         };
@@ -434,6 +441,8 @@ function GalleryManagementContent() {
           : [];
         setOfferForm({
           offerItemName: data.offerItemName ?? '',
+          offerPrice: data.offerPrice ?? '',
+          offerQuantityUnit: data.offerQuantityUnit ?? '',
           offerColorOptionsStr: joinOptions(data.offerColorOptions),
           offerDimensionOptions: dimOpts.length ? dimOpts : [''],
         });
@@ -446,6 +455,8 @@ function GalleryManagementContent() {
     const dimOpts = (img.offerDimensionOptions?.length ?? 0) > 0 ? img.offerDimensionOptions! : [''];
     setOfferForm({
       offerItemName: img.offerItemName ?? '',
+      offerPrice: img.offerPrice ?? '',
+      offerQuantityUnit: img.offerQuantityUnit ?? '',
       offerColorOptionsStr: joinOptions(img.offerColorOptions),
       offerDimensionOptions: [...dimOpts],
     });
@@ -477,6 +488,8 @@ function GalleryManagementContent() {
         body: JSON.stringify({
           offerEligible: true,
           offerItemName: offerForm.offerItemName,
+          offerPrice: offerForm.offerPrice.trim() || undefined,
+          offerQuantityUnit: offerForm.offerQuantityUnit.trim() || undefined,
           offerColorOptions: colorOptions,
           offerDimensionOptions: dimensionOptions,
         }),
@@ -490,6 +503,8 @@ function GalleryManagementContent() {
                   ...img,
                   offerEligible: true,
                   offerItemName: offerForm.offerItemName,
+                  offerPrice: offerForm.offerPrice.trim() || undefined,
+                  offerQuantityUnit: offerForm.offerQuantityUnit.trim() || undefined,
                   offerColorOptions: colorOptions,
                   offerDimensionOptions: dimensionOptions,
                 }
@@ -1226,8 +1241,19 @@ function GalleryManagementContent() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => !savingOffer && setOfferEditImageId(null)}>
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-gray-900 mb-1">{t('gallery.offerDetailsTitle')}</h3>
-            <p className="text-sm text-gray-500 mb-4">{t('gallery.offerDetailsIntro')}</p>
             <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('gallery.offerPrice')}
+                </label>
+                <input
+                  type="text"
+                  value={offerForm.offerPrice}
+                  onChange={(e) => setOfferForm((f) => ({ ...f, offerPrice: e.target.value }))}
+                  placeholder={t('gallery.offerPricePlaceholder')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   {t('gallery.offerItemName')} <span className="text-red-500">*</span>
@@ -1242,6 +1268,19 @@ function GalleryManagementContent() {
                   aria-invalid={!!offerFormError}
                 />
                 {offerFormError && <p className="text-xs text-red-600 mt-1">{offerFormError}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {t('gallery.offerQuantityUnit')}
+                </label>
+                <input
+                  type="text"
+                  value={offerForm.offerQuantityUnit}
+                  onChange={(e) => setOfferForm((f) => ({ ...f, offerQuantityUnit: e.target.value }))}
+                  placeholder={t('gallery.offerQuantityUnitPlaceholder')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+                <p className="text-xs text-gray-500 mt-1">{t('gallery.offerQuantityUnitHint')}</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

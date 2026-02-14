@@ -5,6 +5,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { generateOfferPdf } from '@/lib/offerPdf';
+import OfferCatalog from '@/components/OfferCatalog';
 
 interface OfferItem {
   imageId: string;
@@ -49,6 +50,7 @@ export default function OffersPage() {
 
 function OffersContent() {
   const { t } = useLanguage();
+  const [activeTab, setActiveTab] = useState<'catalog' | 'requests'>('requests');
   const [list, setList] = useState<OfferRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewPdfUrl, setViewPdfUrl] = useState<string | null>(null);
@@ -124,14 +126,42 @@ function OffersContent() {
     <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
-          <div>
-            <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('offers.title')}</h2>
-            <p className="text-xs md:text-sm text-gray-600 mt-1">{t('offers.subtitle')}</p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div>
+              <h2 className="text-lg md:text-xl font-semibold text-gray-900">{t('offers.title')}</h2>
+              <p className="text-xs md:text-sm text-gray-600 mt-1">{t('offers.subtitle')}</p>
+            </div>
+            <div className="flex rounded-lg border border-gray-200 p-0.5 bg-white">
+              <button
+                type="button"
+                onClick={() => setActiveTab('requests')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'requests'
+                    ? 'bg-green-power-600 text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {t('offers.tabRequests')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('catalog')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'catalog'
+                    ? 'bg-green-power-600 text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {t('offers.tabCatalog')}
+              </button>
+            </div>
           </div>
         </div>
 
         <div className="px-6 py-4">
-          {loading ? (
+          {activeTab === 'catalog' ? (
+            <OfferCatalog />
+          ) : loading ? (
             <div className="space-y-3">
               {[1, 2, 3, 4, 5].map((i) => (
                 <div
@@ -147,11 +177,11 @@ function OffersContent() {
               ))}
             </div>
           ) : list.length === 0 ? (
-            <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
-              <p className="text-sm text-gray-500">{t('offers.noOffers')}</p>
-            </div>
-          ) : (
-            <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
+              <div className="bg-gray-50 border border-dashed border-gray-200 rounded-lg p-8 text-center">
+                <p className="text-sm text-gray-500">{t('offers.noOffers')}</p>
+              </div>
+            ) : (
+              <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
@@ -223,10 +253,10 @@ function OffersContent() {
                       </tr>
                     ))}
                   </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+                    </table>
+                  </div>
+                </div>
+            )}
         </div>
       </div>
 

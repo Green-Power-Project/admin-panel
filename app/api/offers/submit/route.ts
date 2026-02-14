@@ -5,7 +5,9 @@ import { buildEmailLogoHtml } from '@/lib/emailSignature';
 import { generateOfferPdfBuffer } from '@/lib/offerPdf';
 
 export interface OfferRequestItem {
-  imageId: string;
+  itemType?: 'gallery' | 'folder';
+  imageId?: string;
+  offerItemId?: string;
   imageUrl: string;
   itemName: string;
   color: string;
@@ -51,12 +53,12 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
   for (const it of items) {
     if (!it || typeof it !== 'object') continue;
     const item = it as Record<string, unknown>;
-    if (
-      typeof item.imageId !== 'string' ||
-      typeof item.imageUrl !== 'string' ||
-      typeof item.itemName !== 'string'
-    )
-      continue;
+    const itemType = item.itemType === 'folder' ? 'folder' : 'gallery';
+    const hasImageId = typeof item.imageId === 'string' && item.imageId.trim();
+    const hasOfferItemId = typeof item.offerItemId === 'string' && item.offerItemId.trim();
+    if (typeof item.itemName !== 'string' || !item.itemName.trim()) continue;
+    if (itemType === 'folder' && !hasOfferItemId) continue;
+    if (itemType === 'gallery' && !hasImageId) continue;
     const photoUrlsRaw = item.photoUrls;
     const photoUrls =
       Array.isArray(photoUrlsRaw)
@@ -67,8 +69,10 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
         : undefined;
 
     validItems.push({
-      imageId: item.imageId as string,
-      imageUrl: item.imageUrl as string,
+      itemType,
+      imageId: hasImageId ? (item.imageId as string) : undefined,
+      offerItemId: hasOfferItemId ? (item.offerItemId as string) : undefined,
+      imageUrl: typeof item.imageUrl === 'string' ? (item.imageUrl as string) : '',
       itemName: item.itemName as string,
       color: typeof item.color === 'string' ? (item.color as string) : '',
       quantityMeters: typeof item.quantityMeters === 'string' ? (item.quantityMeters as string) : undefined,
@@ -128,11 +132,13 @@ export async function POST(request: NextRequest) {
     // Firestore does not accept undefined; strip undefined from items
     const itemsForFirestore = payload.items.map((item) => {
       const rec: Record<string, unknown> = {
-        imageId: item.imageId,
-        imageUrl: item.imageUrl,
+        itemType: item.itemType ?? 'gallery',
+        imageUrl: item.imageUrl ?? '',
         itemName: item.itemName,
-        color: item.color,
+        color: item.color ?? '',
       };
+      if (item.imageId) rec.imageId = item.imageId;
+      if (item.offerItemId) rec.offerItemId = item.offerItemId;
       if (item.quantityMeters !== undefined) rec.quantityMeters = item.quantityMeters;
       if (item.quantityPieces !== undefined) rec.quantityPieces = item.quantityPieces;
       if (item.dimension !== undefined) rec.dimension = item.dimension;

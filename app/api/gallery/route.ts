@@ -35,6 +35,8 @@ export async function GET() {
         isActive: data.isActive !== false,
         offerEligible: data.offerEligible === true,
         offerItemName: data.offerItemName || '',
+        offerPrice: typeof data.offerPrice === 'string' ? data.offerPrice : '',
+        offerQuantityUnit: typeof data.offerQuantityUnit === 'string' ? data.offerQuantityUnit : '',
         offerColorOptions: Array.isArray(data.offerColorOptions) ? data.offerColorOptions : [],
         offerDimensionOptions: Array.isArray(data.offerDimensionOptions) ? data.offerDimensionOptions : [],
       };

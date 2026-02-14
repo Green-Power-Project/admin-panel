@@ -106,6 +106,8 @@ export async function GET(
       title: data.title ?? '',
       offerEligible: data.offerEligible === true,
       offerItemName: data.offerItemName ?? '',
+      offerPrice: typeof data.offerPrice === 'string' ? data.offerPrice : '',
+      offerQuantityUnit: typeof data.offerQuantityUnit === 'string' ? data.offerQuantityUnit : '',
       offerColorOptions: normalizeStringArray(data.offerColorOptions),
       offerDimensionOptions: normalizeStringArray(data.offerDimensionOptions),
     });
@@ -147,6 +149,8 @@ export async function PUT(
     if (typeof body.isActive === 'boolean') updates.isActive = body.isActive;
     if (typeof body.offerEligible === 'boolean') updates.offerEligible = body.offerEligible;
     if (typeof body.offerItemName === 'string') updates.offerItemName = body.offerItemName;
+    if (typeof body.offerPrice === 'string') updates.offerPrice = body.offerPrice.trim() || null;
+    if (typeof body.offerQuantityUnit === 'string') updates.offerQuantityUnit = body.offerQuantityUnit.trim() || null;
     const normalizeStringArray = (value: unknown): string[] | undefined =>
       Array.isArray(value)
         ? value
