@@ -39,6 +39,7 @@ export async function GET() {
         offerQuantityUnit: typeof data.offerQuantityUnit === 'string' ? data.offerQuantityUnit : '',
         offerColorOptions: Array.isArray(data.offerColorOptions) ? data.offerColorOptions : [],
         offerDimensionOptions: Array.isArray(data.offerDimensionOptions) ? data.offerDimensionOptions : [],
+        internalNotes: typeof data.internalNotes === 'string' ? data.internalNotes : '',
       };
     });
 

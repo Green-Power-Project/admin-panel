@@ -162,20 +162,16 @@ function DashboardContent() {
 
     // Check if this page has been visited before in this session
     const hasVisited = typeof window !== 'undefined' && sessionStorage.getItem('dashboard-visited') === 'true';
-    
-    // Only show loading on first visit
+
     if (!hasVisited) {
       setLoading(true);
       if (typeof window !== 'undefined') {
         sessionStorage.setItem('dashboard-visited', 'true');
       }
     } else {
-      // On subsequent visits (navigating back), don't show loading
-      // Real-time listener will populate data quickly from cache
       setLoading(false);
     }
 
-    // Helper function to update customer project counts
     const updateCustomerProjectCounts = (customersMap: Map<string, Customer>, projectsList: Project[]) => {
       customersMap.forEach((customer) => {
         customer.projectCount = 0;
@@ -191,14 +187,26 @@ function DashboardContent() {
       });
     };
 
-    // Real-time listener for customers
-    const customersUnsubscribe = onSnapshot(
-      query(collection(db, 'customers'), orderBy('customerNumber', 'asc')),
-      (customersSnapshot) => {
-        const customerMap = new Map<string, Customer>();
+    let cancelled = false;
+    const loadDashboardData = async () => {
+      try {
+        const [customersSnapshot, projectsSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'customers'), orderBy('customerNumber', 'asc'))),
+          getDocs(query(collection(db, 'projects'), orderBy('name', 'asc'))),
+        ]);
 
-        customersSnapshot.forEach((doc) => {
-          const data = doc.data();
+        if (cancelled) return;
+
+        const projectsList: Project[] = [];
+        projectsSnapshot.forEach((docSnap) => {
+          const projectData = { id: docSnap.id, ...docSnap.data() } as Project;
+          projectsList.push(projectData);
+        });
+
+        const customerMap = new Map<string, Customer>();
+        customersSnapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          if (!data?.uid) return;
           customerMap.set(data.uid, {
             uid: data.uid,
             customerNumber: data.customerNumber || 'N/A',
@@ -208,62 +216,31 @@ function DashboardContent() {
           });
         });
 
-        // Update customer project counts with current projects from state
-        // Note: projects state is used here, but we rely on the projects listener to update it
-        updateCustomerProjectCounts(customerMap, projects);
+        updateCustomerProjectCounts(customerMap, projectsList);
 
+        setProjects(projectsList);
         setCustomers(Array.from(customerMap.values()));
         setStats((prev) => ({
           ...prev,
+          totalProjects: projectsList.length,
           totalCustomers: customerMap.size,
         }));
-        setLoading(false);
-      },
-      (error) => {
-        console.error('Error listening to customers:', error);
-        setLoading(false);
+
+        // Load customer uploads count based on the loaded projects
+        await loadCustomerUploadsCount(projectsList);
+      } catch (error) {
+        console.error('Error loading dashboard data:', error);
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
-    );
+    };
 
-    // Real-time listener for projects
-    const projectsUnsubscribe = onSnapshot(
-      query(collection(db, 'projects'), orderBy('name', 'asc')),
-      (projectsSnapshot) => {
-        const projectsList: Project[] = [];
+    loadDashboardData();
 
-        projectsSnapshot.forEach((doc) => {
-          const projectData = { id: doc.id, ...doc.data() } as Project;
-          projectsList.push(projectData);
-        });
-
-        setProjects(projectsList);
-        setStats((prev) => ({
-          ...prev,
-          totalProjects: projectsList.length,
-        }));
-
-        // Update customer project counts when projects change
-        setCustomers((prevCustomers) => {
-          const customerMap = new Map<string, Customer>();
-          prevCustomers.forEach((customer) => {
-            customerMap.set(customer.uid, { ...customer, projectCount: 0, projectIds: [] });
-          });
-          updateCustomerProjectCounts(customerMap, projectsList);
-          return Array.from(customerMap.values());
-        });
-
-        // Load customer uploads count when projects change
-        loadCustomerUploadsCount(projectsList);
-      },
-      (error) => {
-        console.error('Error listening to projects:', error);
-      }
-    );
-
-    // Cleanup listeners on unmount (report approvals handled in separate effect)
     return () => {
-      customersUnsubscribe();
-      projectsUnsubscribe();
+      cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadCustomerUploadsCount]);

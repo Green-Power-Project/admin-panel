@@ -110,6 +110,7 @@ export async function GET(
       offerQuantityUnit: typeof data.offerQuantityUnit === 'string' ? data.offerQuantityUnit : '',
       offerColorOptions: normalizeStringArray(data.offerColorOptions),
       offerDimensionOptions: normalizeStringArray(data.offerDimensionOptions),
+      internalNotes: typeof data.internalNotes === 'string' ? data.internalNotes : '',
     });
   } catch (error) {
     console.error('Error fetching gallery image:', error);
@@ -164,6 +165,8 @@ export async function PUT(
 
     if (colorOptions) updates.offerColorOptions = colorOptions;
     if (dimensionOptions) updates.offerDimensionOptions = dimensionOptions;
+
+    if (typeof body.internalNotes === 'string') updates.internalNotes = body.internalNotes.trim() || null;
 
     await adminDb.collection('gallery').doc(imageId).update(updates);
 

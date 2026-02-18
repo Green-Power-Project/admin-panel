@@ -6,7 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot, collection, getDocs } from 'firebase/firestore';
+import { doc, getDoc, collection, getDocs } from 'firebase/firestore';
 import {
   DEFAULT_CATEGORY_KEYS,
   OFFERS_CATEGORY_KEY,
@@ -35,6 +35,8 @@ interface GalleryImage {
   offerQuantityUnit?: string;
   offerColorOptions?: string[];
   offerDimensionOptions?: string[];
+  /** Admin-only internal notes (not shown to customers) */
+  internalNotes?: string;
 }
 
 const GALLERY_IMAGES_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutes
@@ -101,6 +103,7 @@ function GalleryManagementContent() {
     offerQuantityUnit: '',
     offerColorOptionsStr: '',
     offerDimensionOptions: [] as string[],
+    internalNotes: '',
   });
   const [savingOffer, setSavingOffer] = useState(false);
   const [removingFromOffers, setRemovingFromOffers] = useState(false);
@@ -110,6 +113,26 @@ function GalleryManagementContent() {
   const [editCategory, setEditCategory] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
   const [editFormError, setEditFormError] = useState<string | null>(null);
+  /** When set, show custom "Remove from offers?" confirm modal; confirm runs removeFromOffersById(id) */
+  const [removeFromOffersConfirmImageId, setRemoveFromOffersConfirmImageId] = useState<string | null>(null);
+  /** Toast message shown after hide/show (active) toggle */
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!removeFromOffersConfirmImageId || removingFromOffers) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setRemoveFromOffersConfirmImageId(null);
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [removeFromOffersConfirmImageId, removingFromOffers]);
+
+  // Auto-clear toast after 3 seconds
+  useEffect(() => {
+    if (!toastMessage) return;
+    const id = setTimeout(() => setToastMessage(null), 3000);
+    return () => clearTimeout(id);
+  }, [toastMessage]);
 
   // Create/revoke object URL for upload-modal lightbox; close if file at index was removed
   useEffect(() => {
@@ -147,34 +170,43 @@ function GalleryManagementContent() {
   const [editingValue, setEditingValue] = useState('');
   const [savingCategoryName, setSavingCategoryName] = useState(false);
 
-  // Subscribe to gallery config for category keys and labels (live update)
+  // Load gallery config for category keys and labels once on mount
   useEffect(() => {
     if (!db) return;
-    const ref = doc(db, 'config', 'gallery');
-    const unsub = onSnapshot(
-      ref,
-      (snap) => {
+    let cancelled = false;
+    const loadConfig = async () => {
+      try {
+        const firestore = db;
+        if (!firestore) return;
+        const ref = doc(firestore, 'config', 'gallery');
+        const snap = await getDoc(ref);
         const labels: CategoryLabelsMap = {};
         let keys: string[] = [];
         if (snap.exists()) {
           const data = snap.data();
-          const raw = data?.categoryLabels;
+          const raw = (data as any)?.categoryLabels;
           if (typeof raw === 'object' && raw !== null) Object.assign(labels, raw);
-          if (Array.isArray(data?.categoryKeys) && data.categoryKeys.length > 0) {
-            keys = data.categoryKeys.filter((k: unknown) => typeof k === 'string');
+          if (Array.isArray((data as any)?.categoryKeys) && (data as any).categoryKeys.length > 0) {
+            keys = (data as any).categoryKeys.filter((k: unknown) => typeof k === 'string');
           }
         }
         if (keys.length === 0) keys = [...DEFAULT_CATEGORY_KEYS];
         if (!keys.includes(OFFERS_CATEGORY_KEY)) keys = [...keys, OFFERS_CATEGORY_KEY];
-        setCategoryKeys(keys);
-        setCategoryLabels(labels);
-      },
-      () => {
-        setCategoryLabels({});
-        setCategoryKeys([...DEFAULT_CATEGORY_KEYS]);
+        if (!cancelled) {
+          setCategoryKeys(keys);
+          setCategoryLabels(labels);
+        }
+      } catch {
+        if (!cancelled) {
+          setCategoryLabels({});
+          setCategoryKeys([...DEFAULT_CATEGORY_KEYS]);
+        }
       }
-    );
-    return unsub;
+    };
+    loadConfig();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   async function onSaveCategoryName(key: string, value: string) {
@@ -214,7 +246,7 @@ function GalleryManagementContent() {
 
   async function onDeleteCategory(key: string) {
     if (!db) return;
-    const count = images.filter((img) => img.category === key).length;
+    const count = images.filter((img) => normCategory(img.category) === normCategory(key)).length;
     if (count > 0 && !window.confirm(t('gallery.deleteCategoryConfirm', { count }))) return;
     if (count === 0 && !window.confirm(t('gallery.deleteCategoryConfirmEmpty'))) return;
     setDeletingCategoryKey(key);
@@ -241,14 +273,13 @@ function GalleryManagementContent() {
     setShowUploadModal(true);
   }
 
-  // Load gallery images from Firestore (client SDK – same as customer panel, avoids server quota)
+  // Load gallery images from Firestore (admin: include all images so counts and list are correct)
   async function loadGalleryImages() {
     if (!db) return [];
     const cached = getCachedGalleryImages();
     if (cached) return cached;
     const snapshot = await getDocs(collection(db, 'gallery'));
     const list = snapshot.docs
-      .filter((d) => d.data().isActive !== false)
       .map((d) => {
         const data = d.data();
         const uploadedAt = data.uploadedAt?.toDate?.() ?? data.uploadedAt ?? new Date();
@@ -261,7 +292,7 @@ function GalleryManagementContent() {
         return {
           id: d.id,
           url: data.url ?? '',
-          category: data.category ?? '',
+          category: typeof data.category === 'string' ? data.category.trim() : (data.category != null ? String(data.category).trim() : ''),
           title: data.title ?? '',
           uploadedAt: uploadedAt instanceof Date ? uploadedAt : new Date(uploadedAt),
           uploadedBy: data.uploadedBy ?? '',
@@ -272,6 +303,7 @@ function GalleryManagementContent() {
           offerQuantityUnit: typeof data.offerQuantityUnit === 'string' ? data.offerQuantityUnit : '',
           offerColorOptions: normalizeStringArray(colorOpts),
           offerDimensionOptions: normalizeStringArray(dimensionOpts),
+          internalNotes: typeof data.internalNotes === 'string' ? data.internalNotes : '',
         };
       })
       .sort((a, b) => b.uploadedAt.getTime() - a.uploadedAt.getTime());
@@ -290,12 +322,24 @@ function GalleryManagementContent() {
     return () => { cancelled = true; };
   }, []);
 
+  const normCategory = (s: unknown) => String(s ?? '').trim().toLowerCase().normalize('NFC');
   const filteredImages =
     selectedCategory === 'all'
       ? images
       : selectedCategory === OFFERS_CATEGORY_KEY
-        ? images.filter((img) => img.offerEligible === true || img.category === OFFERS_CATEGORY_KEY)
-        : images.filter((img) => img.category === selectedCategory);
+        ? images.filter((img) => img.offerEligible === true || normCategory(img.category) === normCategory(OFFERS_CATEGORY_KEY))
+        : images.filter((img) => normCategory(img.category) === normCategory(selectedCategory));
+
+  const baseCategoryKeys = categoryKeys.length > 0 ? categoryKeys : [...DEFAULT_CATEGORY_KEYS];
+  const imageCategoryValues = [...new Set(images.map((img) => (img.category != null ? String(img.category).trim() : '')))];
+  const categoriesToShow = [...new Set([...baseCategoryKeys, ...imageCategoryValues])];
+
+  const getCategoryCount = (category: string) => {
+    if (normCategory(category) === normCategory(OFFERS_CATEGORY_KEY)) {
+      return images.filter((img) => img.offerEligible === true || normCategory(img.category) === normCategory(OFFERS_CATEGORY_KEY)).length;
+    }
+    return images.filter((img) => normCategory(img.category) === normCategory(category)).length;
+  };
 
   async function handleUpload() {
     if (selectedFiles.length === 0) return;
@@ -418,6 +462,9 @@ function GalleryManagementContent() {
             img.id === imageId ? { ...img, isActive: !img.isActive } : img
           )
         );
+        setToastMessage(
+          !image.isActive ? t('gallery.toastImageHidden') : t('gallery.toastImageVisible')
+        );
       } else {
         throw new Error(t('gallery.toggleFailed'));
       }
@@ -440,11 +487,12 @@ function GalleryManagementContent() {
           ? data.offerDimensionOptions.filter((v: unknown) => typeof v === 'string' && String(v).trim())
           : [];
         setOfferForm({
-          offerItemName: data.offerItemName ?? '',
+          offerItemName: img.title?.trim() ?? '',
           offerPrice: data.offerPrice ?? '',
           offerQuantityUnit: data.offerQuantityUnit ?? '',
           offerColorOptionsStr: joinOptions(data.offerColorOptions),
           offerDimensionOptions: dimOpts.length ? dimOpts : [''],
+          internalNotes: (data as { internalNotes?: string }).internalNotes ?? '',
         });
         return;
       }
@@ -454,22 +502,20 @@ function GalleryManagementContent() {
 
     const dimOpts = (img.offerDimensionOptions?.length ?? 0) > 0 ? img.offerDimensionOptions! : [''];
     setOfferForm({
-      offerItemName: img.offerItemName ?? '',
+      offerItemName: img.title?.trim() ?? '',
       offerPrice: img.offerPrice ?? '',
       offerQuantityUnit: img.offerQuantityUnit ?? '',
       offerColorOptionsStr: joinOptions(img.offerColorOptions),
       offerDimensionOptions: [...dimOpts],
+      internalNotes: img.internalNotes ?? '',
     });
   }
 
   async function handleSaveOffer() {
     if (!offerEditImageId) return;
-    if (!offerForm.offerItemName.trim()) {
-      setOfferFormError(t('gallery.offerItemNameRequired'));
-      return;
-    }
     setOfferFormError(null);
     setSavingOffer(true);
+    const imageTitle = images.find((i) => i.id === offerEditImageId)?.title?.trim() ?? '';
     try {
       const toOptionsArray = (value: string): string[] =>
         value
@@ -487,26 +533,28 @@ function GalleryManagementContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           offerEligible: true,
-          offerItemName: offerForm.offerItemName,
+          offerItemName: imageTitle,
           offerPrice: offerForm.offerPrice.trim() || undefined,
           offerQuantityUnit: offerForm.offerQuantityUnit.trim() || undefined,
           offerColorOptions: colorOptions,
           offerDimensionOptions: dimensionOptions,
+          internalNotes: offerForm.internalNotes.trim() || undefined,
         }),
       });
       if (response.ok) {
         clearCachedGalleryImages();
         setImages((prev) =>
           prev.map((img) =>
-            img.id === offerEditImageId
+                img.id === offerEditImageId
               ? {
                   ...img,
                   offerEligible: true,
-                  offerItemName: offerForm.offerItemName,
+                  offerItemName: imageTitle,
                   offerPrice: offerForm.offerPrice.trim() || undefined,
                   offerQuantityUnit: offerForm.offerQuantityUnit.trim() || undefined,
                   offerColorOptions: colorOptions,
                   offerDimensionOptions: dimensionOptions,
+                  internalNotes: offerForm.internalNotes.trim() || undefined,
                 }
               : img
           )
@@ -520,13 +568,28 @@ function GalleryManagementContent() {
     }
   }
 
-  async function handleRemoveFromOffers() {
+  function openRemoveFromOffersConfirm(imageId: string) {
+    setRemoveFromOffersConfirmImageId(imageId);
+  }
+
+  async function confirmRemoveFromOffers() {
+    if (!removeFromOffersConfirmImageId) return;
+    const id = removeFromOffersConfirmImageId;
+    setRemoveFromOffersConfirmImageId(null);
+    await removeFromOffersById(id);
+    if (offerEditImageId === id) setOfferEditImageId(null);
+  }
+
+  function handleRemoveFromOffers() {
     if (!offerEditImageId) return;
-    if (!window.confirm(t('gallery.removeFromOffersConfirm'))) return;
+    openRemoveFromOffersConfirm(offerEditImageId);
+  }
+
+  async function removeFromOffersById(imageId: string) {
     setOfferFormError(null);
     setRemovingFromOffers(true);
     try {
-      const response = await fetch(`/api/gallery/${offerEditImageId}`, {
+      const response = await fetch(`/api/gallery/${imageId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ offerEligible: false }),
@@ -534,11 +597,8 @@ function GalleryManagementContent() {
       if (response.ok) {
         clearCachedGalleryImages();
         setImages((prev) =>
-          prev.map((img) =>
-            img.id === offerEditImageId ? { ...img, offerEligible: false } : img
-          )
+          prev.map((img) => (img.id === imageId ? { ...img, offerEligible: false } : img))
         );
-        setOfferEditImageId(null);
       } else {
         setOfferFormError(t('gallery.toggleFailed'));
       }
@@ -656,18 +716,15 @@ function GalleryManagementContent() {
               >
                 <span className="truncate">{t('gallery.allCategories', { count: images.length })}</span>
               </button>
-              {/* Category list */}
-              {(categoryKeys.length > 0 ? categoryKeys : DEFAULT_CATEGORY_KEYS).map((category) => {
-                const count =
-                  category === OFFERS_CATEGORY_KEY
-                    ? images.filter((img) => img.offerEligible === true || img.category === OFFERS_CATEGORY_KEY).length
-                    : images.filter((img) => img.category === category).length;
-                const displayName = getCategoryDisplayName(categoryLabels, category);
+              {/* Category list (config keys + any category that appears in images) */}
+              {categoriesToShow.map((category) => {
+                const count = getCategoryCount(category);
+                const displayName = category === '' ? t('gallery.uncategorized') : getCategoryDisplayName(categoryLabels, category);
                 const isEditing = editingCategoryKey === category;
                 const isSelected = selectedCategory === category;
                 return (
                   <div
-                    key={category}
+                    key={category === '' ? '__uncategorized__' : category}
                     className={`border-b border-gray-100 last:border-0 ${
                       isSelected && !isEditing ? 'bg-green-power-50' : ''
                     }`}
@@ -716,7 +773,7 @@ function GalleryManagementContent() {
                           <span className="truncate">{displayName}</span>
                           <span className={`text-xs flex-shrink-0 ${isSelected ? 'text-white/90' : 'text-gray-500'}`}>({count})</span>
                         </button>
-                        {isSelected && (
+                        {isSelected && category !== '' && (
                           <>
                             <button
                               type="button"
@@ -764,9 +821,9 @@ function GalleryManagementContent() {
             </div>
             <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-6 py-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-              {Array.from({ length: 8 }).map((_, index) => (
-                <div key={index} className="aspect-square bg-gray-200 rounded-xl animate-pulse shadow-sm" />
+            <div className="grid grid-cols-1 gap-4">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="h-24 bg-gray-200 rounded-xl animate-pulse shadow-sm" />
               ))}
             </div>
           ) : filteredImages.length === 0 ? (
@@ -786,13 +843,55 @@ function GalleryManagementContent() {
               </button>
             </div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 gap-4">
               {filteredImages.map((image) => (
-                <div key={image.id} className="group bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+                <div key={image.id} className="group relative bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow flex flex-row items-stretch">
+                  {/* Offer label + toggle + edit offer (when on) – top right corner of card */}
+                  <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-gray-600 whitespace-nowrap">{t('gallery.offer')}</span>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={image.offerEligible ?? false}
+                        aria-label={image.offerEligible ? t('gallery.offerOn') : t('gallery.offerOff')}
+                        disabled={removingFromOffers}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (image.offerEligible) {
+                            openRemoveFromOffersConfirm(image.id);
+                          } else {
+                            openOfferEdit(image);
+                          }
+                        }}
+                        className={`shrink-0 inline-flex h-6 w-10 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 ${
+                          image.offerEligible ? 'bg-teal-500' : 'bg-gray-200'
+                        }`}
+                        title={image.offerEligible ? t('gallery.offerDetails') : t('gallery.offerOff')}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                            image.offerEligible ? 'translate-x-4' : 'translate-x-0.5'
+                          }`}
+                          aria-hidden
+                        />
+                      </button>
+                    </div>
+                    {image.offerEligible && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openOfferEdit(image); }}
+                        className="text-[11px] font-medium text-teal-600 hover:text-teal-700 hover:underline focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-1 rounded"
+                      >
+                        {t('gallery.editOffer')}
+                      </button>
+                    )}
+                  </div>
+                  {/* 1. Image – unchanged */}
                   <button
                     type="button"
                     onClick={() => setPreviewImageUrl(image.url)}
-                    className="aspect-[4/3] relative overflow-hidden bg-gray-50 w-full block cursor-pointer text-left"
+                    className="shrink-0 w-32 sm:w-40 aspect-[4/3] relative overflow-hidden bg-gray-50 block cursor-pointer text-left"
                   >
                     <img
                       src={image.url}
@@ -801,47 +900,40 @@ function GalleryManagementContent() {
                     />
                     {!image.isActive && (
                       <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                        <span className="px-3 py-1.5 bg-gray-800/90 text-white text-xs font-semibold rounded-full">{t('gallery.inactive')}</span>
+                        <span className="px-2 py-1 bg-gray-800/90 text-white text-[10px] font-semibold rounded-full">{t('gallery.inactive')}</span>
                       </div>
                     )}
-                    <div className="absolute top-2 left-2 pointer-events-none flex flex-wrap gap-1">
-                      <span className="px-2 py-1 bg-white/95 text-gray-700 text-xs font-medium rounded-md shadow-sm">
-                        {(getCategoryDisplayName(categoryLabels, image.category)).length > 20
-                          ? getCategoryDisplayName(categoryLabels, image.category).slice(0, 18) + '…'
-                          : getCategoryDisplayName(categoryLabels, image.category)}
+                    <div className="absolute top-1 left-1 pointer-events-none">
+                      <span className="px-1.5 py-0.5 bg-white/95 text-gray-700 text-[10px] font-medium rounded shadow-sm max-w-[90px] truncate block">
+                        {getCategoryDisplayName(categoryLabels, image.category)}
                       </span>
-                      {image.offerEligible && (
-                        <span className="px-2 py-1 bg-amber-100 text-amber-800 text-xs font-medium rounded-md shadow-sm">
-                          {t('gallery.offer')}
-                        </span>
-                      )}
                     </div>
                   </button>
-                  <div className="p-3 flex items-center justify-between gap-2 border-t border-gray-100">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-gray-900 truncate">{image.title || t('gallery.untitled')}</p>
+                  {/* 2. Content + bottom row: title/date top, status+offer+actions bottom */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-between">
+                    <div className="flex flex-col gap-1 py-3 pl-3 pr-2">
+                      <p className="text-sm font-medium text-gray-900 line-clamp-2 max-w-[50%] min-w-0" title={image.title || t('gallery.untitled')}>
+                        {image.title || t('gallery.untitled')}
+                      </p>
                       <p className="text-xs text-gray-500">
                         {new Date(image.uploadedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
                     </div>
-                    <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-                      image.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
-                    }`}>
-                      {image.isActive ? t('gallery.active') : t('gallery.inactive')}
-                    </span>
-                  </div>
-                  <div className="px-3 pb-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPreviewImageUrl(image.url)}
-                      className="p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                      title={t('gallery.view')}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                      </svg>
-                    </button>
+                    {/* 3. Bottom row: status + offer tags left, action buttons right */}
+                    <div className="shrink-0 flex flex-row items-center justify-between gap-2 pb-3 pr-3 pl-3 pt-1">
+                      <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                        <span className={`shrink-0 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                          image.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'
+                        }`}>
+                          {image.isActive ? t('gallery.active') : t('gallery.inactive')}
+                        </span>
+                        {image.offerEligible && (
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 text-xs font-medium rounded shrink-0">
+                            {t('gallery.offer')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-row items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={() => handleToggleActive(image.id)}
@@ -865,20 +957,6 @@ function GalleryManagementContent() {
                     </button>
                     <button
                       type="button"
-                      onClick={() => openOfferEdit(image)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        image.offerEligible
-                          ? 'text-teal-700 bg-teal-100 hover:bg-teal-200'
-                          : 'text-gray-600 bg-gray-100 hover:bg-gray-200'
-                      }`}
-                      title={t('gallery.offerDetails')}
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                      </svg>
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => openEditImage(image)}
                       className="p-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
                       title={t('gallery.editImage')}
@@ -897,6 +975,8 @@ function GalleryManagementContent() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                       </svg>
                     </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -906,6 +986,57 @@ function GalleryManagementContent() {
           </div>
         </div>
       </div>
+
+      {/* Remove from offers – custom confirm modal */}
+      {removeFromOffersConfirmImageId && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          onClick={() => !removingFromOffers && setRemoveFromOffersConfirmImageId(null)}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="remove-from-offers-title"
+          aria-describedby="remove-from-offers-description"
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 border border-gray-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-4">
+              <div className="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 id="remove-from-offers-title" className="text-lg font-semibold text-gray-900">
+                  {t('gallery.removeFromOffers')}
+                </h3>
+                <p id="remove-from-offers-description" className="mt-2 text-sm text-gray-600 leading-relaxed">
+                  {t('gallery.removeFromOffersConfirm')}
+                </p>
+                <div className="mt-6 flex flex-row-reverse flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={confirmRemoveFromOffers}
+                    disabled={removingFromOffers}
+                    className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 text-white text-sm font-medium rounded-lg shadow-sm transition-colors"
+                  >
+                    {removingFromOffers ? t('common.loading') : t('common.confirm')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => !removingFromOffers && setRemoveFromOffersConfirmImageId(null)}
+                    disabled={removingFromOffers}
+                    className="px-4 py-2.5 border border-gray-300 text-gray-700 hover:bg-gray-50 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Category Modal */}
       {showAddCategoryModal && (
@@ -1256,21 +1387,6 @@ function GalleryManagementContent() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('gallery.offerItemName')} <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  value={offerForm.offerItemName}
-                  onChange={(e) => { setOfferFormError(null); setOfferForm((f) => ({ ...f, offerItemName: e.target.value })); }}
-                  placeholder={t('gallery.offerItemNamePlaceholder')}
-                  className={`w-full px-3 py-2 border rounded-lg text-sm ${offerFormError ? 'border-red-500' : 'border-gray-300'}`}
-                  aria-required="true"
-                  aria-invalid={!!offerFormError}
-                />
-                {offerFormError && <p className="text-xs text-red-600 mt-1">{offerFormError}</p>}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
                   {t('gallery.offerQuantityUnit')}
                 </label>
                 <input
@@ -1344,6 +1460,17 @@ function GalleryManagementContent() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
                 />
                 <p className="text-xs text-gray-500 mt-1">{t('gallery.offerColorOptionsHint')}</p>
+              </div>
+              <div className="pt-3 border-t border-gray-200">
+                <p className="text-sm font-medium text-gray-700 mb-2">{t('gallery.internalNotesTitle')}</p>
+                <p className="text-xs text-gray-500 mb-2">{t('gallery.internalNotesHint')}</p>
+                <textarea
+                  value={offerForm.internalNotes}
+                  onChange={(e) => setOfferForm((f) => ({ ...f, internalNotes: e.target.value }))}
+                  placeholder={t('gallery.internalNotesPlaceholder')}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm resize-y min-h-[80px]"
+                />
               </div>
             </div>
             <div className="flex gap-2 mt-5">
@@ -1460,6 +1587,16 @@ function GalleryManagementContent() {
         onConfirm={handleDeleteConfirm}
         onCancel={() => !deleting && setImageToDelete(null)}
       />
+
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed top-6 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg bg-green-600 text-white text-sm shadow-lg max-w-md"
+        >
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 }

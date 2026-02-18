@@ -7,6 +7,11 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { generateOfferPdf } from '@/lib/offerPdf';
 import OfferCatalog from '@/components/OfferCatalog';
 
+interface GalleryInternalNotes {
+  id: string;
+  internalNotes?: string;
+}
+
 interface OfferItem {
   imageId: string;
   imageUrl: string;
@@ -54,6 +59,8 @@ function OffersContent() {
   const [list, setList] = useState<OfferRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewPdfUrl, setViewPdfUrl] = useState<string | null>(null);
+  const [detailOffer, setDetailOffer] = useState<OfferRequest | null>(null);
+  const [galleryInternalNotes, setGalleryInternalNotes] = useState<Record<string, GalleryInternalNotes>>({});
 
   useEffect(() => {
     fetch('/api/offers')
@@ -121,6 +128,26 @@ function OffersContent() {
       setViewPdfUrl(null);
     }
   }, [viewPdfUrl]);
+
+  const openDetail = useCallback((offer: OfferRequest) => {
+    setDetailOffer(offer);
+    setGalleryInternalNotes({});
+    fetch('/api/gallery')
+      .then((r) => r.json())
+      .then((images: Array<GalleryInternalNotes>) => {
+        const map: Record<string, GalleryInternalNotes> = {};
+        (images || []).forEach((img) => {
+          map[img.id] = { id: img.id, internalNotes: img.internalNotes };
+        });
+        setGalleryInternalNotes(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailOffer(null);
+    setGalleryInternalNotes({});
+  }, []);
 
   return (
     <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
@@ -201,13 +228,22 @@ function OffersContent() {
                       <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                         {t('offers.orders')}
                       </th>
+                      <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-0">
+                        {t('offers.details')}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-100">
                     {list.map((offer) => (
                       <tr key={offer.id} className="hover:bg-gray-50/50 transition-colors">
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs text-gray-600">
-                          {offer.createdAt ? new Date(offer.createdAt).toLocaleString() : '—'}
+                          {offer.createdAt ? (
+                            <span suppressHydrationWarning>
+                              {new Date(offer.createdAt).toLocaleString()}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs font-medium text-gray-900">
                           {offer.firstName} {offer.lastName}
@@ -225,6 +261,17 @@ function OffersContent() {
                         </td>
                         <td className="px-3 py-2.5 whitespace-nowrap text-xs">
                           <span className="inline-flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openDetail(offer)}
+                              className="p-1.5 rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                              title={t('offers.details')}
+                              aria-label={t('offers.details')}
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                              </svg>
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleDownloadPdf(offer)}
@@ -286,6 +333,88 @@ function OffersContent() {
               title={t('offers.viewPdf')}
               className="w-full h-full border-0"
             />
+          </div>
+        </div>
+      )}
+
+      {detailOffer && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          role="dialog"
+          aria-modal="true"
+          aria-label={t('offers.detailTitle')}
+          onClick={closeDetail}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex-shrink-0">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-semibold text-gray-900">{t('offers.detailTitle')}</h3>
+                <button
+                  type="button"
+                  className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 transition-colors"
+                  onClick={closeDetail}
+                  aria-label={t('offers.close')}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="mt-3 text-sm text-gray-600 space-y-1">
+                <p><span className="font-medium text-gray-700">{t('offers.customer')}:</span> {detailOffer.firstName} {detailOffer.lastName}</p>
+                <p><span className="font-medium text-gray-700">{t('offers.email')}:</span> <a href={`mailto:${detailOffer.email}`} className="text-green-power-600 hover:underline">{detailOffer.email}</a></p>
+                {detailOffer.address && <p><span className="font-medium text-gray-700">{t('offers.address')}:</span> {detailOffer.address}</p>}
+                {detailOffer.createdAt && (
+                  <p>
+                    <span className="font-medium text-gray-700">{t('offers.date')}:</span>{' '}
+                    <span suppressHydrationWarning>
+                      {new Date(detailOffer.createdAt).toLocaleString()}
+                    </span>
+                  </p>
+                )}
+                {detailOffer.projectNote && <p className="pt-1"><span className="font-medium text-gray-700">Project note:</span> {detailOffer.projectNote}</p>}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">{t('offers.orders')}</p>
+              <ul className="space-y-4">
+                {detailOffer.items.map((item, idx) => {
+                  const adminInfo = item.imageId ? galleryInternalNotes[item.imageId] : null;
+                  const hasAdminInfo = adminInfo?.internalNotes?.trim();
+                  return (
+                    <li key={idx} className="border border-gray-200 rounded-lg p-4 bg-gray-50/50">
+                      <div className="flex gap-3">
+                        {item.imageUrl && (
+                          <img src={item.imageUrl} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900">{item.itemName}</p>
+                          <p className="text-sm text-gray-600">Color: {item.color || '—'}</p>
+                          {(item.quantityPieces || item.quantityMeters) && (
+                            <p className="text-sm text-gray-600">
+                              Quantity: {item.quantityPieces ? `${item.quantityPieces} pcs` : ''}
+                              {item.quantityPieces && item.quantityMeters ? ' / ' : ''}
+                              {item.quantityMeters ? `${item.quantityMeters} m` : ''}
+                            </p>
+                          )}
+                          {item.dimension && <p className="text-sm text-gray-600">Dimension: {item.dimension}</p>}
+                          {item.note && <p className="text-sm text-gray-500 mt-1">Note: {item.note}</p>}
+                          {hasAdminInfo && (
+                            <div className="mt-3 pt-3 border-t border-gray-200">
+                              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('gallery.internalNotesTitle')}</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{adminInfo.internalNotes}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
         </div>
       )}

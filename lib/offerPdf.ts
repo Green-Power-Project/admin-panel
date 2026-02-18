@@ -12,6 +12,7 @@ const DE = {
   color: 'Farbe',
   dimension: 'Maße',
   qty: 'Menge',
+  price: 'Preis',
   note: 'Notiz',
   itemPhoto: 'Artikelbild',
   viewItemPhoto: 'Artikelbild ansehen',
@@ -29,6 +30,7 @@ export interface OfferItemForPdf {
   note?: string;
   imageUrl?: string;
   photoUrls?: string[];
+  price?: string;
 }
 
 export interface OfferRequestForPdf {
@@ -125,40 +127,26 @@ function buildOfferPdfDoc(offer: OfferRequestForPdf): jsPDF {
     y = drawWrappedText(doc, offer.projectNote, MARGIN, y, CONTENT_WIDTH) + 4;
   }
 
-  if (offer.projectPhotoUrls && offer.projectPhotoUrls.length > 0) {
-    doc.setFont('helvetica', 'bold');
-    doc.text(DE.projectPhotos, MARGIN, y);
-    y += 5;
-    doc.setFont('helvetica', 'normal');
-    offer.projectPhotoUrls.forEach((url, i) => {
-      if (y > PAGE_HEIGHT - 20) {
-        doc.addPage('a4', 'l');
-        y = MARGIN;
-      }
-      y = drawLink(doc, `${DE.photo} ${i + 1}`, MARGIN, y, url);
-    });
-    y += 4;
-  }
-
   doc.setFont('helvetica', 'bold');
   doc.text(DE.requestedItems, MARGIN, y);
   y += 7;
 
   const fontSize = 9;
   doc.setFontSize(fontSize);
-  const colCount = 7;
+  const colCount = 8;
   const gap = 2;
   const totalGap = (colCount - 1) * gap;
   const colWidths: number[] = [
-    (CONTENT_WIDTH - totalGap) * 0.22,  // Artikel
-    (CONTENT_WIDTH - totalGap) * 0.10,  // Farbe
-    (CONTENT_WIDTH - totalGap) * 0.14,  // Maße
-    (CONTENT_WIDTH - totalGap) * 0.08,  // Menge
-    (CONTENT_WIDTH - totalGap) * 0.18,  // Notiz
+    (CONTENT_WIDTH - totalGap) * 0.18,  // Artikel
+    (CONTENT_WIDTH - totalGap) * 0.09,  // Farbe
+    (CONTENT_WIDTH - totalGap) * 0.12,  // Maße
+    (CONTENT_WIDTH - totalGap) * 0.07,  // Menge
+    (CONTENT_WIDTH - totalGap) * 0.08,  // Preis
+    (CONTENT_WIDTH - totalGap) * 0.16,  // Notiz
     (CONTENT_WIDTH - totalGap) * 0.12,  // Artikelbild
-    (CONTENT_WIDTH - totalGap) * 0.16,  // Kundenfotos
+    (CONTENT_WIDTH - totalGap) * 0.18,  // Kundenfotos
   ];
-  const headers = [DE.item, DE.color, DE.dimension, DE.qty, DE.note, DE.itemPhoto, DE.customerPhotos];
+  const headers = [DE.item, DE.color, DE.dimension, DE.qty, DE.price, DE.note, DE.itemPhoto, DE.customerPhotos];
 
   const getCellWidth = (i: number) => colWidths[i] - CELL_PAD * 2;
   const rowHeights: number[] = [];
@@ -169,7 +157,8 @@ function buildOfferPdfDoc(offer: OfferRequestForPdf): jsPDF {
     const colorLines = doc.splitTextToSize(it.color || DE.noValue, getCellWidth(1));
     const dimensionLines = doc.splitTextToSize(it.dimension || DE.noValue, getCellWidth(2));
     const qtyLines = doc.splitTextToSize(qtyStr, getCellWidth(3));
-    const noteLines = doc.splitTextToSize(it.note || DE.noValue, getCellWidth(4));
+    const priceLines = doc.splitTextToSize(it.price?.trim() || DE.noValue, getCellWidth(4));
+    const noteLines = doc.splitTextToSize(it.note || DE.noValue, getCellWidth(5));
     const itemPhotoLines = it.imageUrl ? 1 : 1;
     const customerPhotosCount = it.photoUrls?.length ?? 0;
     const customerPhotosLines = Math.max(1, customerPhotosCount);
@@ -178,6 +167,7 @@ function buildOfferPdfDoc(offer: OfferRequestForPdf): jsPDF {
       colorLines.length,
       dimensionLines.length,
       qtyLines.length,
+      priceLines.length,
       noteLines.length,
       itemPhotoLines,
       customerPhotosLines
@@ -217,9 +207,10 @@ function buildOfferPdfDoc(offer: OfferRequestForPdf): jsPDF {
       { lines: doc.splitTextToSize(it.color || DE.noValue, getCellWidth(1)), width: colWidths[1] },
       { lines: doc.splitTextToSize(it.dimension || DE.noValue, getCellWidth(2)), width: colWidths[2] },
       { lines: doc.splitTextToSize(qtyStr, getCellWidth(3)), width: colWidths[3] },
-      { lines: doc.splitTextToSize(it.note || DE.noValue, getCellWidth(4)), width: colWidths[4] },
-      { lines: [], width: colWidths[5] },
+      { lines: doc.splitTextToSize(it.price?.trim() || DE.noValue, getCellWidth(4)), width: colWidths[4] },
+      { lines: doc.splitTextToSize(it.note || DE.noValue, getCellWidth(5)), width: colWidths[5] },
       { lines: [], width: colWidths[6] },
+      { lines: [], width: colWidths[7] },
     ];
 
     let cellX = MARGIN;
@@ -229,10 +220,10 @@ function buildOfferPdfDoc(offer: OfferRequestForPdf): jsPDF {
     });
 
     let cellY = rowYStart + CELL_PAD + 1;
-    const maxLines = Math.max(...cellContents.slice(0, 5).map((c) => c.lines.length), 1);
+    const maxLines = Math.max(...cellContents.slice(0, 6).map((c) => c.lines.length), 1);
     for (let lineIdx = 0; lineIdx < maxLines; lineIdx++) {
       cellX = MARGIN;
-      cellContents.slice(0, 5).forEach((cell, colIdx) => {
+      cellContents.slice(0, 6).forEach((cell, colIdx) => {
         const line = cell.lines[lineIdx];
         if (line) doc.text(line, cellX + CELL_PAD, cellY);
         cellX += cell.width + gap;
@@ -241,27 +232,51 @@ function buildOfferPdfDoc(offer: OfferRequestForPdf): jsPDF {
     }
 
     cellX = MARGIN;
-    for (let i = 0; i < 5; i++) cellX += colWidths[i] + gap;
-    const col5X = cellX + CELL_PAD;
-    const col6X = cellX + colWidths[5] + gap + CELL_PAD;
+    for (let i = 0; i < 6; i++) cellX += colWidths[i] + gap;
+    const col6X = cellX + CELL_PAD;
+    const col7X = cellX + colWidths[6] + gap + CELL_PAD;
 
     if (it.imageUrl) {
-      drawLink(doc, DE.viewItemPhoto, col5X, rowYStart + CELL_PAD + 1, it.imageUrl);
+      drawLink(doc, DE.viewItemPhoto, col6X, rowYStart + CELL_PAD + 1, it.imageUrl);
     } else {
-      doc.text(DE.noValue, col5X, rowYStart + CELL_PAD + 1);
+      doc.text(DE.noValue, col6X, rowYStart + CELL_PAD + 1);
     }
 
     if (it.photoUrls && it.photoUrls.length > 0) {
       let linkY = rowYStart + CELL_PAD + 1;
       it.photoUrls.forEach((url, i) => {
-        linkY = drawLink(doc, `${DE.photo} ${i + 1}`, col6X, linkY, url);
+        linkY = drawLink(doc, `${DE.photo} ${i + 1}`, col7X, linkY, url);
       });
     } else {
-      doc.text(DE.noValue, col6X, rowYStart + CELL_PAD + 1);
+      doc.text(DE.noValue, col7X, rowYStart + CELL_PAD + 1);
     }
 
     y = rowYStart + rowH;
   });
+
+  if (offer.projectPhotoUrls && offer.projectPhotoUrls.length > 0) {
+    if (y > PAGE_HEIGHT - 25) {
+      doc.addPage('a4', 'l');
+      y = MARGIN;
+    }
+    y += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.text(DE.projectPhotos, MARGIN, y);
+    y += 5;
+    doc.setFont('helvetica', 'normal');
+    const linkGap = 4;
+    let linkX = MARGIN;
+    offer.projectPhotoUrls.forEach((url, i) => {
+      const label = `${DE.photo} ${i + 1}`;
+      const w = doc.getTextWidth(label) + 2;
+      if (linkX + w > PAGE_WIDTH - MARGIN) {
+        linkX = MARGIN;
+        y += LINE_HEIGHT + 2;
+      }
+      drawLink(doc, label, linkX, y, url);
+      linkX += w + linkGap;
+    });
+  }
 
   return doc;
 }

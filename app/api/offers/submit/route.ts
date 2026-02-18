@@ -16,6 +16,7 @@ export interface OfferRequestItem {
   dimension?: string;
   note?: string;
   photoUrls?: string[];
+  price?: string;
 }
 
 export interface OfferSubmitPayload {
@@ -80,6 +81,7 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
       dimension: typeof item.dimension === 'string' ? (item.dimension as string) : undefined,
       note: typeof item.note === 'string' ? (item.note as string) : undefined,
       photoUrls,
+      price: typeof item.price === 'string' && item.price.trim() ? (item.price as string).trim() : undefined,
     });
   }
   if (validItems.length === 0) return null;
@@ -144,6 +146,7 @@ export async function POST(request: NextRequest) {
       if (item.dimension !== undefined) rec.dimension = item.dimension;
       if (item.note !== undefined) rec.note = item.note;
       if (item.photoUrls !== undefined && item.photoUrls.length > 0) rec.photoUrls = item.photoUrls;
+      if (item.price !== undefined && item.price.trim()) rec.price = item.price.trim();
       return rec;
     });
 
@@ -178,7 +181,7 @@ export async function POST(request: NextRequest) {
         auth: { user: EMAIL_USER, pass: EMAIL_PASSWORD },
       } as any);
 
-      const pdfBuffer = generateOfferPdfBuffer({
+      const pdfBuffer =       generateOfferPdfBuffer({
         firstName: payload.firstName,
         lastName: payload.lastName,
         email: payload.email,
@@ -194,6 +197,7 @@ export async function POST(request: NextRequest) {
           note: it.note,
           imageUrl: it.imageUrl,
           photoUrls: it.photoUrls,
+          price: it.price,
         })),
         createdAt: new Date().toISOString(),
       });
@@ -232,42 +236,6 @@ export async function POST(request: NextRequest) {
         attachments: [
           {
             filename: `Angebotsanfrage-${payload.firstName}-${payload.lastName}-${docRef.id}.pdf`,
-            content: pdfBuffer,
-            contentType: 'application/pdf',
-          },
-        ],
-      } as any);
-
-      // Send confirmation email to the customer at the address they entered
-      const customerHtml = `
-        <!DOCTYPE html>
-        <html>
-          <head><meta charset="utf-8" /></head>
-          <body style="font-family: Arial, sans-serif; color: #1a1a1a; background-color: #f3f4f6; margin: 0; padding: 16px;">
-            <div style="max-width: 560px; margin: 0 auto;">
-              ${buildEmailLogoHtml()}
-              <div style="background: #ffffff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.06);">
-                <h2 style="margin: 0 0 8px; font-size: 18px;">Ihre Angebotsanfrage wurde empfangen</h2>
-                <p style="margin: 0 0 12px; font-size: 14px; color: #4b5563;">Guten Tag ${payload.firstName} ${payload.lastName},</p>
-                <p style="margin: 0 0 12px; font-size: 14px; color: #4b5563;">vielen Dank für Ihre Anfrage. Wir haben Ihre Angaben erhalten und melden uns in Kürze bei Ihnen.</p>
-                <p style="margin: 0 0 12px; font-size: 14px; color: #4b5563;">Eine Kopie Ihrer Anfrage finden Sie in der angehängten PDF-Datei.</p>
-                <p style="margin-top: 16px; font-size: 12px; color: #6b7280;">Anfrage-ID: ${docRef.id}</p>
-              </div>
-            </div>
-          </body>
-        </html>
-      `;
-      const customerText = `Ihre Angebotsanfrage wurde empfangen\n\nGuten Tag ${payload.firstName} ${payload.lastName},\n\nvielen Dank für Ihre Anfrage. Wir haben Ihre Angaben erhalten und melden uns in Kürze bei Ihnen.\n\nEine Kopie Ihrer Anfrage finden Sie in der angehängten PDF-Datei.\n\nAnfrage-ID: ${docRef.id}`;
-
-      await transporter.sendMail({
-        from: `Grün Power <${EMAIL_USER}>`,
-        to: payload.email,
-        subject: `Ihre Angebotsanfrage bei Grün Power`,
-        html: customerHtml,
-        text: customerText,
-        attachments: [
-          {
-            filename: `Ihre-Angebotsanfrage-${docRef.id}.pdf`,
             content: pdfBuffer,
             contentType: 'application/pdf',
           },
