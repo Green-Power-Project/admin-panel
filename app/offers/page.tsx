@@ -419,7 +419,7 @@ function OffersContent() {
                           {hasAdminInfo && (
                             <div className="mt-3 pt-3 border-t border-gray-200">
                               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('gallery.internalNotesTitle')}</p>
-                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{adminInfo.internalNotes}</p>
+                              <p className="text-sm text-gray-700 whitespace-pre-wrap">{adminInfo?.internalNotes ?? ''}</p>
                             </div>
                           )}
                         </div>

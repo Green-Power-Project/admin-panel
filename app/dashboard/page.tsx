@@ -189,6 +189,7 @@ function DashboardContent() {
 
     let cancelled = false;
     const loadDashboardData = async () => {
+      if (!db) return;
       try {
         const [customersSnapshot, projectsSnapshot] = await Promise.all([
           getDocs(query(collection(db, 'customers'), orderBy('customerNumber', 'asc'))),
