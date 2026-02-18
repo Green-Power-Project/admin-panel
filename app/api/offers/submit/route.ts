@@ -5,7 +5,7 @@ import { buildEmailLogoHtml } from '@/lib/emailSignature';
 import { generateOfferPdfBuffer } from '@/lib/offerPdf';
 
 export interface OfferRequestItem {
-  itemType?: 'gallery' | 'folder';
+  itemType?: 'gallery' | 'folder' | 'catalogue';
   imageId?: string;
   offerItemId?: string;
   imageUrl: string;
@@ -54,7 +54,9 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
   for (const it of items) {
     if (!it || typeof it !== 'object') continue;
     const item = it as Record<string, unknown>;
-    const itemType = item.itemType === 'folder' ? 'folder' : 'gallery';
+    const rawType = item.itemType;
+    const itemType: 'gallery' | 'folder' | 'catalogue' =
+      rawType === 'folder' ? 'folder' : rawType === 'catalogue' ? 'catalogue' : 'gallery';
     const hasImageId = typeof item.imageId === 'string' && item.imageId.trim();
     const hasOfferItemId = typeof item.offerItemId === 'string' && item.offerItemId.trim();
     if (typeof item.itemName !== 'string' || !item.itemName.trim()) continue;

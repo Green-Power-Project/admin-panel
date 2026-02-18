@@ -6,6 +6,7 @@ import AdminLayout from '@/components/AdminLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { generateOfferPdf } from '@/lib/offerPdf';
 import OfferCatalog from '@/components/OfferCatalog';
+import CatalogManager from '@/components/CatalogManager';
 
 interface GalleryInternalNotes {
   id: string;
@@ -55,7 +56,7 @@ export default function OffersPage() {
 
 function OffersContent() {
   const { t } = useLanguage();
-  const [activeTab, setActiveTab] = useState<'catalog' | 'requests'>('requests');
+  const [activeTab, setActiveTab] = useState<'requests' | 'materials' | 'catalogues'>('requests');
   const [list, setList] = useState<OfferRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [viewPdfUrl, setViewPdfUrl] = useState<string | null>(null);
@@ -172,22 +173,35 @@ function OffersContent() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveTab('catalog')}
+                onClick={() => setActiveTab('materials')}
                 className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                  activeTab === 'catalog'
+                  activeTab === 'materials'
                     ? 'bg-green-power-600 text-white'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
                 {t('offers.tabCatalog')}
               </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('catalogues')}
+                className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                  activeTab === 'catalogues'
+                    ? 'bg-green-power-600 text-white'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                {t('offers.tabCatalogues')}
+              </button>
             </div>
           </div>
         </div>
 
         <div className="px-6 py-4">
-          {activeTab === 'catalog' ? (
+          {activeTab === 'materials' ? (
             <OfferCatalog />
+          ) : activeTab === 'catalogues' ? (
+            <CatalogManager />
           ) : loading ? (
             <div className="space-y-3">
               {[1, 2, 3, 4, 5].map((i) => (
