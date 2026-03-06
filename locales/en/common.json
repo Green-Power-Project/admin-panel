@@ -67,7 +67,10 @@
     "attachImageOrPdf": "Attach image or PDF",
     "open": "Open",
     "download": "Download",
-    "customerTyping": "Customer is typing..."
+    "customerTyping": "Customer is typing...",
+    "replyLabel": "Reply:",
+    "pdfViewer": "PDF viewer",
+    "messageActions": "Message actions"
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -341,6 +344,9 @@
     "allowViewAllProjectsDescription": "If enabled, customer can see all projects for their customer number. If disabled, customer can only see the specific project they logged in with.",
     "success": "Success",
     "customerDeletedSuccessfully": "Customer deleted successfully",
+    "customerDeletedAuthRemain": "Customer data was deleted from the database, but their login account could not be removed from Authentication. {{hint}} You can delete the user manually in Firebase Console → Authentication → Users.",
+    "authDeleteNotConfigured": "Firebase Admin is not configured. Set FIREBASE_SERVICE_ACCOUNT_KEY in admin panel .env.local (full JSON of your Firebase service account key), then restart the server.",
+    "authDeleteFailedHint": "Authentication user could not be deleted.",
     "deleteFailed": "Delete Failed",
     "failedToDeleteCustomer": "Failed to delete customer. Please try again.",
     "viewDetails": "View Details"

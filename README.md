@@ -140,7 +140,7 @@ For automatic emails to work in both directions, set these environment variables
 **Admin panel (this app) `.env.local`:**
 - `EMAIL_USER` – Gmail address used to send (e.g. `your@gmail.com`)
 - `EMAIL_PASSWORD` – Gmail app password (not the normal password)
-- `FIREBASE_SERVICE_ACCOUNT_KEY` – JSON string for Firebase Admin SDK (needed to look up customer/project data)
+- `FIREBASE_SERVICE_ACCOUNT_KEY` – JSON string for Firebase Admin SDK (needed for lookups and for **deleting customers from Firebase Authentication** when you delete a customer in the admin panel; without it, only Firestore data is removed)
 - `NEXT_PUBLIC_CUSTOMER_APP_ORIGIN` – Full URL of the customer panel (e.g. `http://localhost:3001` or `https://your-customer-app.vercel.app`). Required so the customer app can call the admin notification APIs (file-upload, customer-message) from a different origin (CORS).
 
 **Customer panel (window-app) `.env.local`:**

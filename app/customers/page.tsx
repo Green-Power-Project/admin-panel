@@ -210,24 +210,32 @@ function CustomersContent() {
         )
       );
 
-      // Delete Firebase Auth user so the email can be reused
+      // Delete Firebase Auth user so the email can be reused and they are removed from Auth
       const deleteUserRes = await fetch('/api/auth/delete-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ uid }),
       });
+      let authDeleteFailed = false;
+      let authDeleteMessage = '';
       if (!deleteUserRes.ok) {
-        const errData = await deleteUserRes.json().catch(() => ({}));
+        const errData = await deleteUserRes.json().catch(() => ({})) as { code?: string; error?: string; hint?: string };
         console.error('Auth delete-user failed:', errData);
-        // Still show success for Firestore cleanup; user may need to delete Auth manually
+        authDeleteFailed = true;
+        authDeleteMessage =
+          errData?.code === 'ADMIN_NOT_CONFIGURED'
+            ? t('customers.authDeleteNotConfigured')
+            : (errData?.error as string) || t('customers.authDeleteFailedHint');
       }
 
       setShowDeleteConfirm(false);
       setCustomerToDelete(null);
       setAlertData({
         title: t('customers.success'),
-        message: t('customers.customerDeletedSuccessfully'),
-        type: 'success',
+        message: authDeleteFailed
+          ? t('customers.customerDeletedAuthRemain', { hint: authDeleteMessage })
+          : t('customers.customerDeletedSuccessfully'),
+        type: authDeleteFailed ? 'warning' : 'success',
       });
       setShowAlert(true);
     } catch (error: unknown) {

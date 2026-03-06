@@ -67,7 +67,10 @@
     "attachImageOrPdf": "Bild oder PDF anhängen",
     "open": "Öffnen",
     "download": "Herunterladen",
-    "customerTyping": "Kunde tippt..."
+    "customerTyping": "Kunde tippt...",
+    "replyLabel": "Antwort:",
+    "pdfViewer": "PDF-Ansicht",
+    "messageActions": "Nachrichtenaktionen"
   },
   "navigation": {
     "dashboard": "Dashboard",
@@ -341,6 +344,9 @@
     "allowViewAllProjectsDescription": "Wenn aktiviert, sieht der Kunde alle Projekte für seine Kundennummer. Wenn deaktiviert, sieht der Kunde nur das Projekt, mit dem er sich angemeldet hat.",
     "success": "Erfolg",
     "customerDeletedSuccessfully": "Kunde erfolgreich gelöscht",
+    "customerDeletedAuthRemain": "Kundendaten wurden aus der Datenbank gelöscht, das Anmeldekonto konnte jedoch nicht aus der Authentication entfernt werden. {{hint}} Sie können den Benutzer manuell in der Firebase-Konsole → Authentication → Users löschen.",
+    "authDeleteNotConfigured": "Firebase Admin ist nicht konfiguriert. Setzen Sie FIREBASE_SERVICE_ACCOUNT_KEY in der Admin-Panel-.env.local (vollständiges JSON des Service-Account-Schlüssels) und starten Sie den Server neu.",
+    "authDeleteFailedHint": "Der Authentication-Benutzer konnte nicht gelöscht werden.",
     "deleteFailed": "Löschen fehlgeschlagen",
     "failedToDeleteCustomer": "Kunde konnte nicht gelöscht werden. Bitte versuchen Sie es erneut.",
     "viewDetails": "Details anzeigen"

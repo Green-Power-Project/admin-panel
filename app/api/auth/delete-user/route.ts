@@ -21,8 +21,12 @@ export async function POST(request: NextRequest) {
     const adminApp = getAdminApp();
     if (!adminApp) {
       return NextResponse.json(
-        { error: 'Firebase Admin not initialized' },
-        { status: 500 }
+        {
+          error: 'Firebase Admin not initialized',
+          code: 'ADMIN_NOT_CONFIGURED',
+          hint: 'Set FIREBASE_SERVICE_ACCOUNT_KEY in .env.local (full JSON of your Firebase service account key) to delete users from Authentication.',
+        },
+        { status: 503 }
       );
     }
 
