@@ -18,6 +18,8 @@ import { deleteProjectCascade } from '@/lib/cascadeDelete';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
 import Pagination from '@/components/Pagination';
+import { subscribeToLatestAdminMessage } from '@/lib/chatRealtimeService';
+import type { ChatMessage, MessageStatus } from '@/lib/chatRealtimeTypes';
 
 interface Project {
   id: string;
@@ -57,6 +59,9 @@ function ProjectsContent() {
   const [deleteProjectId, setDeleteProjectId] = useState<string | null>(null);
   const [showAlert, setShowAlert] = useState(false);
   const [alertData, setAlertData] = useState<{ title: string; message: string; type: 'success' | 'error' | 'info' | 'warning' } | null>(null);
+
+  // Latest chat message per project (for list preview)
+  const [latestChatMap, setLatestChatMap] = useState<Record<string, { text: string; status: MessageStatus } | null>>({});
 
   useEffect(() => {
     if (!db) return;
@@ -156,6 +161,32 @@ function ProjectsContent() {
     setFilteredProjects(filtered);
     setCurrentPage(1); // Reset to first page when filters change
   }, [projects, filterSearch]);
+
+  // Subscribe to latest chat message only for projects on the current page
+  const currentPageProjectIds = filteredProjects.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  ).map((p) => p.id);
+
+  useEffect(() => {
+    if (currentPageProjectIds.length === 0) return;
+    const unsubscribes: (() => void)[] = [];
+    currentPageProjectIds.forEach((projectId) => {
+      const unsub = subscribeToLatestAdminMessage(projectId, (msg: ChatMessage | null) => {
+        const preview = msg
+          ? {
+              text: msg.text?.trim() || (msg.fileUrl ? (msg.fileType === 'pdf' ? '📎 PDF' : '📎 Image') : ''),
+              status: msg.status,
+            }
+          : null;
+        setLatestChatMap((prev) => ({ ...prev, [projectId]: preview }));
+      });
+      unsubscribes.push(unsub);
+    });
+    return () => {
+      unsubscribes.forEach((u) => u());
+    };
+  }, [currentPageProjectIds.join(',')]);
 
   function handleDeleteClick(projectId: string) {
     setDeleteProjectId(projectId);
@@ -329,10 +360,29 @@ function ProjectsContent() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                           </svg>
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1">
                           <div className="text-xs font-semibold text-gray-900 group-hover/link:text-green-power-700 transition-colors truncate">
                             {project.name}
                           </div>
+                          {latestChatMap[project.id] != null && (
+                            <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-gray-500 truncate">
+                              <span className="truncate">
+                                {latestChatMap[project.id]!.text
+                                  ? latestChatMap[project.id]!.text.length > 20
+                                    ? `${latestChatMap[project.id]!.text.slice(0, 20)}…`
+                                    : latestChatMap[project.id]!.text
+                                  : ''}
+                              </span>
+                              <span
+                                className={`flex-shrink-0 text-sm ${
+                                  latestChatMap[project.id]!.status === 'read' ? 'text-blue-600' : 'text-gray-500'
+                                }`}
+                                title={latestChatMap[project.id]!.status === 'read' ? t('chat.read') : t('chat.sent')}
+                              >
+                                {latestChatMap[project.id]!.status === 'read' ? '✓✓' : '✓'}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       </Link>
                     </td>

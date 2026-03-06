@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
@@ -9,8 +10,10 @@ import { db } from '@/lib/firebase';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { PROJECT_FOLDER_STRUCTURE, Folder } from '@/lib/folderStructure';
 import AlertModal from '@/components/AlertModal';
+import ProjectChatPanel from '@/components/ProjectChatPanel';
 
 import { useLanguage } from '@/contexts/LanguageContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { getProjectFolderDisplayName } from '@/lib/translations';
 
 interface Project {
@@ -247,10 +250,17 @@ function FolderCard({
       <div className={`absolute inset-0 bg-gradient-to-br ${config.gradient} opacity-0 group-hover:opacity-5 transition-opacity duration-300`}></div>
       
       <div className="relative">
-        <button
-          type="button"
+        <div
+          role="button"
+          tabIndex={0}
           onClick={handleCardClick}
-          className="w-full flex items-center justify-between px-6 py-5 text-left hover:bg-gradient-to-r hover:from-transparent hover:to-gray-50/50 transition-all duration-200"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              handleCardClick();
+            }
+          }}
+          className="w-full flex items-center justify-between px-6 py-5 text-left cursor-pointer hover:bg-gradient-to-r hover:from-transparent hover:to-gray-50/50 transition-all duration-200"
         >
           <div className="flex items-center gap-4 flex-1 min-w-0">
             {/* Icon with gradient background */}
@@ -328,7 +338,7 @@ function FolderCard({
               </div>
             )}
           </div>
-        </button>
+        </div>
         
         {/* Smooth accordion animation */}
         <div 
@@ -436,6 +446,7 @@ function ProjectDetailContent() {
   const params = useParams();
   const projectId = params.id as string;
   const { t } = useLanguage();
+  const { currentUser } = useAuth();
   const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -444,6 +455,7 @@ function ProjectDetailContent() {
   const [editingFolderPath, setEditingFolderPath] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [savingFolderName, setSavingFolderName] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
 
   const handleSaveFolderName = async (path: string, value: string) => {
     if (!projectId || !db || !project) return;
@@ -551,13 +563,46 @@ function ProjectDetailContent() {
           >
             ← {t('projectsDetail.backToProjects')}
           </Link>
-          <div>
-            <h2 className="text-2xl font-semibold text-gray-900">{project?.name}</h2>
-            {project?.year && (
-              <p className="text-sm text-gray-500 mt-1">{t('projectsDetail.year')}: {project.year}</p>
-            )}
+          <div className="flex flex-wrap items-center justify-between gap-4 mt-2">
+            <div className="min-w-0">
+              <h2 className="text-2xl font-semibold text-gray-900">{project?.name}</h2>
+              {project?.year && (
+                <p className="text-sm text-gray-500 mt-1">{t('projectsDetail.year')}: {project.year}</p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setChatOpen(true)}
+              className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white pl-3 pr-4 py-3 shadow-sm hover:shadow-md hover:border-green-power-200 hover:bg-green-power-50/70 active:scale-[0.98] transition-all duration-200 flex-shrink-0"
+            >
+              <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-gray-50 ring-1 ring-gray-100 group-hover:bg-green-power-50 group-hover:ring-green-power-100 transition-colors">
+                <Image
+                  src="/chat-icon.png"
+                  alt=""
+                  width={80}
+                  height={80}
+                  className="rounded-md object-contain"
+                />
+              </span>
+              <span className="font-semibold text-gray-800 group-hover:text-green-power-800 transition-colors">
+                {t('chat.projectChat')}
+              </span>
+              <svg className="h-5 w-5 text-gray-400 group-hover:text-green-power-500 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
           </div>
         </div>
+
+        {currentUser && (
+          <ProjectChatPanel
+            projectId={projectId}
+            projectName={project?.name}
+            isOpen={chatOpen}
+            onClose={() => setChatOpen(false)}
+            currentUserId={currentUser.uid}
+          />
+        )}
 
         {error && (
           <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm mb-6">
