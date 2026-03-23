@@ -19,7 +19,95 @@ interface OfferCatalogItem {
   price: string;
   quantityUnit: string;
   imageUrl: string | null;
+  imageStorageProvider?: 'cloudinary' | 'vps' | null;
+  imageStoragePath?: string | null;
+  imageSizeBytes?: number | null;
   order: number;
+}
+
+type OfferItemImageUploadBody = {
+  code?: string;
+  maxMb?: number;
+  error?: string;
+  imageUrl?: string;
+  storageProvider?: 'cloudinary' | 'vps';
+  storagePath?: string;
+  imageSizeBytes?: number;
+};
+
+type UploadProgressInfo = {
+  percent: number;
+  speedBps: number;
+  etaSeconds: number;
+};
+
+function formatSpeed(speedBps: number): string {
+  if (!Number.isFinite(speedBps) || speedBps <= 0) return '0 KB/s';
+  const kb = speedBps / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB/s`;
+  return `${(kb / 1024).toFixed(2)} MB/s`;
+}
+
+function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0s';
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.ceil(seconds % 60);
+  return `${mins}m ${secs}s`;
+}
+
+const DEFAULT_CLOUDINARY_MAX_MB = 9;
+const DEFAULT_VPS_MAX_MB = 150;
+
+function uploadOfferItemImageWithProgress(
+  formData: FormData,
+  onProgress: (info: UploadProgressInfo) => void
+): Promise<{ ok: boolean; body: OfferItemImageUploadBody }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/offer-items/upload-image');
+    xhr.responseType = 'json';
+    const startedAt = Date.now();
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+      const elapsedSec = Math.max((Date.now() - startedAt) / 1000, 0.001);
+      const speedBps = event.loaded / elapsedSec;
+      const remaining = Math.max(event.total - event.loaded, 0);
+      const etaSeconds = speedBps > 0 ? remaining / speedBps : 0;
+      onProgress({ percent, speedBps, etaSeconds });
+    };
+
+    xhr.onload = () => {
+      const body =
+        typeof xhr.response === 'object' && xhr.response !== null
+          ? (xhr.response as OfferItemImageUploadBody)
+          : {};
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, body });
+    };
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.send(formData);
+  });
+}
+
+function offerImageUploadErrorMessage(
+  t: (key: string, opts?: Record<string, string | number>) => string,
+  body: OfferItemImageUploadBody
+) {
+  const maxMb = typeof body.maxMb === 'number' && body.maxMb > 0 ? body.maxMb : DEFAULT_VPS_MAX_MB;
+  switch (body.code) {
+    case 'FILE_TOO_LARGE':
+      return t('offers.uploadErrorFileTooLarge', { maxMb });
+    case 'INVALID_IMAGE_TYPE':
+      return t('offers.uploadErrorInvalidType');
+    case 'VPS_STORAGE_ERROR':
+      return t('offers.uploadErrorVpsStorage');
+    case 'SERVER_CONFIG':
+      return t('offers.uploadErrorServer');
+    default:
+      return t('offers.uploadErrorGeneric');
+  }
 }
 
 function sortedChildrenOf(folders: OfferFolder[], parentId: string | null): OfferFolder[] {
@@ -75,6 +163,11 @@ export default function OfferCatalog() {
   });
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [itemImageFile, setItemImageFile] = useState<File | null>(null);
+  const [itemImagePreviewUrl, setItemImagePreviewUrl] = useState<string | null>(null);
+  const [itemUploadProgress, setItemUploadProgress] = useState<number | null>(null);
+  const [itemUploadSpeedBps, setItemUploadSpeedBps] = useState<number>(0);
+  const [itemUploadEtaSeconds, setItemUploadEtaSeconds] = useState<number>(0);
   const [folderToDelete, setFolderToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deletingFolder, setDeletingFolder] = useState(false);
 
@@ -236,6 +329,11 @@ export default function OfferCatalog() {
     setItemFolderId(folderId);
     setEditingItemId(null);
     setItemForm({ name: '', description: '', unit: '', price: '', quantityUnit: '' });
+    setItemImageFile(null);
+    setItemImagePreviewUrl(null);
+    setItemUploadProgress(null);
+    setItemUploadSpeedBps(0);
+    setItemUploadEtaSeconds(0);
     setShowItemModal(true);
   };
 
@@ -249,6 +347,11 @@ export default function OfferCatalog() {
       price: item.price,
       quantityUnit: item.quantityUnit,
     });
+    setItemImageFile(null);
+    setItemImagePreviewUrl(item.imageUrl || null);
+    setItemUploadProgress(null);
+    setItemUploadSpeedBps(0);
+    setItemUploadEtaSeconds(0);
     setShowItemModal(true);
   };
 
@@ -257,6 +360,41 @@ export default function OfferCatalog() {
     if (!name || !itemFolderId) return;
     setSaving(true);
     try {
+      let imagePayload: {
+        imageUrl?: string | null;
+        imageStorageProvider?: 'cloudinary' | 'vps' | null;
+        imageStoragePath?: string | null;
+        imageSizeBytes?: number | null;
+      } = {};
+
+      if (itemImageFile) {
+        setItemUploadProgress(0);
+        setItemUploadSpeedBps(0);
+        setItemUploadEtaSeconds(0);
+        const fd = new FormData();
+        fd.append('file', itemImageFile);
+        const uploaded = await uploadOfferItemImageWithProgress(fd, (info) => {
+          setItemUploadProgress(info.percent);
+          setItemUploadSpeedBps(info.speedBps);
+          setItemUploadEtaSeconds(info.etaSeconds);
+        });
+        setItemUploadProgress(100);
+        setItemUploadEtaSeconds(0);
+        if (!uploaded.ok || !uploaded.body.imageUrl) {
+          window.alert(offerImageUploadErrorMessage(t, uploaded.body));
+          setShowItemModal(false);
+          return;
+        }
+        imagePayload = {
+          imageUrl: uploaded.body.imageUrl,
+          imageStorageProvider: uploaded.body.storageProvider || null,
+          imageStoragePath: uploaded.body.storagePath || null,
+          imageSizeBytes: uploaded.body.imageSizeBytes ?? null,
+        };
+      } else if (!editingItemId) {
+        imagePayload.imageUrl = null;
+      }
+
       if (editingItemId) {
         await fetch(`/api/offer-items/${editingItemId}`, {
           method: 'PUT',
@@ -267,6 +405,10 @@ export default function OfferCatalog() {
             unit: itemForm.unit.trim(),
             price: itemForm.price.trim(),
             quantityUnit: itemForm.quantityUnit.trim(),
+            imageUrl: imagePayload.imageUrl,
+            imageStorageProvider: imagePayload.imageStorageProvider,
+            imageStoragePath: imagePayload.imageStoragePath,
+            imageSizeBytes: imagePayload.imageSizeBytes,
           }),
         });
       } else {
@@ -280,7 +422,10 @@ export default function OfferCatalog() {
             unit: itemForm.unit.trim(),
             price: itemForm.price.trim(),
             quantityUnit: itemForm.quantityUnit.trim(),
-            imageUrl: null,
+            imageUrl: imagePayload.imageUrl,
+            imageStorageProvider: imagePayload.imageStorageProvider,
+            imageStoragePath: imagePayload.imageStoragePath,
+            imageSizeBytes: imagePayload.imageSizeBytes,
           }),
         });
       }
@@ -288,8 +433,12 @@ export default function OfferCatalog() {
       if (selectedFolderId === itemFolderId) loadItems(itemFolderId);
     } catch (e) {
       console.error(e);
+      window.alert(t('offers.uploadErrorGeneric'));
     } finally {
       setSaving(false);
+      setItemUploadProgress(null);
+      setItemUploadSpeedBps(0);
+      setItemUploadEtaSeconds(0);
     }
   };
 
@@ -797,6 +946,48 @@ export default function OfferCatalog() {
                   placeholder={t('offers.itemQuantityUnitPlaceholder')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('offers.itemImageUpload')}</label>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif,image/avif"
+                  onChange={(e) => {
+                    const next = e.target.files?.[0] ?? null;
+                    setItemImageFile(next);
+                    if (next) setItemImagePreviewUrl(URL.createObjectURL(next));
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-power-50 file:text-green-power-700 hover:file:bg-green-power-100"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  {t('offers.uploadImageMaxHintHybrid', {
+                    cloudinaryMaxMb: DEFAULT_CLOUDINARY_MAX_MB,
+                    vpsMaxMb: DEFAULT_VPS_MAX_MB,
+                  })}
+                </p>
+                {itemImagePreviewUrl && (
+                  <img
+                    src={itemImagePreviewUrl}
+                    alt=""
+                    className="mt-2 h-20 w-20 rounded object-cover border border-gray-200"
+                  />
+                )}
+                {saving && itemUploadProgress !== null && (
+                  <div className="mt-2 space-y-1">
+                    <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+                      <div
+                        className="h-full bg-green-power-600 transition-all duration-200"
+                        style={{ width: `${itemUploadProgress}%` }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-600">
+                      {t('files.uploading')} {itemUploadProgress}%
+                    </p>
+                    <p className="text-[11px] text-gray-500">
+                      {formatSpeed(itemUploadSpeedBps)} · {formatEta(itemUploadEtaSeconds)} left
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
             <div className="flex gap-2 justify-end mt-4">

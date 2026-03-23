@@ -2,19 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { v2 as cloudinary } from 'cloudinary';
 import type { UploadApiResponse } from 'cloudinary';
+import { uploadCatalogFileToVpsStorage, getCatalogStorageLimits } from '@/lib/server/catalogStorage';
 
 export const dynamic = 'force-dynamic';
 /** Long uploads (supported on Vercel Pro / similar). */
 export const maxDuration = 300;
-
-/** Cloudinary free tier raw upload limit is 10MB; paid plans allow more — override via env if needed. */
-const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
-
-function getMaxUploadBytes(): number {
-  const raw = process.env.CATALOG_UPLOAD_MAX_BYTES;
-  if (raw && /^\d+$/.test(raw.trim())) return parseInt(raw.trim(), 10);
-  return DEFAULT_MAX_BYTES;
-}
 
 function getHttpStatusForCloudinaryError(error: unknown): number {
   if (typeof error === 'object' && error !== null && 'http_code' in error) {
@@ -32,22 +24,26 @@ function getHttpStatusForCloudinaryError(error: unknown): number {
 export type CatalogUploadErrorCode =
   | 'FILE_TOO_LARGE'
   | 'MISSING_FILE_OR_FOLDER'
+  | 'INVALID_FILE_TYPE'
   | 'CLOUDINARY_REJECTED'
   | 'SERVER_CONFIG'
   | 'DATABASE_UNAVAILABLE'
+  | 'VPS_STORAGE_ERROR'
   | 'UPLOAD_FAILED';
 
 function errorJson(
   code: CatalogUploadErrorCode,
   status: number,
-  opts?: { maxMb?: number; error?: string }
+  opts?: { maxMb?: number; error?: string; provider?: 'cloudinary' | 'vps' }
 ) {
+  const limits = getCatalogStorageLimits();
   const maxMb =
-    opts?.maxMb ?? Math.round(getMaxUploadBytes() / (1024 * 1024));
+    opts?.maxMb ?? Math.round(limits.maxTotalBytes / (1024 * 1024));
   return NextResponse.json(
     {
       code,
       maxMb,
+      ...(opts?.provider ? { provider: opts.provider } : {}),
       ...(opts?.error ? { error: opts.error } : {}),
     },
     { status }
@@ -105,17 +101,6 @@ function uploadDataUriToCloudinary(dataURI: string): Promise<UploadApiResponse> 
 
 export async function POST(request: NextRequest) {
   try {
-    if (
-      !process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ||
-      !process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY ||
-      !process.env.CLOUDINARY_API_SECRET
-    ) {
-      console.error('[catalog-entries/upload] Missing Cloudinary env vars');
-      return errorJson('SERVER_CONFIG', 500, {
-        error: 'Cloudinary credentials are not set.',
-      });
-    }
-
     const db = getAdminDb();
     if (!db) {
       return errorJson('DATABASE_UNAVAILABLE', 500, {
@@ -135,20 +120,54 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    const limits = getCatalogStorageLimits();
     const fileName = file.name || 'catalog.pdf';
+    const mime = file.type || 'application/pdf';
+    if (mime !== 'application/pdf') {
+      return errorJson('INVALID_FILE_TYPE', 400, {
+        error: 'Only PDF uploads are allowed in catalogue.',
+      });
+    }
+
     const buffer = Buffer.from(await file.arrayBuffer());
-    const maxBytes = getMaxUploadBytes();
-    const maxMb = Math.round(maxBytes / (1024 * 1024));
-    if (buffer.length > maxBytes) {
+    const maxMb = Math.round(limits.maxTotalBytes / (1024 * 1024));
+    if (buffer.length > limits.maxTotalBytes) {
       return errorJson('FILE_TOO_LARGE', 400, {
         maxMb,
         error: `File exceeds ${maxMb} MB limit`,
       });
     }
-    const mime = file.type || 'application/pdf';
-    const dataURI = `data:${mime};base64,${buffer.toString('base64')}`;
 
-    const cloudinaryResponse = await uploadDataUriToCloudinary(dataURI);
+    const useCloudinary = buffer.length <= limits.cloudinaryMaxBytes;
+    let fileUrl = '';
+    let storageProvider: 'cloudinary' | 'vps' = useCloudinary ? 'cloudinary' : 'vps';
+    let storagePath = '';
+
+    if (useCloudinary) {
+      if (
+        !process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME ||
+        !process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY ||
+        !process.env.CLOUDINARY_API_SECRET
+      ) {
+        console.error('[catalog-entries/upload] Missing Cloudinary env vars');
+        return errorJson('SERVER_CONFIG', 500, {
+          provider: 'cloudinary',
+          error: 'Cloudinary credentials are not set.',
+        });
+      }
+      const dataURI = `data:${mime};base64,${buffer.toString('base64')}`;
+      const cloudinaryResponse = await uploadDataUriToCloudinary(dataURI);
+      fileUrl = cloudinaryResponse.secure_url;
+      storagePath = cloudinaryResponse.public_id || '';
+    } else {
+      const vpsStored = await uploadCatalogFileToVpsStorage({
+        fileBuffer: buffer,
+        originalFileName: fileName,
+      });
+      fileUrl = vpsStored.fileUrl;
+      storagePath = vpsStored.storagePath;
+      storageProvider = 'vps';
+    }
 
     const existing = await db.collection('catalogEntries').where('folderId', '==', folderId).get();
     const order = existing.size;
@@ -158,8 +177,11 @@ export async function POST(request: NextRequest) {
       folderId,
       name: name.trim() || fileName,
       description: description.trim(),
-      fileUrl: cloudinaryResponse.secure_url,
+      fileUrl,
       fileName,
+      fileSizeBytes: buffer.length,
+      storageProvider,
+      storagePath,
       order,
       createdAt: now,
       updatedAt: now,
@@ -174,6 +196,8 @@ export async function POST(request: NextRequest) {
       description: docData.description,
       fileUrl: docData.fileUrl,
       fileName: docData.fileName,
+      storageProvider: docData.storageProvider,
+      fileSizeBytes: docData.fileSizeBytes,
       order,
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -182,10 +206,13 @@ export async function POST(request: NextRequest) {
     console.error('[catalog-entries/upload] POST error:', error);
     const message = getCloudinaryErrorMessage(error);
     const status = getHttpStatusForCloudinaryError(error);
-    const maxMb = Math.round(getMaxUploadBytes() / (1024 * 1024));
+    const limits = getCatalogStorageLimits();
+    const maxMb = Math.round(limits.maxTotalBytes / (1024 * 1024));
 
     let code: CatalogUploadErrorCode = 'UPLOAD_FAILED';
-    if (status === 400) {
+    if (message.includes('VPS storage')) {
+      code = 'VPS_STORAGE_ERROR';
+    } else if (status === 400) {
       code = /too large|maximum is|file size/i.test(message)
         ? 'FILE_TOO_LARGE'
         : 'CLOUDINARY_REJECTED';

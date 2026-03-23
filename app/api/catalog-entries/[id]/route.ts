@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { unlink } from 'node:fs/promises';
+import { v2 as cloudinary } from 'cloudinary';
 
 export const dynamic = 'force-dynamic';
+
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export async function PUT(
   request: NextRequest,
@@ -51,7 +59,18 @@ export async function DELETE(
       return NextResponse.json({ error: 'Entry ID is required' }, { status: 400 });
     }
 
-    await db.collection('catalogEntries').doc(id).delete();
+    const ref = db.collection('catalogEntries').doc(id);
+    const snap = await ref.get();
+    const data = snap.exists ? (snap.data() as { storageProvider?: string; storagePath?: string } | undefined) : undefined;
+
+    await ref.delete();
+
+    // Cleanup storage best-effort; entry delete should not fail if file is already gone.
+    if (data?.storageProvider === 'vps' && data.storagePath) {
+      await unlink(data.storagePath).catch(() => undefined);
+    } else if (data?.storageProvider === 'cloudinary' && data.storagePath) {
+      await cloudinary.uploader.destroy(data.storagePath, { resource_type: 'raw' }).catch(() => undefined);
+    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

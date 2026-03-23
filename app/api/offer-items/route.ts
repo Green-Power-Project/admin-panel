@@ -33,7 +33,10 @@ export async function GET(request: NextRequest) {
         unit: typeof data.unit === 'string' ? data.unit : '',
         price: typeof data.price === 'string' ? data.price : '',
         quantityUnit: typeof data.quantityUnit === 'string' ? data.quantityUnit : '',
-        imageUrl: typeof data.imageUrl === 'string' ? data.imageUrl : null,
+        imageUrl:
+          typeof data.imageUrl === 'string' && data.imageUrl
+            ? `/api/offer-items/image/${doc.id}`
+            : null,
         order: typeof data.order === 'number' ? data.order : 0,
         createdAt: data.createdAt?.toDate?.()?.toISOString() ?? null,
       };
@@ -62,6 +65,12 @@ export async function POST(request: NextRequest) {
     const price = typeof body?.price === 'string' ? body.price.trim() : '';
     const quantityUnit = typeof body?.quantityUnit === 'string' ? body.quantityUnit.trim() : '';
     const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl.trim() || null : null;
+    const imageStorageProvider =
+      body?.imageStorageProvider === 'cloudinary' || body?.imageStorageProvider === 'vps'
+        ? body.imageStorageProvider
+        : null;
+    const imageStoragePath = typeof body?.imageStoragePath === 'string' ? body.imageStoragePath.trim() : '';
+    const imageSizeBytes = typeof body?.imageSizeBytes === 'number' ? body.imageSizeBytes : null;
 
     if (!folderId || !name) {
       return NextResponse.json({ error: 'Folder ID and item name are required' }, { status: 400 });
@@ -78,6 +87,9 @@ export async function POST(request: NextRequest) {
       price,
       quantityUnit,
       imageUrl,
+      imageStorageProvider,
+      imageStoragePath: imageStoragePath || null,
+      imageSizeBytes,
       order,
       createdAt: new Date(),
       updatedAt: new Date(),

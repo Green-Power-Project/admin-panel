@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
           folderId: data.folderId ?? '',
           name: data.name ?? '',
           description: typeof data.description === 'string' ? data.description : '',
-          fileUrl: typeof data.fileUrl === 'string' ? data.fileUrl : '',
+          fileUrl: `/api/catalog-entries/file/${doc.id}`,
           fileName: typeof data.fileName === 'string' ? data.fileName : '',
           order: typeof data.order === 'number' ? data.order : 0,
           createdAt: data.createdAt?.toDate?.()?.toISOString() ?? null,

@@ -33,8 +33,9 @@ function getFirstChildId(folders: CatalogFolder[], folderId: string): string | n
   return children.length > 0 ? children[0].id : null;
 }
 
-/** Default max PDF size (MB) for UI hint — keep aligned with server `CATALOG_UPLOAD_MAX_BYTES` / default 10MB. */
-const DEFAULT_CATALOG_MAX_MB = 10;
+/** UI upload hints; keep aligned with server env defaults. */
+const DEFAULT_CLOUDINARY_MAX_MB = 9;
+const DEFAULT_VPS_MAX_MB = 150;
 
 type CatalogUploadErrorBody = {
   code?: string;
@@ -42,12 +43,67 @@ type CatalogUploadErrorBody = {
   error?: string;
 };
 
+type UploadProgressInfo = {
+  percent: number;
+  speedBps: number;
+  etaSeconds: number;
+};
+
+function formatSpeed(speedBps: number): string {
+  if (!Number.isFinite(speedBps) || speedBps <= 0) return '0 KB/s';
+  const kb = speedBps / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB/s`;
+  return `${(kb / 1024).toFixed(2)} MB/s`;
+}
+
+function formatEta(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return '0s';
+  if (seconds < 60) return `${Math.ceil(seconds)}s`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.ceil(seconds % 60);
+  return `${mins}m ${secs}s`;
+}
+
+function uploadCatalogEntryWithProgress(
+  formData: FormData,
+  onProgress: (info: UploadProgressInfo) => void
+): Promise<{ ok: boolean; status: number; body: CatalogUploadErrorBody }> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/catalog-entries/upload');
+    xhr.responseType = 'json';
+    const startedAt = Date.now();
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return;
+      const percent = Math.min(100, Math.round((event.loaded / event.total) * 100));
+      const elapsedSec = Math.max((Date.now() - startedAt) / 1000, 0.001);
+      const speedBps = event.loaded / elapsedSec;
+      const remaining = Math.max(event.total - event.loaded, 0);
+      const etaSeconds = speedBps > 0 ? remaining / speedBps : 0;
+      onProgress({ percent, speedBps, etaSeconds });
+    };
+
+    xhr.onload = () => {
+      const body =
+        typeof xhr.response === 'object' && xhr.response !== null
+          ? (xhr.response as CatalogUploadErrorBody)
+          : {};
+      resolve({ ok: xhr.status >= 200 && xhr.status < 300, status: xhr.status, body });
+    };
+
+    xhr.onerror = () => reject(new Error('Network error'));
+    xhr.onabort = () => reject(new Error('Upload aborted'));
+    xhr.send(formData);
+  });
+}
+
 function messageForCatalogUploadError(
   t: (key: string, opts?: Record<string, string | number>) => string,
   body: CatalogUploadErrorBody
 ): string {
   const maxMb =
-    typeof body.maxMb === 'number' && body.maxMb > 0 ? body.maxMb : DEFAULT_CATALOG_MAX_MB;
+    typeof body.maxMb === 'number' && body.maxMb > 0 ? body.maxMb : DEFAULT_VPS_MAX_MB;
   switch (body.code) {
     case 'FILE_TOO_LARGE':
       return t('catalog.uploadErrorFileTooLarge', { maxMb });
@@ -55,6 +111,10 @@ function messageForCatalogUploadError(
       return t('catalog.uploadErrorMissing');
     case 'CLOUDINARY_REJECTED':
       return t('catalog.uploadErrorCloudinary');
+    case 'INVALID_FILE_TYPE':
+      return t('catalog.uploadErrorInvalidType');
+    case 'VPS_STORAGE_ERROR':
+      return t('catalog.uploadErrorVpsStorage');
     case 'SERVER_CONFIG':
     case 'DATABASE_UNAVAILABLE':
       return t('catalog.uploadErrorServer');
@@ -111,6 +171,9 @@ export default function CatalogManager() {
   const [deletingEntry, setDeletingEntry] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [toastVariant, setToastVariant] = useState<'success' | 'error'>('success');
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [uploadSpeedBps, setUploadSpeedBps] = useState<number>(0);
+  const [uploadEtaSeconds, setUploadEtaSeconds] = useState<number>(0);
 
   const sortedRootFolders = useMemo(
     () => [...folders.filter((f) => !f.parentId)].sort((a, b) => a.order - b.order),
@@ -279,6 +342,9 @@ export default function CatalogManager() {
     setEditingEntryId(null);
     setEntryForm({ name: '', description: '' });
     setEntryFile(null);
+    setUploadProgress(null);
+    setUploadSpeedBps(0);
+    setUploadEtaSeconds(0);
     setShowEntryModal(true);
   };
 
@@ -290,6 +356,9 @@ export default function CatalogManager() {
       description: entry.description,
     });
     setEntryFile(null);
+    setUploadProgress(null);
+    setUploadSpeedBps(0);
+    setUploadEtaSeconds(0);
     setShowEntryModal(true);
   };
 
@@ -319,17 +388,22 @@ export default function CatalogManager() {
           setSaving(false);
           return;
         }
+        setUploadProgress(0);
+        setUploadSpeedBps(0);
+        setUploadEtaSeconds(0);
         const formData = new FormData();
         formData.append('file', entryFile);
         formData.append('folderId', entryFolderId);
         formData.append('name', name);
         formData.append('description', entryForm.description.trim());
-        const res = await fetch('/api/catalog-entries/upload', {
-          method: 'POST',
-          body: formData,
+        const { ok, body } = await uploadCatalogEntryWithProgress(formData, (info) => {
+          setUploadProgress(info.percent);
+          setUploadSpeedBps(info.speedBps);
+          setUploadEtaSeconds(info.etaSeconds);
         });
-        const body = (await res.json().catch(() => ({}))) as CatalogUploadErrorBody;
-        if (!res.ok) {
+        setUploadProgress(100);
+        setUploadEtaSeconds(0);
+        if (!ok) {
           setToastVariant('error');
           setToastMessage(messageForCatalogUploadError(t, body));
           setShowEntryModal(false);
@@ -347,6 +421,9 @@ export default function CatalogManager() {
       setShowEntryModal(false);
     } finally {
       setSaving(false);
+      setUploadProgress(null);
+      setUploadSpeedBps(0);
+      setUploadEtaSeconds(0);
     }
   };
 
@@ -847,8 +924,27 @@ export default function CatalogManager() {
                     </p>
                   )}
                   <p className="text-[11px] text-gray-500 mt-1">
-                    {t('catalog.uploadPdfMaxHint', { maxMb: DEFAULT_CATALOG_MAX_MB })}
+                    {t('catalog.uploadPdfMaxHintHybrid', {
+                      cloudinaryMaxMb: DEFAULT_CLOUDINARY_MAX_MB,
+                      vpsMaxMb: DEFAULT_VPS_MAX_MB,
+                    })}
                   </p>
+                  {saving && uploadProgress !== null && (
+                    <div className="mt-2 space-y-1">
+                      <div className="h-2 w-full rounded-full bg-gray-200 overflow-hidden">
+                        <div
+                          className="h-full bg-green-power-600 transition-all duration-200"
+                          style={{ width: `${uploadProgress}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-gray-600">
+                        {t('files.uploading')} {uploadProgress}%
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        {formatSpeed(uploadSpeedBps)} · {formatEta(uploadEtaSeconds)} left
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
