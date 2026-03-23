@@ -12,7 +12,8 @@ type CatalogFileDoc = {
 };
 
 function pdfResponse(bytes: Buffer, fileName: string) {
-  return new NextResponse(bytes, {
+  const body = new Uint8Array(bytes);
+  return new NextResponse(body, {
     status: 200,
     headers: {
       'Content-Type': 'application/pdf',

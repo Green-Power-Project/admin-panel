@@ -43,7 +43,7 @@ export async function GET(
 
     if (data.imageStorageProvider === 'vps' && data.imageStoragePath) {
       const bytes = await readFile(data.imageStoragePath);
-      return new NextResponse(bytes, {
+      return new NextResponse(new Uint8Array(bytes), {
         status: 200,
         headers: {
           'Content-Type': contentTypeFromPath(data.imageStoragePath),
