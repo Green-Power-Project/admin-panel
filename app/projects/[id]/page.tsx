@@ -7,14 +7,26 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
-import { PROJECT_FOLDER_STRUCTURE, Folder } from '@/lib/folderStructure';
+import { deleteField, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import {
+  PROJECT_FOLDER_STRUCTURE,
+  Folder,
+  mergeDynamicSubfolders,
+  sanitizeDynamicSubfolderSegment,
+  isDynamicSubfolderPath,
+} from '@/lib/folderStructure';
 import AlertModal from '@/components/AlertModal';
+import ConfirmationModal from '@/components/ConfirmationModal';
 import ProjectChatPanel from '@/components/ProjectChatPanel';
+import UnreadBadge from '@/components/UnreadBadge';
+import { useAdminChatUnreadCount } from '@/hooks/useChatUnreadCount';
+import { useAdminFolderUnreadByPath } from '@/hooks/useAdminFolderUnreadByPath';
+import { sumUnreadForTopLevelFolder } from '@/lib/projectFolderUnreadAdmin';
 
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { getProjectFolderDisplayName } from '@/lib/translations';
+import { appendDynamicSubfolderTransaction } from '@/lib/appendDynamicSubfolderTransaction';
 
 interface Project {
   id: string;
@@ -22,6 +34,8 @@ interface Project {
   year?: number;
   customerId: string;
   folderDisplayNames?: Record<string, string>;
+  /** Extra subfolder segments per top-level path, e.g. { "03_Reports": ["Site_Visit"] } */
+  dynamicSubfolders?: Record<string, string[]>;
 }
 
 export default function ProjectDetailPage() {
@@ -35,6 +49,13 @@ export default function ProjectDetailPage() {
 }
 
 const folderConfig: Record<string, { description: string; icon: string; gradient: string; color: string; subfolderBg: string }> = {
+  '01_Customer_Uploads': {
+    description: 'Files uploaded by the customer for this project',
+    icon: '📤',
+    gradient: 'from-sky-500 to-blue-600',
+    color: 'text-blue-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
   '02_Photos': {
     description: 'Progress photos and visual documentation',
     icon: '📸',
@@ -103,6 +124,7 @@ function ChildList({
   accentColor,
   subfolderBg,
   folderDisplayNames,
+  unreadCounts,
   editingFolderPath,
   setEditingFolderPath,
   editingValue,
@@ -111,12 +133,17 @@ function ChildList({
   onCancelEdit,
   onStartEdit,
   savingFolderName,
+  dynamicSubfolders,
+  onRequestDeleteDynamicSubfolder,
 }: {
   childrenFolders: Folder[];
   projectId: string;
   accentColor: string;
   subfolderBg: string;
   folderDisplayNames?: Record<string, string>;
+  unreadCounts?: Map<string, number>;
+  dynamicSubfolders?: Record<string, string[]>;
+  onRequestDeleteDynamicSubfolder?: (fullPath: string) => void;
 } & InlineEditProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -131,6 +158,10 @@ function ChildList({
       {childrenFolders.map((child, idx) => {
         const isEditing = editingFolderPath === child.path;
         const displayName = getProjectFolderDisplayName(child.path, folderDisplayNames, t);
+        const u = unreadCounts?.get(child.path) || 0;
+        const isDynamic =
+          !!onRequestDeleteDynamicSubfolder &&
+          isDynamicSubfolderPath(child.path, dynamicSubfolders);
         return (
           <div
             key={child.path}
@@ -179,6 +210,11 @@ function ChildList({
                   <div className="flex-1 text-sm font-semibold text-gray-800 group-hover:text-gray-900 transition-colors duration-200 min-w-0">
                     {displayName}
                   </div>
+                  {u > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex-shrink-0">
+                      {u}
+                    </span>
+                  )}
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); onStartEdit(child.path, displayName); }}
@@ -187,6 +223,20 @@ function ChildList({
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                   </button>
+                  {isDynamic && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onRequestDeleteDynamicSubfolder!(child.path);
+                      }}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                      title={t('projectsDetail.deleteSubfolder')}
+                      aria-label={t('projectsDetail.deleteSubfolder')}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  )}
                 </>
               )}
             </div>
@@ -201,6 +251,8 @@ function FolderCard({
   folder,
   projectId,
   folderDisplayNames,
+  totalUnreadCount,
+  folderUnreadByPath,
   editingFolderPath,
   setEditingFolderPath,
   editingValue,
@@ -209,10 +261,18 @@ function FolderCard({
   onCancelEdit,
   onStartEdit,
   savingFolderName,
+  onAddSubfolder,
+  dynamicSubfolders,
+  onRequestDeleteDynamicSubfolder,
 }: {
   folder: Folder;
   projectId: string;
   folderDisplayNames?: Record<string, string>;
+  totalUnreadCount: number;
+  folderUnreadByPath: Map<string, number>;
+  onAddSubfolder?: (parentPath: string) => void;
+  dynamicSubfolders?: Record<string, string[]>;
+  onRequestDeleteDynamicSubfolder?: (fullPath: string) => void;
 } & InlineEditProps) {
   const { t } = useLanguage();
   const router = useRouter();
@@ -315,6 +375,17 @@ function FolderCard({
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     </button>
+                    {onAddSubfolder && (
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); onAddSubfolder(folder.path); }}
+                        className="p-1.5 rounded-lg text-gray-400 hover:text-green-power-600 hover:bg-green-power-50 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 font-bold text-lg leading-none min-w-[2rem]"
+                        title={t('projectsDetail.addSubfolder')}
+                        aria-label={t('projectsDetail.addSubfolder')}
+                      >
+                        +
+                      </button>
+                    )}
                   </div>
                   <div className="text-xs text-gray-500 font-medium">{t(`folders.${folder.path}.description`) || config.description}</div>
                 </>
@@ -323,6 +394,11 @@ function FolderCard({
           </div>
           
           <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+            {totalUnreadCount > 0 && !isEditing && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-500/90 text-white text-xs font-semibold">
+                {totalUnreadCount} {t('status.unread')}
+              </span>
+            )}
             {hasChildren && !isEditing && (
               <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${config.gradient} flex items-center justify-center transition-transform duration-300 ${open ? 'rotate-180' : ''}`}>
                 <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -354,6 +430,7 @@ function FolderCard({
                 accentColor={config.gradient}
                 subfolderBg={config.subfolderBg}
                 folderDisplayNames={folderDisplayNames}
+                unreadCounts={folderUnreadByPath}
                 editingFolderPath={editingFolderPath}
                 setEditingFolderPath={setEditingFolderPath}
                 editingValue={editingValue}
@@ -362,6 +439,8 @@ function FolderCard({
                 onCancelEdit={onCancelEdit}
                 onStartEdit={onStartEdit}
                 savingFolderName={savingFolderName}
+                dynamicSubfolders={dynamicSubfolders}
+                onRequestDeleteDynamicSubfolder={onRequestDeleteDynamicSubfolder}
               />
             </div>
           )}
@@ -375,6 +454,7 @@ function ProjectFoldersSection({
   projectId,
   loading,
   folderDisplayNames,
+  folderUnreadByPath,
   editingFolderPath,
   setEditingFolderPath,
   editingValue,
@@ -383,15 +463,23 @@ function ProjectFoldersSection({
   onCancelEdit,
   onStartEdit,
   savingFolderName,
+  dynamicSubfolders,
+  onAddSubfolder,
+  onRequestDeleteDynamicSubfolder,
 }: {
   projectId: string;
   loading: boolean;
   folderDisplayNames?: Record<string, string>;
+  folderUnreadByPath: Map<string, number>;
+  dynamicSubfolders?: Record<string, string[]>;
+  onAddSubfolder: (parentPath: string) => void;
+  onRequestDeleteDynamicSubfolder: (fullPath: string) => void;
 } & InlineEditProps) {
   const { t } = useLanguage();
-  const folders = useMemo(() => PROJECT_FOLDER_STRUCTURE.filter(
-    (folder) => folder.path !== '00_New_Not_Viewed_Yet_' && folder.path !== '01_Customer_Uploads'
-  ), []);
+  const folders = useMemo(() => {
+    const base = PROJECT_FOLDER_STRUCTURE.filter((folder) => folder.path !== '00_New_Not_Viewed_Yet_');
+    return mergeDynamicSubfolders(base, dynamicSubfolders);
+  }, [dynamicSubfolders]);
   if (loading) {
     return (
       <div className="mb-6">
@@ -400,7 +488,7 @@ function ProjectFoldersSection({
           <p className="text-sm text-gray-600">{t('files.clickOnFolderToManageFiles')}</p>
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 animate-pulse">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((i) => (
             <div key={i} className="h-32 bg-gray-100 rounded-2xl"></div>
           ))}
         </div>
@@ -426,6 +514,8 @@ function ProjectFoldersSection({
               folder={folder}
               projectId={projectId}
               folderDisplayNames={folderDisplayNames}
+              totalUnreadCount={sumUnreadForTopLevelFolder(folder, folderUnreadByPath)}
+              folderUnreadByPath={folderUnreadByPath}
               editingFolderPath={editingFolderPath}
               setEditingFolderPath={setEditingFolderPath}
               editingValue={editingValue}
@@ -434,6 +524,9 @@ function ProjectFoldersSection({
               onCancelEdit={onCancelEdit}
               onStartEdit={onStartEdit}
               savingFolderName={savingFolderName}
+              onAddSubfolder={onAddSubfolder}
+              dynamicSubfolders={dynamicSubfolders}
+              onRequestDeleteDynamicSubfolder={onRequestDeleteDynamicSubfolder}
             />
           </div>
         ))}
@@ -456,6 +549,13 @@ function ProjectDetailContent() {
   const [editingValue, setEditingValue] = useState('');
   const [savingFolderName, setSavingFolderName] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
+  const [addSubfolderParent, setAddSubfolderParent] = useState<string | null>(null);
+  const [addSubfolderName, setAddSubfolderName] = useState('');
+  const [addingSubfolder, setAddingSubfolder] = useState(false);
+  const [deleteSubfolderPath, setDeleteSubfolderPath] = useState<string | null>(null);
+  const [deletingSubfolder, setDeletingSubfolder] = useState(false);
+  const folderUnreadByPath = useAdminFolderUnreadByPath(projectId);
+  const chatUnread = useAdminChatUnreadCount(projectId);
 
   const handleSaveFolderName = async (path: string, value: string) => {
     if (!projectId || !db || !project) return;
@@ -485,6 +585,124 @@ function ProjectDetailContent() {
   const handleStartEdit = (path: string, currentDisplayName: string) => {
     setEditingFolderPath(path);
     setEditingValue(currentDisplayName);
+  };
+
+  const openAddSubfolder = (parentPath: string) => {
+    setAddSubfolderParent(parentPath);
+    setAddSubfolderName('');
+  };
+
+  const handleConfirmAddSubfolder = async () => {
+    if (!projectId || !db || !project || !addSubfolderParent || !addSubfolderName.trim()) return;
+    setAddingSubfolder(true);
+    try {
+      const segment = sanitizeDynamicSubfolderSegment(addSubfolderName);
+      if (!segment) {
+        setAlertData({
+          title: t('messages.error.generic'),
+          message: t('projectsDetail.subfolderNameInvalid'),
+          type: 'error',
+        });
+        setShowAlert(true);
+        return;
+      }
+      const fullPath = `${addSubfolderParent}/${segment}`;
+      const base = PROJECT_FOLDER_STRUCTURE.filter((f) => f.path !== '00_New_Not_Viewed_Yet_');
+      const added = await appendDynamicSubfolderTransaction(
+        db,
+        projectId,
+        base,
+        addSubfolderParent,
+        segment,
+        addSubfolderName.trim(),
+        fullPath
+      );
+      if (!added) {
+        setAlertData({
+          title: t('messages.error.generic'),
+          message: t('projectsDetail.subfolderExists'),
+          type: 'error',
+        });
+        setShowAlert(true);
+        return;
+      }
+      setAddSubfolderParent(null);
+      setAddSubfolderName('');
+      setAlertData({
+        title: t('projectsDetail.subfolderCreated'),
+        message: t('projectsDetail.subfolderCreatedMessage'),
+        type: 'success',
+      });
+      setShowAlert(true);
+    } catch (err) {
+      setAlertData({
+        title: t('messages.error.generic'),
+        message: err instanceof Error ? err.message : t('projectsDetail.saveFailed'),
+        type: 'error',
+      });
+      setShowAlert(true);
+    } finally {
+      setAddingSubfolder(false);
+    }
+  };
+
+  const requestDeleteDynamicSubfolder = (fullPath: string) => {
+    setDeleteSubfolderPath(fullPath);
+  };
+
+  const executeDeleteDynamicSubfolder = async () => {
+    if (!deleteSubfolderPath || !projectId || !db || !project) return;
+    const fullPath = deleteSubfolderPath;
+    const parts = fullPath.split('/').filter(Boolean);
+    if (parts.length !== 2) {
+      setDeleteSubfolderPath(null);
+      return;
+    }
+    const [parentPath, segment] = parts;
+    if (!isDynamicSubfolderPath(fullPath, project.dynamicSubfolders)) {
+      setDeleteSubfolderPath(null);
+      return;
+    }
+    setDeletingSubfolder(true);
+    try {
+      const list = [...(project.dynamicSubfolders?.[parentPath] ?? [])];
+      const nextList = list.filter((s) => s !== segment);
+      const nextDynamic: Record<string, string[]> = { ...(project.dynamicSubfolders ?? {}) };
+      if (nextList.length === 0) {
+        delete nextDynamic[parentPath];
+      } else {
+        nextDynamic[parentPath] = nextList;
+      }
+      const nextNames = { ...(project.folderDisplayNames ?? {}) };
+      delete nextNames[fullPath];
+
+      const payload: Record<string, unknown> = {
+        folderDisplayNames: nextNames,
+      };
+      if (Object.keys(nextDynamic).length === 0) {
+        payload.dynamicSubfolders = deleteField();
+      } else {
+        payload.dynamicSubfolders = nextDynamic;
+      }
+
+      await updateDoc(doc(db, 'projects', projectId), payload);
+      setDeleteSubfolderPath(null);
+      setAlertData({
+        title: t('projectsDetail.subfolderDeleted'),
+        message: t('projectsDetail.subfolderDeletedMessage'),
+        type: 'success',
+      });
+      setShowAlert(true);
+    } catch (err) {
+      setAlertData({
+        title: t('messages.error.generic'),
+        message: err instanceof Error ? err.message : t('projectsDetail.saveFailed'),
+        type: 'error',
+      });
+      setShowAlert(true);
+    } finally {
+      setDeletingSubfolder(false);
+    }
   };
 
   useEffect(() => {
@@ -573,7 +791,7 @@ function ProjectDetailContent() {
             <button
               type="button"
               onClick={() => setChatOpen(true)}
-              className="group flex items-center gap-3 rounded-xl border border-gray-200 bg-white pl-3 pr-4 py-3 shadow-sm hover:shadow-md hover:border-green-power-200 hover:bg-green-power-50/70 active:scale-[0.98] transition-all duration-200 flex-shrink-0"
+              className="group relative flex items-center gap-3 rounded-xl border border-gray-200 bg-white pl-3 pr-4 py-3 shadow-sm hover:shadow-md hover:border-green-power-200 hover:bg-green-power-50/70 active:scale-[0.98] transition-all duration-200 flex-shrink-0"
             >
               <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg bg-gray-50 ring-1 ring-gray-100 group-hover:bg-green-power-50 group-hover:ring-green-power-100 transition-colors">
                 <Image
@@ -581,12 +799,14 @@ function ProjectDetailContent() {
                   alt=""
                   width={80}
                   height={80}
-                  className="rounded-md object-contain"
+                  className="rounded-md object-contain max-h-11 max-w-11"
+                  style={{ width: 'auto', height: 'auto' }}
                 />
               </span>
               <span className="font-semibold text-gray-800 group-hover:text-green-power-800 transition-colors">
                 {t('chat.projectChat')}
               </span>
+              <UnreadBadge count={chatUnread} className="absolute -top-1 -right-1" size="sm" />
               <svg className="h-5 w-5 text-gray-400 group-hover:text-green-power-500 transition-colors flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
@@ -615,6 +835,7 @@ function ProjectDetailContent() {
           projectId={projectId}
           loading={loading}
           folderDisplayNames={project?.folderDisplayNames}
+          folderUnreadByPath={folderUnreadByPath}
           editingFolderPath={editingFolderPath}
           setEditingFolderPath={setEditingFolderPath}
           editingValue={editingValue}
@@ -623,7 +844,24 @@ function ProjectDetailContent() {
           onCancelEdit={handleCancelEdit}
           onStartEdit={handleStartEdit}
           savingFolderName={savingFolderName}
+          dynamicSubfolders={project?.dynamicSubfolders}
+          onAddSubfolder={openAddSubfolder}
+          onRequestDeleteDynamicSubfolder={requestDeleteDynamicSubfolder}
         />
+
+      <ConfirmationModal
+        isOpen={!!deleteSubfolderPath}
+        title={t('projectsDetail.deleteSubfolderTitle')}
+        message={t('projectsDetail.deleteSubfolderConfirm')}
+        type="danger"
+        confirmText={deletingSubfolder ? t('common.loading') : t('common.delete')}
+        onConfirm={() => {
+          if (!deletingSubfolder) void executeDeleteDynamicSubfolder();
+        }}
+        onCancel={() => {
+          if (!deletingSubfolder) setDeleteSubfolderPath(null);
+        }}
+      />
 
       {/* Alert Modal */}
       <AlertModal
@@ -636,6 +874,57 @@ function ProjectDetailContent() {
           setAlertData(null);
         }}
       />
+
+      {addSubfolderParent && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-subfolder-title"
+        >
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-gray-200">
+            <h3 id="add-subfolder-title" className="text-lg font-bold text-gray-900 mb-2">
+              {t('projectsDetail.addSubfolder')}
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">{t('projectsDetail.addSubfolderHint')}</p>
+            <input
+              type="text"
+              value={addSubfolderName}
+              onChange={(e) => setAddSubfolderName(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-green-power-500 focus:border-green-power-500 mb-4"
+              placeholder={t('projectsDetail.subfolderNamePlaceholder')}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void handleConfirmAddSubfolder();
+                if (e.key === 'Escape') {
+                  setAddSubfolderParent(null);
+                  setAddSubfolderName('');
+                }
+              }}
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setAddSubfolderParent(null);
+                  setAddSubfolderName('');
+                }}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={addingSubfolder || !addSubfolderName.trim()}
+                onClick={() => void handleConfirmAddSubfolder()}
+                className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-power-600 hover:bg-green-power-700 disabled:opacity-50"
+              >
+                {addingSubfolder ? t('common.loading') : t('common.create')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

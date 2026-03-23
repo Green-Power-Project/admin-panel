@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 interface CatalogFolder {
@@ -18,6 +18,67 @@ interface CatalogEntry {
   fileUrl: string;
   fileName: string;
   order: number;
+}
+
+function sortedChildrenOf(folders: CatalogFolder[], parentId: string | null): CatalogFolder[] {
+  const list = folders.filter((f) =>
+    parentId === null ? !f.parentId : f.parentId === parentId
+  );
+  return [...list].sort((a, b) => a.order - b.order);
+}
+
+/** First direct child (by order), if any — used when a branch folder is clicked. */
+function getFirstChildId(folders: CatalogFolder[], folderId: string): string | null {
+  const children = sortedChildrenOf(folders, folderId);
+  return children.length > 0 ? children[0].id : null;
+}
+
+/** Default max PDF size (MB) for UI hint — keep aligned with server `CATALOG_UPLOAD_MAX_BYTES` / default 10MB. */
+const DEFAULT_CATALOG_MAX_MB = 10;
+
+type CatalogUploadErrorBody = {
+  code?: string;
+  maxMb?: number;
+  error?: string;
+};
+
+function messageForCatalogUploadError(
+  t: (key: string, opts?: Record<string, string | number>) => string,
+  body: CatalogUploadErrorBody
+): string {
+  const maxMb =
+    typeof body.maxMb === 'number' && body.maxMb > 0 ? body.maxMb : DEFAULT_CATALOG_MAX_MB;
+  switch (body.code) {
+    case 'FILE_TOO_LARGE':
+      return t('catalog.uploadErrorFileTooLarge', { maxMb });
+    case 'MISSING_FILE_OR_FOLDER':
+      return t('catalog.uploadErrorMissing');
+    case 'CLOUDINARY_REJECTED':
+      return t('catalog.uploadErrorCloudinary');
+    case 'SERVER_CONFIG':
+    case 'DATABASE_UNAVAILABLE':
+      return t('catalog.uploadErrorServer');
+    case 'UPLOAD_FAILED':
+      return t('catalog.uploadErrorGeneric');
+    default:
+      return t('catalog.uploadErrorGeneric');
+  }
+}
+
+function hasDescendantSelected(
+  folders: CatalogFolder[],
+  folderId: string,
+  selectedId: string | null
+): boolean {
+  if (!selectedId) return false;
+  let cur: string | null = selectedId;
+  while (cur) {
+    const f = folders.find((x) => x.id === cur);
+    if (!f) return false;
+    if (f.parentId === folderId) return true;
+    cur = f.parentId;
+  }
+  return false;
 }
 
 export default function CatalogManager() {
@@ -48,6 +109,13 @@ export default function CatalogManager() {
   const [deletingFolder, setDeletingFolder] = useState(false);
   const [entryToDelete, setEntryToDelete] = useState<{ id: string; name: string } | null>(null);
   const [deletingEntry, setDeletingEntry] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [toastVariant, setToastVariant] = useState<'success' | 'error'>('success');
+
+  const sortedRootFolders = useMemo(
+    () => [...folders.filter((f) => !f.parentId)].sort((a, b) => a.order - b.order),
+    [folders]
+  );
 
   const loadFolders = useCallback(async () => {
     setLoading(true);
@@ -87,31 +155,64 @@ export default function CatalogManager() {
     }
   }, [selectedFolderId, loadEntries]);
 
-  const rootFolders = folders.filter((f) => !f.parentId);
-  const getChildren = (parentId: string) => folders.filter((f) => f.parentId === parentId);
-
-  // Auto-select first folder when folders load: first subfolder if any, else first root
   useEffect(() => {
-    if (!loading && selectedFolderId === null && rootFolders.length > 0) {
-      const firstSubfolder = rootFolders.flatMap((r) => getChildren(r.id))[0];
-      if (firstSubfolder) {
-        setSelectedFolderId(firstSubfolder.id);
-        setExpandedFolderIds((prev) => new Set(prev).add(firstSubfolder.parentId!));
-      } else {
-        setSelectedFolderId(rootFolders[0].id);
-        setExpandedFolderIds((prev) => new Set(prev).add(rootFolders[0].id));
-      }
-    }
-  }, [loading, rootFolders, selectedFolderId, folders]);
+    if (!toastMessage) return;
+    const ms = toastVariant === 'error' ? 5500 : 3500;
+    const timer = setTimeout(() => setToastMessage(null), ms);
+    return () => clearTimeout(timer);
+  }, [toastMessage, toastVariant]);
 
-  const toggleExpandFolder = (rootId: string) => {
+  const expandAncestorsOfFolder = useCallback((folderId: string) => {
     setExpandedFolderIds((prev) => {
       const next = new Set(prev);
-      if (next.has(rootId)) next.delete(rootId);
-      else next.add(rootId);
+      let id: string | null = folderId;
+      while (id) {
+        const f = folders.find((x) => x.id === id);
+        if (!f?.parentId) break;
+        next.add(f.parentId);
+        id = f.parentId;
+      }
       return next;
     });
-  };
+  }, [folders]);
+
+  const handleFolderRowClick = useCallback(
+    (folder: CatalogFolder) => {
+      const children = sortedChildrenOf(folders, folder.id);
+      if (children.length === 0) {
+        setSelectedFolderId(folder.id);
+        expandAncestorsOfFolder(folder.id);
+      } else {
+        const firstChildId = children[0].id;
+        setExpandedFolderIds((prev) => new Set(prev).add(folder.id));
+        setSelectedFolderId(firstChildId);
+        expandAncestorsOfFolder(firstChildId);
+      }
+    },
+    [folders, expandAncestorsOfFolder]
+  );
+
+  // Auto-select when folders load: first root, or its first subfolder if any
+  useEffect(() => {
+    if (!loading && selectedFolderId === null && sortedRootFolders.length > 0) {
+      const firstRoot = sortedRootFolders[0];
+      const firstChildId = getFirstChildId(folders, firstRoot.id);
+      const targetId = firstChildId ?? firstRoot.id;
+      setSelectedFolderId(targetId);
+      setExpandedFolderIds((prev) => {
+        const next = new Set(prev);
+        if (firstChildId) next.add(firstRoot.id);
+        let id: string | null = targetId;
+        while (id) {
+          const f = folders.find((x) => x.id === id);
+          if (!f?.parentId) break;
+          next.add(f.parentId);
+          id = f.parentId;
+        }
+        return next;
+      });
+    }
+  }, [loading, sortedRootFolders, selectedFolderId, folders]);
 
   const openAddFolder = (parentId: string | null) => {
     setFolderParentId(parentId);
@@ -198,7 +299,7 @@ export default function CatalogManager() {
     setSaving(true);
     try {
       if (editingEntryId) {
-        await fetch(`/api/catalog-entries/${editingEntryId}`, {
+        const res = await fetch(`/api/catalog-entries/${editingEntryId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -206,6 +307,13 @@ export default function CatalogManager() {
             description: entryForm.description.trim(),
           }),
         });
+        if (!res.ok) {
+          await res.json().catch(() => ({}));
+          setToastVariant('error');
+          setToastMessage(t('catalog.saveEntryFailed'));
+          setShowEntryModal(false);
+          return;
+        }
       } else {
         if (!entryFile) {
           setSaving(false);
@@ -216,15 +324,27 @@ export default function CatalogManager() {
         formData.append('folderId', entryFolderId);
         formData.append('name', name);
         formData.append('description', entryForm.description.trim());
-        await fetch('/api/catalog-entries/upload', {
+        const res = await fetch('/api/catalog-entries/upload', {
           method: 'POST',
           body: formData,
         });
+        const body = (await res.json().catch(() => ({}))) as CatalogUploadErrorBody;
+        if (!res.ok) {
+          setToastVariant('error');
+          setToastMessage(messageForCatalogUploadError(t, body));
+          setShowEntryModal(false);
+          return;
+        }
+        setToastVariant('success');
+        setToastMessage(t('files.uploadSuccess'));
       }
       setShowEntryModal(false);
       if (entryFolderId) loadEntries(entryFolderId);
     } catch (e) {
       console.error(e);
+      setToastVariant('error');
+      setToastMessage(t('catalog.uploadErrorNetwork'));
+      setShowEntryModal(false);
     } finally {
       setSaving(false);
     }
@@ -248,78 +368,193 @@ export default function CatalogManager() {
     }
   };
 
-  const renderFolderTree = (parentId: string | null, level = 0) => {
-    const children = parentId === null ? rootFolders : getChildren(parentId);
-    if (!children.length) return null;
+  const selectedFolder = selectedFolderId ? folders.find((f) => f.id === selectedFolderId) : null;
+  const selectedHasChildren =
+    selectedFolderId !== null && sortedChildrenOf(folders, selectedFolderId).length > 0;
+
+  const renderFolderRow = (folder: CatalogFolder, depth: number) => {
+    const children = sortedChildrenOf(folders, folder.id);
+    const hasChildren = children.length > 0;
+    const isExpanded = expandedFolderIds.has(folder.id);
+    const isSelected = selectedFolderId === folder.id;
+    const descendantSelected = hasDescendantSelected(folders, folder.id, selectedFolderId);
+    const isPrimaryActive = isSelected;
+    const isPathAncestor = descendantSelected && !isSelected;
+
+    const isRootStyle = depth === 0;
+
     return (
-      <ul className={level === 0 ? 'space-y-1' : 'space-y-0.5 pl-3 border-l border-gray-100'}>
-        {children.map((folder) => {
-          const isRoot = folder.parentId === null;
-          const isExpanded = expandedFolderIds.has(folder.id);
-          const isSelected = selectedFolderId === folder.id;
-          const hasChildren = getChildren(folder.id).length > 0;
-          return (
-            <li key={folder.id}>
-              <div
-                className={`flex items-center justify-between gap-2 rounded-md px-2 py-1.5 cursor-pointer ${
-                  isSelected ? 'bg-green-power-50 text-green-power-700' : 'hover:bg-gray-50 text-gray-700'
-                }`}
-              >
-                <button
-                  type="button"
-                  className="flex items-center gap-1.5 flex-1 text-left"
-                  onClick={() => {
-                    setSelectedFolderId(folder.id);
-                    if (isRoot) {
-                      toggleExpandFolder(folder.id);
-                    } else if (hasChildren) {
-                      toggleExpandFolder(folder.id);
-                    }
-                  }}
+      <div key={folder.id} className={depth === 0 ? 'space-y-1' : 'mt-1.5'}>
+        <div
+          className={
+            isRootStyle
+              ? `rounded-lg transition-all duration-200 flex items-stretch gap-1 group ${
+                  isPrimaryActive
+                    ? 'bg-green-power-600 text-white shadow-md ring-1 ring-green-power-600/40'
+                    : isPathAncestor
+                      ? 'bg-green-power-100 text-green-power-800 border border-green-power-200/90'
+                      : 'text-gray-700 hover:bg-gray-50'
+                }`
+              : `flex items-center group/row rounded-lg ${
+                  isPrimaryActive
+                    ? 'bg-green-power-600 text-white shadow-sm ring-1 ring-green-power-600/30'
+                    : isPathAncestor
+                      ? 'bg-green-power-50 text-green-power-700 border border-green-power-100'
+                      : 'text-gray-600 hover:bg-gray-50'
+                }`
+          }
+        >
+          {isRootStyle ? (
+            <button
+              type="button"
+              onClick={() => handleFolderRowClick(folder)}
+              className="w-full text-left px-4 py-2.5 text-sm flex items-center gap-2 flex-1 min-w-0"
+              aria-expanded={hasChildren ? isExpanded : undefined}
+            >
+              <span className="text-lg flex-shrink-0">📁</span>
+              {hasChildren && (
+                <span
+                  className={`inline-flex w-4 flex-shrink-0 items-center justify-center text-[10px] tabular-nums ${
+                    isPrimaryActive ? 'text-white/90' : isPathAncestor ? 'text-green-power-600' : 'text-gray-400'
+                  }`}
+                  aria-hidden
                 >
-                  {hasChildren && (
-                    <span className="inline-flex w-4 h-4 items-center justify-center text-[10px] text-gray-500">
-                      {isExpanded ? '−' : '+'}
-                    </span>
-                  )}
-                  <span className="text-xs font-medium truncate">{folder.name || t('catalog.untitledFolder')}</span>
-                </button>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-                    onClick={() => openAddFolder(folder.id)}
-                    title={t('catalog.addSubfolder')}
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    className="p-1 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-                    onClick={() => openEditFolder(folder)}
-                    title={t('catalog.renameFolder')}
-                  >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    className="p-1 rounded text-red-400 hover:text-red-600 hover:bg-red-50"
-                    onClick={() => openDeleteFolderConfirm(folder)}
-                    title={t('catalog.deleteFolder')}
-                  >
-                    🗑
-                  </button>
-                </div>
-              </div>
-              {isExpanded && renderFolderTree(folder.id, level + 1)}
-            </li>
-          );
-        })}
-      </ul>
+                  {isExpanded ? '▾' : '▸'}
+                </span>
+              )}
+              <span className="flex-1 font-medium truncate">{folder.name || t('common.untitledFile')}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleFolderRowClick(folder)}
+              className={`flex-1 text-left px-3 py-2 text-xs rounded-lg transition-all duration-200 flex items-center gap-2 min-w-0 ${
+                isSelected ? 'font-semibold' : ''
+              }`}
+              aria-expanded={hasChildren ? isExpanded : undefined}
+            >
+              {hasChildren && (
+                <span
+                  className={`inline-flex w-3.5 flex-shrink-0 items-center justify-center text-[9px] ${
+                    isPrimaryActive ? 'text-white/90' : isPathAncestor ? 'text-green-power-500' : 'text-gray-400'
+                  }`}
+                  aria-hidden
+                >
+                  {isExpanded ? '▾' : '▸'}
+                </span>
+              )}
+              <span className="flex-1 truncate">{folder.name || t('common.untitledFile')}</span>
+            </button>
+          )}
+
+          <div
+            className={`flex items-center gap-0.5 flex-shrink-0 pr-1 ${
+              isRootStyle
+                ? 'opacity-0 group-hover:opacity-100 transition-opacity py-1'
+                : 'opacity-0 group-hover/row:opacity-100'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openAddFolder(folder.id);
+              }}
+              className={
+                isRootStyle
+                  ? `p-1 rounded ${
+                      isPrimaryActive
+                        ? 'hover:bg-white/20'
+                        : isPathAncestor
+                          ? 'hover:bg-green-power-200/70 text-green-power-700'
+                          : 'hover:bg-gray-200'
+                    }`
+                  : `p-1 rounded ${
+                      isPrimaryActive
+                        ? 'text-white/90 hover:bg-white/15'
+                        : isPathAncestor
+                          ? 'text-green-power-600 hover:bg-green-power-100'
+                          : 'text-gray-500 hover:bg-gray-200'
+                    }`
+              }
+              title={t('offers.addSubfolder')}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openEditFolder(folder);
+              }}
+              className={
+                isRootStyle
+                  ? `p-1 rounded ${
+                      isPrimaryActive
+                        ? 'hover:bg-white/20'
+                        : isPathAncestor
+                          ? 'hover:bg-green-power-200/70 text-green-power-700'
+                          : 'hover:bg-gray-200'
+                    }`
+                  : `p-1 rounded ${
+                      isPrimaryActive
+                        ? 'text-white/90 hover:bg-white/15'
+                        : isPathAncestor
+                          ? 'text-green-power-600 hover:bg-green-power-100'
+                          : 'text-gray-500 hover:bg-gray-200'
+                    }`
+              }
+              title={t('common.edit')}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                openDeleteFolderConfirm(folder);
+              }}
+              className={
+                isRootStyle
+                  ? `p-1 rounded ${
+                      isPrimaryActive
+                        ? 'hover:bg-white/20 hover:text-red-200'
+                        : isPathAncestor
+                          ? 'hover:bg-green-power-200/70 text-red-600'
+                          : 'text-red-500 hover:bg-red-50'
+                    }`
+                  : `p-1 rounded ${
+                      isPrimaryActive
+                        ? 'text-white/90 hover:bg-white/15 hover:text-red-200'
+                        : isPathAncestor
+                          ? 'text-red-600 hover:bg-green-power-100'
+                          : 'text-red-500 hover:bg-red-50'
+                    }`
+              }
+              title={t('offers.deleteFolder')}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {hasChildren && isExpanded && (
+          <div
+            className={depth === 0 ? 'ml-6 mt-1.5 space-y-1 border-l-2 border-gray-200 pl-4' : 'ml-4 mt-1 space-y-1 border-l border-gray-200 pl-3'}
+          >
+            {children.map((child) => renderFolderRow(child, depth + 1))}
+          </div>
+        )}
+      </div>
     );
   };
-
-  const selectedFolder = selectedFolderId ? folders.find((f) => f.id === selectedFolderId) : null;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -341,7 +576,7 @@ export default function CatalogManager() {
 
       {loading ? (
         <p className="text-sm text-gray-500 py-8">{t('common.loading')}</p>
-      ) : rootFolders.length === 0 ? (
+      ) : sortedRootFolders.length === 0 ? (
         <div className="rounded-xl border border-gray-200 bg-gradient-to-b from-gray-50 to-white p-8 sm:p-12 text-center">
           <div className="w-16 h-16 mx-auto rounded-full bg-green-power-100 flex items-center justify-center text-3xl mb-4" aria-hidden>
             📁
@@ -361,7 +596,6 @@ export default function CatalogManager() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left sidebar – same \"This folder\" card as Material Items */}
           <div className="lg:col-span-3">
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm sticky top-6">
               <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
@@ -369,120 +603,22 @@ export default function CatalogManager() {
                 <p className="text-xs text-gray-600 mt-1">{t('offers.switchWithinFolderOnly')}</p>
               </div>
               <div className="p-4 max-h-[calc(100vh-220px)] overflow-y-auto space-y-1">
-                {rootFolders.map((root) => {
-                  const children = getChildren(root.id);
-                  const isExpanded = expandedFolderIds.has(root.id);
-                  const isRootSelected = selectedFolderId === root.id;
-                  const hasChildSelected = children.some((c) => c.id === selectedFolderId);
-
-                  return (
-                    <div key={root.id} className="space-y-1">
-                      <button
-                        type="button"
-                        onClick={() => toggleExpandFolder(root.id)}
-                        className={`w-full text-left px-4 py-2.5 text-sm rounded-lg transition-all duration-200 flex items-center gap-3 group ${
-                          isRootSelected || hasChildSelected ? 'bg-green-power-500 text-white shadow-md' : 'text-gray-700 hover:bg-gray-50'
-                        }`}
-                      >
-                        <span className="text-lg">📁</span>
-                        <span className="flex-1 font-medium truncate">{root.name || t('common.untitledFile')}</span>
-                        <div
-                          className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); openAddFolder(root.id); }}
-                            className={`p-1 rounded ${isRootSelected || hasChildSelected ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
-                            title={t('offers.addSubfolder')}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); openEditFolder(root); }}
-                            className={`p-1 rounded ${isRootSelected || hasChildSelected ? 'hover:bg-white/20' : 'hover:bg-gray-200'}`}
-                            title={t('common.edit')}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                            </svg>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); openDeleteFolderConfirm(root); }}
-                            className={`p-1 rounded ${isRootSelected || hasChildSelected ? 'hover:bg-white/20 hover:text-red-200' : 'text-red-500 hover:bg-red-50'}`}
-                            title={t('offers.deleteFolder')}
-                          >
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </div>
-                      </button>
-                      {children.length > 0 && (isExpanded || hasChildSelected) && (
-                        <div className="ml-6 mt-1.5 space-y-1 border-l-2 border-gray-200 pl-4">
-                          {children.map((child) => (
-                            <div key={child.id} className="flex items-center group/row">
-                              <button
-                                type="button"
-                                onClick={() => setSelectedFolderId(child.id)}
-                                className={`flex-1 text-left px-3 py-2 text-xs rounded-lg transition-all duration-200 flex items-center gap-2 ${
-                                  selectedFolderId === child.id
-                                    ? 'bg-green-power-100 text-green-power-700 font-semibold'
-                                    : 'text-gray-600 hover:bg-gray-50'
-                                }`}
-                              >
-                                <span className="flex-1 truncate">{child.name || t('common.untitledFile')}</span>
-                              </button>
-                              <div className="flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditFolder(child)}
-                                  className="p-1 rounded text-gray-500 hover:bg-gray-200"
-                                  title={t('common.edit')}
-                                >
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                  </svg>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => openDeleteFolderConfirm(child)}
-                                  className="p-1 rounded text-red-500 hover:bg-red-50"
-                                  title={t('offers.deleteFolder')}
-                                >
-                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                  </svg>
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {sortedRootFolders.map((root) => renderFolderRow(root, 0))}
               </div>
             </div>
           </div>
 
-          {/* Right content – mirror Material Items layout, but for PDFs */}
           <div className="lg:col-span-9 space-y-6">
             {!selectedFolderId ? (
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-8 text-center">
                 <p className="text-sm text-gray-500">
-                  {rootFolders.length > 0 ? t('offers.selectSubfolder') : t('offers.noFolders')}
+                  {sortedRootFolders.length > 0 ? t('offers.selectSubfolder') : t('offers.noFolders')}
                 </p>
-                {rootFolders.length > 0 && (
+                {sortedRootFolders.length > 0 && (
                   <p className="text-xs text-gray-400 mt-1">{t('offers.switchWithinFolderOnly')}</p>
                 )}
               </div>
-            ) : selectedFolder && !selectedFolder.parentId ? (
-              /* Selected folder is a root – only allow creating subfolders, no PDFs directly */
+            ) : selectedFolder && selectedHasChildren ? (
               <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden p-8">
                 <div className="rounded-xl border border-dashed border-gray-200 bg-gradient-to-b from-gray-50 to-white py-10 px-6 text-center max-w-md mx-auto">
                   <div className="w-16 h-16 mx-auto rounded-full bg-green-power-100 flex items-center justify-center text-3xl mb-4" aria-hidden>
@@ -504,7 +640,6 @@ export default function CatalogManager() {
               </div>
             ) : (
               <>
-                {/* Add PDFs section – only for subfolders */}
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                   <div className="bg-gradient-to-r from-green-power-50 to-green-power-100 px-6 py-4 border-b border-green-power-200 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -516,7 +651,7 @@ export default function CatalogManager() {
                     </div>
                     <button
                       type="button"
-                      onClick={() => openAddEntry(selectedFolderId)}
+                      onClick={() => openAddEntry(selectedFolderId!)}
                       className="px-4 py-2 rounded-lg bg-green-power-600 text-white text-sm font-semibold hover:bg-green-power-700"
                     >
                       + {t('catalog.addEntry')}
@@ -534,7 +669,7 @@ export default function CatalogManager() {
                         <p className="text-xs text-gray-500 mb-4">{t('catalog.entriesSubtitle')}</p>
                         <button
                           type="button"
-                          onClick={() => openAddEntry(selectedFolderId)}
+                          onClick={() => openAddEntry(selectedFolderId!)}
                           className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-green-power-600 text-white text-sm font-semibold hover:bg-green-power-700"
                         >
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -597,7 +732,6 @@ export default function CatalogManager() {
         </div>
       )}
 
-      {/* Folder modal */}
       {showFolderModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4 space-y-3">
@@ -638,7 +772,6 @@ export default function CatalogManager() {
         </div>
       )}
 
-      {/* Delete folder confirm */}
       {folderToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4 space-y-3">
@@ -668,7 +801,6 @@ export default function CatalogManager() {
         </div>
       )}
 
-      {/* Entry modal */}
       {showEntryModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-4 space-y-3">
@@ -714,6 +846,9 @@ export default function CatalogManager() {
                       {t('catalog.entryFileSelected', { name: entryFile.name })}
                     </p>
                   )}
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {t('catalog.uploadPdfMaxHint', { maxMb: DEFAULT_CATALOG_MAX_MB })}
+                  </p>
                 </div>
               )}
             </div>
@@ -740,7 +875,6 @@ export default function CatalogManager() {
         </div>
       )}
 
-      {/* Delete entry confirm */}
       {entryToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4 space-y-3">
@@ -769,7 +903,18 @@ export default function CatalogManager() {
           </div>
         </div>
       )}
+
+      {toastMessage && (
+        <div
+          role={toastVariant === 'error' ? 'alert' : 'status'}
+          aria-live={toastVariant === 'error' ? 'assertive' : 'polite'}
+          className={`fixed top-6 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-lg text-white text-sm shadow-lg max-w-md text-center ${
+            toastVariant === 'error' ? 'bg-red-600' : 'bg-green-power-600'
+          }`}
+        >
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 }
-

@@ -50,10 +50,10 @@
     "projectChatDescription": "Nachrichten, Fotos und Dokumente senden. Echtzeit-Datenbank.",
     "noMessagesYet": "Noch keine Nachrichten. Senden Sie eine, um zu starten.",
     "you": "Sie",
-    "admin": "Admin",
-    "adminLabel": "Auftragnehmer",
-    "client": "Client",
-    "clientLabel": "Auftraggeber",
+    "admin": "Auftraggeber",
+    "adminLabel": "Auftraggeber",
+    "client": "Auftragnehmer",
+    "clientLabel": "Auftragnehmer",
     "customer": "Kunde",
     "reply": "Antworten",
     "copy": "Kopieren",
@@ -67,7 +67,7 @@
     "attachImageOrPdf": "Bild oder PDF anhängen",
     "open": "Öffnen",
     "download": "Herunterladen",
-    "customerTyping": "Kunde tippt...",
+    "customerTyping": "Auftragnehmer schreibt …",
     "replyLabel": "Antwort:",
     "pdfViewer": "PDF-Ansicht",
     "messageActions": "Nachrichtenaktionen"
@@ -193,7 +193,15 @@
     "entryFileSelected": "Ausgewählt: {{name}}",
     "deleteEntryTitle": "PDF-Eintrag löschen",
     "deleteEntryConfirm": "PDF-Eintrag „{{name}}“ löschen?",
-    "entryNameFallback": "Eintrag"
+    "entryNameFallback": "Eintrag",
+    "uploadPdfMaxHint": "Maximale Dateigröße: {{maxMb}} MB (Limit des Hostings). Große PDFs ggf. komprimieren.",
+    "uploadErrorFileTooLarge": "Diese Datei ist zu groß. Maximal {{maxMb}} MB. Komprimieren Sie die PDF oder teilen Sie sie in kleinere Dateien.",
+    "uploadErrorMissing": "Bitte wählen Sie eine PDF-Datei und einen Ordner aus.",
+    "uploadErrorCloudinary": "Die Datei konnte nicht verarbeitet werden. Prüfen Sie, ob es eine gültige PDF ist, und versuchen Sie es erneut.",
+    "uploadErrorServer": "Der Upload konnte wegen eines Serverproblems nicht abgeschlossen werden. Bitte später erneut versuchen oder den Support kontaktieren.",
+    "uploadErrorGeneric": "Beim Hochladen ist etwas schiefgelaufen. Bitte erneut versuchen.",
+    "uploadErrorNetwork": "Netzwerkproblem — bitte Verbindung prüfen und erneut versuchen.",
+    "saveEntryFailed": "Änderungen konnten nicht gespeichert werden. Bitte erneut versuchen."
   },
   "login": {
     "title": "Admin-Anmeldung",
@@ -227,6 +235,7 @@
   "folders": {
     "00_New_Not_Viewed_Yet_": "Neu, noch nicht angesehen",
     "01_Customer_Uploads": "Kunden-Uploads",
+    "01_Customer_Uploads.description": "Vom Kunden für dieses Projekt hochgeladene Dateien",
     "01_Customer_Uploads/Photos": "Fotos",
     "01_Customer_Uploads/Documents": "Dokumente",
     "01_Customer_Uploads/Other": "Sonstiges",
@@ -283,8 +292,8 @@
     "title": "Projekte",
     "description": "Alle Projekte verwalten",
     "newProject": "Neues Projekt",
-    "filterLabel": "Nach Projekt / Kunde / E-Mail / Jahr filtern",
-    "searchPlaceholder": "Nach Projektname, Kundennummer, E-Mail oder Jahr suchen...",
+    "filterLabel": "Nach Projekt / Projekt-Nr. / Kunde / E-Mail / Jahr filtern",
+    "searchPlaceholder": "Nach Projektname, Projektnummer, Kundennummer, E-Mail oder Jahr suchen...",
     "noProjectsFound": "Keine Projekte für die ausgewählten Filter gefunden.",
     "tryAdjustingSearch": "Versuchen Sie, Ihre Suchanfrage anzupassen.",
     "noProjectsYet": "Noch keine Projekte",
@@ -297,9 +306,13 @@
     "projectDeleted": "Projekt erfolgreich gelöscht",
     "projectDeleteFailed": "Projekt konnte nicht gelöscht werden",
     "projectName": "Projektname",
+    "projectNumberColumn": "Projekt-Nr.",
     "active": "Aktiv",
     "inactive": "Inaktiv",
-    "createFirstProjectLink": "Erstellen Sie Ihr erstes Projekt"
+    "createFirstProjectLink": "Erstellen Sie Ihr erstes Projekt",
+    "unreadTotal": "Ungelesen (Dateien + Chat)",
+    "unreadColumnTooltip": "Ungelesen gesamt: {{files}} in Projektdateien/Ordnern + {{chat}} im Projekt-Chat",
+    "unreadColumnTooltipZero": "Keine ungelesenen Projektdateien oder Chat-Nachrichten"
   },
   "customers": {
     "title": "Kunden",
@@ -444,6 +457,7 @@
     "customerMessages": {
       "title": "Kunden-Nachrichten",
       "subtitle": "{{count}} Nachricht(en) in diesem Ordner",
+      "subtitleConversations": "{{count}} Konversation(en) in diesem Ordner",
       "noMessages": "Keine Kunden-Nachrichten in diesem Ordner.",
       "new": "Neu",
       "read": "Gelesen",
@@ -454,7 +468,19 @@
       "resolvedMessage": "Nachricht als erledigt markiert. Der Kunde sieht den Erledigt-Hinweis.",
       "resolveFailed": "Als erledigt markieren ist fehlgeschlagen.",
       "commentedOnFile": "Der Kunde hat die Datei kommentiert",
-      "subject": "Betreff"
+      "mainComment": "Hauptkommentar",
+      "replyCountOne": "1 Antwort im Thread",
+      "replyCountMany": "{{count}} Antworten im Thread",
+      "subject": "Betreff",
+      "fromCustomer": "Kunde",
+      "fromTeam": "Team-Antwort",
+      "adminTeam": "Admin",
+      "replyLabel": "Antwort an Kunden",
+      "replyPlaceholder": "Antwort schreiben…",
+      "sendReply": "Antwort senden",
+      "replySentTitle": "Antwort gesendet",
+      "replySentMessage": "Ihre Antwort ist für den Kunden im Kommentarverlauf sichtbar.",
+      "replyFailed": "Antwort konnte nicht gesendet werden."
     }
   },
   "tracking": {
@@ -712,7 +738,19 @@
     "saveFailed": "Speichern fehlgeschlagen",
     "year": "Jahr",
     "folderNameSaved": "Gespeichert",
-    "folderNameSavedMessage": "Ordnername aktualisiert. Das Kundenportal zeigt diesen Namen an."
+    "folderNameSavedMessage": "Ordnername aktualisiert. Das Kundenportal zeigt diesen Namen an.",
+    "addSubfolder": "Unterordner hinzufügen",
+    "addSubfolderHint": "Legt einen neuen Unterordner unter dieser Kategorie für alle an (Admin und Kunde). Nur Buchstaben und Zahlen im gespeicherten Pfad.",
+    "subfolderNamePlaceholder": "z. B. Baustellenbesuch März",
+    "subfolderNameInvalid": "Bitte einen gültigen Namen eingeben (Buchstaben, Zahlen, Leerzeichen).",
+    "subfolderExists": "Ein Unterordner mit diesem Namen existiert bereits.",
+    "subfolderCreated": "Unterordner erstellt",
+    "subfolderCreatedMessage": "Der neue Unterordner ist im Kundenportal und in der Dateiverwaltung verfügbar.",
+    "deleteSubfolder": "Unterordner entfernen",
+    "deleteSubfolderTitle": "Diesen Unterordner entfernen?",
+    "deleteSubfolderConfirm": "Der Unterordner wird für alle aus dem Projekt entfernt (Kundenportal und Dateiverwaltung). Bereits gespeicherte Dateien in diesem Ordner werden nicht aus dem Speicher gelöscht.",
+    "subfolderDeleted": "Unterordner entfernt",
+    "subfolderDeletedMessage": "Der Unterordner erscheint nicht mehr im Projekt. Sie können ihn bei Bedarf mit + neu anlegen."
   },
   "projectsEdit": {
     "title": "Projekt bearbeiten",

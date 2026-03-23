@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
@@ -26,7 +26,8 @@ import {
 import {
   PROJECT_FOLDER_STRUCTURE,
   isValidFolderPath,
-  getScopeFolder,
+  isValidFolderPathForProject,
+  getScopeFolderForProject,
   getDefaultFilesFolderPath,
   type Folder,
 } from '@/lib/folderStructure';
@@ -38,6 +39,7 @@ import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
 import Pagination from '@/components/Pagination';
 import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
 import { deleteFileRelatedData } from '@/lib/cascadeDelete';
+import { groupMessagesByThread, sortThreadsNewestFirst } from '@/lib/customerMessageThreads';
 interface Project {
   id: string;
   name: string;
@@ -45,6 +47,7 @@ interface Project {
   customerId?: string;
   folderDisplayNames?: Record<string, string>;
   customFolders?: string[];
+  dynamicSubfolders?: Record<string, string[]>;
 }
 
 interface FileMetadata {
@@ -67,6 +70,10 @@ interface CustomerMessageItem {
   subject?: string;
   fileName?: string;
   filePath?: string;
+  authorType?: string;
+  parentMessageId?: string;
+  threadRootId?: string;
+  messageType?: string;
 }
 
 function getFolderSegments(folderPath: string): string[] {
@@ -166,6 +173,10 @@ function ProjectFilesContent() {
   const [customersMap, setCustomersMap] = useState<Map<string, string>>(new Map());
   const [customerMessagesList, setCustomerMessagesList] = useState<CustomerMessageItem[]>([]);
   const [resolvingMessageId, setResolvingMessageId] = useState<string | null>(null);
+  const [adminReplyDrafts, setAdminReplyDrafts] = useState<Record<string, string>>({});
+  const [submittingAdminReplyThreadId, setSubmittingAdminReplyThreadId] = useState<string | null>(null);
+  /** Which customer-message threads are expanded (accordion). */
+  const [expandedCustomerThreads, setExpandedCustomerThreads] = useState<Set<string>>(new Set());
   const [selectedFolder, setSelectedFolder] = useState<string>(() => {
     if (folderFromUrl) {
       if (isValidFolderPath(folderFromUrl)) return folderFromUrl;
@@ -196,6 +207,24 @@ function ProjectFilesContent() {
   const [viewerFile, setViewerFile] = useState<FileMetadata | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [contentReady, setContentReady] = useState(false);
+
+  /** Mark file as viewed by admin so project unread counts drop. */
+  useEffect(() => {
+    if (!viewerFile || !db || !projectId || !project?.customerId) return;
+    const docId = viewerFile.cloudinaryPublicId.replace(/\//g, '__');
+    setDoc(
+      doc(db, 'adminFileReadStatus', docId),
+      {
+        adminRead: true,
+        filePath: viewerFile.cloudinaryPublicId,
+        projectId,
+        customerId: project.customerId,
+        readAt: serverTimestamp(),
+      },
+      { merge: true }
+    ).catch((e) => console.error('adminFileReadStatus', e));
+  }, [viewerFile?.cloudinaryPublicId, projectId, project?.customerId]);
+
   // Avoid flash of folder UI (sidebar with "Emails" etc.) during navigation – show content only after a short delay once project is loaded
   useEffect(() => {
     if (!loading && project) {
@@ -211,13 +240,10 @@ function ProjectFilesContent() {
   useEffect(() => {
     const folder = searchParams.get('folder') || '';
     if (!folder) return;
-    const isCustom = isCustomFolderPath(folder);
-    if (isValidFolderPath(folder)) {
-      setSelectedFolder(folder);
-    } else if (isCustom && project?.customFolders?.includes(folder)) {
+    if (isValidFolderPathForProject(folder, project)) {
       setSelectedFolder(folder);
     }
-  }, [searchParams, project?.customFolders]);
+  }, [searchParams, project]);
 
   useEffect(() => {
     if (!projectId || !db) return;
@@ -306,6 +332,10 @@ function ProjectFilesContent() {
           subject: (data.subject as string) || undefined,
           fileName: (data.fileName as string) || undefined,
           filePath: (data.filePath as string) || undefined,
+          authorType: (data.authorType as string) || 'customer',
+          parentMessageId: (data.parentMessageId as string) || undefined,
+          threadRootId: (data.threadRootId as string) || undefined,
+          messageType: (data.messageType as string) || undefined,
         };
       });
       list.sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0));
@@ -350,6 +380,64 @@ function ProjectFilesContent() {
     }
   }
 
+  async function handleAdminReply(thread: CustomerMessageItem[]) {
+    if (!db || !currentUser?.uid || thread.length === 0) return;
+    const root = thread[0];
+    const last = thread[thread.length - 1];
+    const rootId = root.id;
+    const text = (adminReplyDrafts[rootId] || '').trim();
+    if (!text) return;
+    setSubmittingAdminReplyThreadId(rootId);
+    try {
+      await addDoc(collection(db, 'customerMessages'), {
+        projectId,
+        folderPath: selectedFolder,
+        customerId: root.customerId,
+        message: text,
+        authorType: 'admin',
+        parentMessageId: last.id,
+        threadRootId: root.threadRootId || root.id,
+        fileName: root.fileName,
+        filePath: root.filePath,
+        messageType: 'admin_reply',
+        status: 'read',
+        readAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+      });
+      setAdminReplyDrafts((prev) => ({ ...prev, [rootId]: '' }));
+      setAlertData({
+        title: t('files.customerMessages.replySentTitle'),
+        message: t('files.customerMessages.replySentMessage'),
+        type: 'success',
+      });
+      setShowAlert(true);
+    } catch (err) {
+      console.error('Error sending admin reply:', err);
+      setAlertData({
+        title: t('common.status'),
+        message: t('files.customerMessages.replyFailed'),
+        type: 'error',
+      });
+      setShowAlert(true);
+    } finally {
+      setSubmittingAdminReplyThreadId(null);
+    }
+  }
+
+  const customerMessageThreads = useMemo(
+    () => sortThreadsNewestFirst(groupMessagesByThread(customerMessagesList)),
+    [customerMessagesList]
+  );
+
+  function toggleCustomerThread(rootId: string) {
+    setExpandedCustomerThreads((prev) => {
+      const next = new Set(prev);
+      if (next.has(rootId)) next.delete(rootId);
+      else next.add(rootId);
+      return next;
+    });
+  }
+
   const clearSuccessMessage = () => {
     setUploadSuccess('');
     setSuccessFolder('');
@@ -380,7 +468,7 @@ function ProjectFilesContent() {
 
   async function handleUploadConfirm() {
     if (!selectedFiles.length || !selectedFiles[0] || !selectedFolder || !projectId || !db) return;
-    const validPath = isValidFolderPath(selectedFolder) || (isCustomFolderPath(selectedFolder) && project?.customFolders?.includes(selectedFolder));
+    const validPath = isValidFolderPathForProject(selectedFolder, project);
     if (!validPath) {
       setUploadError(t('files.invalidFolderPath'));
       return;
@@ -473,7 +561,7 @@ function ProjectFilesContent() {
 
   const paginatedFiles = files.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const totalPages = Math.max(1, Math.ceil(files.length / itemsPerPage));
-  const scopeFolder = getScopeFolder(selectedFolder);
+  const scopeFolder = getScopeFolderForProject(selectedFolder, project?.dynamicSubfolders);
 
   // During loading: no AdminLayout so we don’t show a second header/sidebar (avoids duplicate admin bar during transition)
   if (loading) {
@@ -779,72 +867,173 @@ function ProjectFilesContent() {
               </div>
             </div>
 
-            {/* Customer messages in this folder */}
+            {/* Customer messages in this folder — scrollable list + accordion per thread */}
             <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="px-6 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
                 <h3 className="text-base font-bold text-gray-900">{t('files.customerMessages.title')}</h3>
-                <p className="text-xs text-gray-600">{t('files.customerMessages.subtitle', { count: customerMessagesList.length })}</p>
+                <p className="text-xs text-gray-600">
+                  {t('files.customerMessages.subtitleConversations', { count: customerMessageThreads.length })}
+                </p>
               </div>
-              <div className="p-4">
+              <div className="p-3 max-h-[min(70vh,560px)] overflow-y-auto overscroll-contain">
                 {customerMessagesList.length === 0 ? (
                   <p className="text-sm text-gray-500 py-6 text-center">{t('files.customerMessages.noMessages')}</p>
                 ) : (
-                  <ul className="divide-y divide-gray-200 space-y-0">
-                    {customerMessagesList.map((msg) => (
-                      <li key={msg.id} className="py-3 first:pt-0">
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div className="min-w-0 flex-1">
-                            {msg.fileName && (
-                              <p className="text-xs font-semibold text-blue-800 mb-1">
-                                ✅ {t('files.customerMessages.commentedOnFile')}: {msg.fileName}
+                  <ul className="space-y-2">
+                    {customerMessageThreads.map((thread) => {
+                      const root = thread[0];
+                      const replies = thread.slice(1);
+                      const rootId = root.id;
+                      const draft = adminReplyDrafts[rootId] || '';
+                      const isOpen = expandedCustomerThreads.has(rootId);
+                      return (
+                        <li key={rootId} className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
+                          <button
+                            type="button"
+                            onClick={() => toggleCustomerThread(rootId)}
+                            className="w-full flex items-start gap-2 sm:gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                            aria-expanded={isOpen}
+                          >
+                            <span className="text-gray-500 shrink-0 mt-0.5" aria-hidden>
+                              {isOpen ? (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              ) : (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                              )}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                {t('files.customerMessages.mainComment')}
                               </p>
-                            )}
-                            {msg.subject && (
-                              <p className="text-xs text-gray-700 mb-1">{t('files.customerMessages.subject')}: {msg.subject}</p>
-                            )}
-                            <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{msg.message}</p>
-                            <p className="text-xs text-gray-500 mt-1">
-                              {customersMap.get(msg.customerId) || msg.customerId}
-                              {msg.createdAt && ` · ${msg.createdAt.toLocaleString()}`}
-                            </p>
-                            {msg.status === 'resolved' ? (
-                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                                ✅ {t('files.customerMessages.resolved')}
-                              </span>
-                            ) : msg.status === 'read' ? (
-                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                ✅ {t('files.customerMessages.read')}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
-                                ✅ {t('files.customerMessages.new')}
-                              </span>
-                            )}
-                            {msg.status !== 'resolved' && (
-                              <div className="mt-2 flex flex-wrap gap-2">
-                                {msg.status === 'unread' && (
+                              {root.fileName && (
+                                <p className="text-xs font-semibold text-blue-800 truncate mt-0.5">
+                                  {t('files.customerMessages.commentedOnFile')}: {root.fileName}
+                                </p>
+                              )}
+                              {root.subject && (
+                                <p className="text-xs text-gray-600 truncate">{t('files.customerMessages.subject')}: {root.subject}</p>
+                              )}
+                              <p className="text-sm text-gray-900 line-clamp-2 mt-1">{root.message}</p>
+                              <p className="text-xs text-gray-500 mt-1">
+                                {customersMap.get(root.customerId) || root.customerId}
+                                {root.createdAt && ` · ${root.createdAt.toLocaleString()}`}
+                              </p>
+                              {replies.length > 0 && (
+                                <p className="text-xs text-green-power-700 font-medium mt-1">
+                                  {replies.length === 1
+                                    ? t('files.customerMessages.replyCountOne')
+                                    : t('files.customerMessages.replyCountMany', { count: replies.length })}
+                                </p>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1 shrink-0">
+                              {root.status === 'resolved' ? (
+                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800">
+                                  {t('files.customerMessages.resolved')}
+                                </span>
+                              ) : root.status === 'read' ? (
+                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
+                                  {t('files.customerMessages.read')}
+                                </span>
+                              ) : (
+                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">
+                                  {t('files.customerMessages.new')}
+                                </span>
+                              )}
+                            </div>
+                          </button>
+
+                          {isOpen && (
+                            <div className="border-t border-gray-200 bg-gray-50/90 px-3 py-3 space-y-3">
+                              <div className="rounded-lg border border-gray-100 bg-white p-3">
+                                <p className="text-xs font-semibold text-gray-700 mb-2">{t('files.customerMessages.fromCustomer')}</p>
+                                <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{root.message}</p>
+                                <p className="text-xs text-gray-500 mt-2">
+                                  {customersMap.get(root.customerId) || root.customerId}
+                                  {root.createdAt && ` · ${root.createdAt.toLocaleString()}`}
+                                </p>
+                                {root.status !== 'resolved' && (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {root.status === 'unread' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleMarkMessageAsRead(root.id)}
+                                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                                      >
+                                        {t('files.customerMessages.markAsRead')}
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleResolveMessage(root.id)}
+                                      disabled={resolvingMessageId === root.id}
+                                      className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50"
+                                    >
+                                      {resolvingMessageId === root.id ? t('common.loading') : t('files.customerMessages.resolve')}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {replies.map((msg) => (
+                                <div
+                                  key={msg.id}
+                                  className={`rounded-lg border px-3 py-2.5 ${
+                                    msg.authorType === 'admin'
+                                      ? 'bg-green-power-50/50 border-green-power-200 border-l-4 border-l-green-power-500'
+                                      : 'bg-white border-gray-200 border-l-4 border-l-gray-300'
+                                  }`}
+                                >
+                                  <p className="text-xs font-semibold text-gray-700 mb-1">
+                                    {msg.authorType === 'admin'
+                                      ? t('files.customerMessages.fromTeam')
+                                      : t('files.customerMessages.fromCustomer')}
+                                  </p>
+                                  <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{msg.message}</p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {msg.authorType === 'admin'
+                                      ? t('files.customerMessages.adminTeam')
+                                      : customersMap.get(msg.customerId) || msg.customerId}
+                                    {msg.createdAt && ` · ${msg.createdAt.toLocaleString()}`}
+                                  </p>
+                                </div>
+                              ))}
+
+                              <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                <label className="block text-xs font-medium text-gray-700 mb-1" htmlFor={`admin-reply-${rootId}`}>
+                                  {t('files.customerMessages.replyLabel')}
+                                </label>
+                                <textarea
+                                  id={`admin-reply-${rootId}`}
+                                  value={draft}
+                                  onChange={(e) => setAdminReplyDrafts((prev) => ({ ...prev, [rootId]: e.target.value }))}
+                                  rows={3}
+                                  maxLength={2000}
+                                  disabled={submittingAdminReplyThreadId === rootId}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 resize-y min-h-[4.5rem] max-h-40 bg-white disabled:opacity-50"
+                                  placeholder={t('files.customerMessages.replyPlaceholder')}
+                                />
+                                <div className="mt-2 flex items-center justify-between gap-2">
+                                  <span className="text-xs text-gray-400">{draft.length}/2000</span>
                                   <button
                                     type="button"
-                                    onClick={() => handleMarkMessageAsRead(msg.id)}
-                                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                                    onClick={() => handleAdminReply(thread)}
+                                    disabled={!draft.trim() || submittingAdminReplyThreadId === rootId}
+                                    className="px-4 py-2 text-xs font-medium rounded-lg bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50 disabled:cursor-not-allowed"
                                   >
-                                    {t('files.customerMessages.markAsRead')}
+                                    {submittingAdminReplyThreadId === rootId ? t('common.loading') : t('files.customerMessages.sendReply')}
                                   </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handleResolveMessage(msg.id)}
-                                  disabled={resolvingMessageId === msg.id}
-                                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50"
-                                >
-                                  {resolvingMessageId === msg.id ? t('common.loading') : t('files.customerMessages.resolve')}
-                                </button>
+                                </div>
                               </div>
-                            )}
-                          </div>
-                        </div>
-                      </li>
-                    ))}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

@@ -2,6 +2,13 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
+  // Allow larger multipart bodies (catalogue PDF uploads). Server Actions default is 1mb; route
+  // handlers also respect this in many Next.js setups.
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '50mb',
+    },
+  },
   // Improve chunk loading reliability
   webpack: (config, { dev, isServer }) => {
     if (dev) {
@@ -25,10 +32,8 @@ const nextConfig = {
     maxInactiveAge: 25 * 1000,
     pagesBufferLength: 2,
   },
-  // Enable prefetching for better navigation performance
-  experimental: {
-    optimizePackageImports: ['@/components', '@/contexts', 'firebase/firestore', 'firebase/auth'],
-  },
+  // Do NOT add path aliases like @/components here — optimizePackageImports only applies to
+  // specific node_modules packages. Wrong entries cause webpack to emit require("./undefined").
   // Optimize images
   images: {
     formats: ['image/avif', 'image/webp'],

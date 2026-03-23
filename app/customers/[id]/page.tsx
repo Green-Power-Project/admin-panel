@@ -23,6 +23,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 interface Project {
   id: string;
   name: string;
+  projectNumber?: string;
   year?: number;
 }
 
@@ -143,6 +144,7 @@ function CustomerDetailContent() {
             projectsList.push({ 
               id: doc.id, 
               name: data.name || t('customersDetail.unnamedProject'),
+              projectNumber: data.projectNumber,
               year: data.year,
             } as Project);
           }
@@ -551,6 +553,11 @@ function CustomerDetailContent() {
                         <h4 className="text-lg font-bold text-gray-900 mb-2 group-hover:text-green-power-700 transition-colors line-clamp-1">
                           {project.name}
                         </h4>
+                        {project.projectNumber?.trim() && (
+                          <p className="text-sm font-mono text-gray-700 mb-2 tabular-nums">
+                            {t('projects.projectNumberColumn')}: {project.projectNumber.trim()}
+                          </p>
+                        )}
                         {project.year && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">
                             <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">

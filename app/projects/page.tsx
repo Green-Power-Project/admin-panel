@@ -20,10 +20,13 @@ import AlertModal from '@/components/AlertModal';
 import Pagination from '@/components/Pagination';
 import { subscribeToLatestAdminMessage } from '@/lib/chatRealtimeService';
 import type { ChatMessage, MessageStatus } from '@/lib/chatRealtimeTypes';
+import UnreadBadge from '@/components/UnreadBadge';
+import { useAdminProjectUnreadSummary } from '@/hooks/useAdminProjectUnreadSummary';
 
 interface Project {
   id: string;
   name: string;
+  projectNumber?: string;
   year?: number;
   customerId: string;
   customerNumber?: string;
@@ -39,6 +42,30 @@ export default function ProjectsPage() {
         <ProjectsContent />
       </AdminLayout>
     </ProtectedRoute>
+  );
+}
+
+function AdminProjectUnreadCell({ projectId }: { projectId: string }) {
+  const { total, folderUnread, chatUnread, loading } = useAdminProjectUnreadSummary(projectId);
+  const { t } = useLanguage();
+  const title =
+    total === 0
+      ? t('projects.unreadColumnTooltipZero')
+      : t('projects.unreadColumnTooltip', { files: folderUnread, chat: chatUnread });
+  if (loading) {
+    return <span className="text-[11px] text-gray-400">…</span>;
+  }
+  if (total === 0) {
+    return (
+      <span className="text-[11px] text-gray-500 tabular-nums" title={title}>
+        0
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex justify-center" title={title}>
+      <UnreadBadge count={total} />
+    </span>
   );
 }
 
@@ -146,11 +173,13 @@ function ProjectsContent() {
     if (term) {
       filtered = filtered.filter((project) => {
         const name = project.name.toLowerCase();
+        const projectNumber = (project.projectNumber || '').toLowerCase();
         const customerNumber = project.customerNumber?.toLowerCase() || '';
         const customerEmail = project.customerEmail?.toLowerCase() || '';
         const year = project.year?.toString() || '';
         return (
           name.includes(term) ||
+          projectNumber.includes(term) ||
           customerNumber.includes(term) ||
           customerEmail.includes(term) ||
           year.includes(term)
@@ -300,6 +329,7 @@ function ProjectsContent() {
                   <div className="h-5 w-32 rounded-full bg-gray-200" />
                   <div className="h-3 w-40 rounded bg-gray-200" />
                   <div className="h-3 w-32 rounded bg-gray-200" />
+                  <div className="h-3 w-24 rounded bg-gray-200" />
                   <div className="h-3 w-28 rounded bg-gray-200" />
                   <div className="h-3 w-20 rounded bg-gray-200" />
                 </div>
@@ -328,19 +358,25 @@ function ProjectsContent() {
                 <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[30%]">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[24%]">
                       {t('projects.projectName')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[11%]">
+                      {t('projects.projectNumberColumn')}
+                    </th>
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[8%]">
                       {t('projects.year')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
+                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[20%]">
                       {t('projects.customer')}
                     </th>
                     <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
                       {t('common.status')}
                     </th>
-                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
+                    <th className="px-3 py-2 text-center text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                      {t('projects.unreadTotal')}
+                    </th>
+                    <th className="px-3 py-2 text-right text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
                       {t('common.actions')}
                     </th>
                   </tr>
@@ -387,6 +423,11 @@ function ProjectsContent() {
                       </Link>
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span className="text-xs font-mono font-medium text-gray-800 tabular-nums">
+                        {project.projectNumber?.trim() ? project.projectNumber.trim() : '—'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
                       <div className="flex items-center gap-1.5 text-xs text-gray-600">
                         {project.year ? (
                           <>
@@ -414,6 +455,9 @@ function ProjectsContent() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${project.enabled !== false ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
                         {project.enabled !== false ? t('projects.active') : t('projects.inactive')}
                       </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center align-middle">
+                      <AdminProjectUnreadCell projectId={project.id} />
                     </td>
                     <td className="px-3 py-2.5 whitespace-nowrap text-right">
                       <div 

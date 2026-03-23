@@ -199,3 +199,84 @@ export function getVisibleFolderPathsForEdit(): string[] {
   });
   return paths;
 }
+
+/**
+ * Merge Firestore `dynamicSubfolders` into the folder tree (same semantics as window-app).
+ */
+export function mergeDynamicSubfolders(
+  base: Folder[],
+  dynamicSubfolders?: Record<string, string[]> | null
+): Folder[] {
+  if (!dynamicSubfolders || Object.keys(dynamicSubfolders).length === 0) {
+    return base.map((f) => ({
+      ...f,
+      children: f.children ? f.children.map((c) => ({ ...c })) : undefined,
+    }));
+  }
+  return base.map((folder) => {
+    const extra = dynamicSubfolders[folder.path];
+    const existingChildren = folder.children ? folder.children.map((c) => ({ ...c })) : [];
+    if (!extra?.length) {
+      return { ...folder, children: existingChildren.length ? existingChildren : undefined };
+    }
+    const existingPaths = new Set(existingChildren.map((c) => c.path));
+    const dynamicChildren: Folder[] = extra
+      .filter((seg) => seg && !existingPaths.has(`${folder.path}/${seg}`))
+      .map((seg) => ({
+        name: seg,
+        path: `${folder.path}/${seg}`,
+      }));
+    if (!dynamicChildren.length) {
+      return { ...folder, children: existingChildren.length ? existingChildren : undefined };
+    }
+    const merged = [...existingChildren, ...dynamicChildren].sort((a, b) => a.path.localeCompare(b.path));
+    return { ...folder, children: merged };
+  });
+}
+
+export function isDynamicSubfolderPath(
+  folderPath: string,
+  dynamicSubfolders?: Record<string, string[]> | null
+): boolean {
+  if (!dynamicSubfolders) return false;
+  const parts = folderPath.split('/').filter(Boolean);
+  if (parts.length !== 2) return false;
+  const [parent, seg] = parts;
+  const list = dynamicSubfolders[parent];
+  return Array.isArray(list) && list.includes(seg);
+}
+
+export function isValidFolderPathForProject(
+  folderPath: string,
+  project: { dynamicSubfolders?: Record<string, string[]>; customFolders?: string[] } | null | undefined
+): boolean {
+  if (isValidFolderPath(folderPath)) return true;
+  if (project?.customFolders?.includes(folderPath)) return true;
+  if (isDynamicSubfolderPath(folderPath, project?.dynamicSubfolders)) return true;
+  return false;
+}
+
+/**
+ * Same as getScopeFolder but includes dynamic subfolders in the merged tree.
+ */
+export function getScopeFolderForProject(
+  selectedFolderPath: string,
+  dynamicSubfolders?: Record<string, string[]> | null
+): Folder | null {
+  const merged = mergeDynamicSubfolders(VISIBLE_FOLDER_STRUCTURE, dynamicSubfolders);
+  for (const folder of merged) {
+    if (selectedFolderPath === folder.path) return folder;
+    if (folder.children?.some((c) => c.path === selectedFolderPath)) return folder;
+  }
+  return null;
+}
+
+/** Sanitize user input for a dynamic subfolder segment (must match window-app custom folder rules). */
+export function sanitizeDynamicSubfolderSegment(name: string): string {
+  return name
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '') || 'New_Folder';
+}

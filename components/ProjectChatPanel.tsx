@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useProjectChat } from '@/hooks/useProjectChat';
 import { realtimeDb } from '@/lib/firebase';
 import { deleteMessage, updateMessageText } from '@/lib/chatRealtimeService';
 import type { ChatMessage, ReplyRef } from '@/lib/chatRealtimeTypes';
+import { chatRoleLabelGerman, CHAT_TYPING_AUFTRAGNEHMER } from '@/lib/chatRoleLabelsDe';
 
 interface ProjectChatPanelProps {
   projectId: string;
@@ -44,6 +45,15 @@ export default function ProjectChatPanel({
   const [deleting, setDeleting] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
+
+  const focusMessageInput = useCallback(() => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        messageInputRef.current?.focus({ preventScroll: true });
+      });
+    });
+  }, []);
 
   // Scroll to latest message when messages change (e.g. new message arrives).
   useEffect(() => {
@@ -61,6 +71,13 @@ export default function ProjectChatPanel({
     return () => cancelAnimationFrame(raf);
   }, [isOpen]);
 
+  // Focus message field when chat opens and after actions (same UX as customer portal).
+  useEffect(() => {
+    if (!isOpen) return;
+    const id = window.setTimeout(() => focusMessageInput(), 0);
+    return () => clearTimeout(id);
+  }, [isOpen, projectId, focusMessageInput]);
+
   useEffect(() => {
     if (!isOpen) {
       setReplyTo(null);
@@ -76,6 +93,7 @@ export default function ProjectChatPanel({
     setInputText('');
     setReplyTo(null);
     setTypingThrottled(false);
+    focusMessageInput();
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -92,6 +110,7 @@ export default function ProjectChatPanel({
       setReplyTo(null);
     }
     e.target.value = '';
+    focusMessageInput();
   };
 
   const handleCopy = async (msg: ChatMessage) => {
@@ -195,7 +214,11 @@ export default function ProjectChatPanel({
                 msg={msg}
                 isOwn={msg.senderType === 'admin'}
                 formatTime={formatTime}
-                onReply={() => { setReplyTo({ messageId: msg.messageId, text: msg.text, fileType: msg.fileType }); setOpenMenuId(null); }}
+                onReply={() => {
+                  setReplyTo({ messageId: msg.messageId, text: msg.text, fileType: msg.fileType });
+                  setOpenMenuId(null);
+                  focusMessageInput();
+                }}
                 onCopy={() => handleCopy(msg)}
                 onOpenFile={(url, type) => setViewerFile({ url, type })}
                 copied={copiedId === msg.messageId}
@@ -215,7 +238,7 @@ export default function ProjectChatPanel({
             ))}
             {customerTyping && (
               <div className="flex justify-start">
-                <span className="text-xs text-gray-500 italic px-3 py-1">{t('chat.customerTyping')}</span>
+                <span className="text-xs text-gray-500 italic px-3 py-1">{CHAT_TYPING_AUFTRAGNEHMER}</span>
               </div>
             )}
             <div ref={messagesEndRef} />
@@ -260,6 +283,7 @@ export default function ProjectChatPanel({
                 )}
               </button>
               <input
+                ref={messageInputRef}
                 type="text"
                 value={inputText}
                 onChange={(e) => { setInputText(e.target.value); setTypingThrottled(true); }}
@@ -273,6 +297,8 @@ export default function ProjectChatPanel({
                 placeholder={t('chat.typeMessage')}
                 className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 disabled={sending}
+                autoComplete="off"
+                enterKeyHint="send"
               />
               <button
                 type="button"
@@ -369,8 +395,7 @@ function MessageBubble({
 }) {
   const isFile = !!msg.fileUrl;
   const isPdf = msg.fileType === 'pdf';
-  const senderTitle = msg.senderType === 'admin' ? t('chat.admin') : t('chat.client');
-  const senderLabel = msg.senderType === 'admin' ? t('chat.adminLabel') : t('chat.clientLabel');
+  const roleLabel = chatRoleLabelGerman(msg.senderType);
   const menuOpen = openMenuId === msg.messageId;
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -390,8 +415,7 @@ function MessageBubble({
     <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} w-max max-w-[85%] ${isOwn ? 'ml-auto' : ''}`}>
       <div className={`flex items-center justify-between gap-2 w-full mb-1 px-1 ${isOwn ? 'flex-row-reverse' : ''}`}>
         <div className="flex items-baseline gap-1.5">
-          <span className={`text-xs font-semibold ${isOwn ? 'text-green-700' : 'text-sky-700'}`}>{senderTitle}</span>
-          <span className={`text-xs ${isOwn ? 'text-green-600' : 'text-sky-600'}`}>{senderLabel}</span>
+          <span className={`text-xs font-semibold ${isOwn ? 'text-green-700' : 'text-sky-700'}`}>{roleLabel}</span>
         </div>
         <div className={`flex items-center gap-1 text-xs ${isOwn ? 'text-green-600' : 'text-slate-500'}`}>
           <span>{formatTime(msg.createdAt)}</span>

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
+import { addWorkingDays } from '@/lib/reportApproval';
 
 interface FileUploadNotificationPayload {
   projectId: string;
@@ -205,7 +206,6 @@ export async function POST(request: NextRequest) {
     const folderName = folderPath.split('/').pop() || folderPath;
     const projectLocation = (projectData.location || projectData.ort || '').trim();
     const projectDisplay = projectLocation ? `${projectName} – ${projectLocation}` : projectName;
-    const dateStr = new Date().toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const portalLoginUrl = `${PORTAL_URL.replace(/\/$/, '')}/login`;
 
     // Different email content based on recipient type
@@ -243,6 +243,12 @@ export async function POST(request: NextRequest) {
     } else {
       // Admin uploaded → notify customer (German content)
       if (isReport) {
+        /** Last day of the 5-working-day period (excl. weekends); same as report auto-approve date. */
+        const deadlineStr = addWorkingDays(new Date(), 5).toLocaleDateString('de-DE', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        });
         subject = 'Neuer Upload im Kundenportal – bitte prüfen und ggf. kommentieren';
         emailContent = `
           <p>Sehr geehrte Damen und Herren,</p>
@@ -251,7 +257,7 @@ export async function POST(request: NextRequest) {
           <p style="margin: 16px 0; font-size: 14px; color: #555;">z.&nbsp;B. Nachtrag, Arbeitszettel, Rapport, Regiebericht, Mehraufwand o.&nbsp;Ä.</p>
           <p>Bitte prüfen Sie das Dokument. Sollten Sie Hinweise, Anmerkungen oder Einwände haben, können Sie diese direkt im Dokument über den Button „Kommentar / Comment“ hinterlegen.</p>
           <p>Ein Kommentar im Dokument gilt als schriftliche Rückmeldung.</p>
-          <p>Sofern wir innerhalb von 5 Werktagen ab dem Datum dieser Mitteilung (<strong>${dateStr}</strong>) keine Rückmeldung (Kommentar oder Einwand) erhalten, gilt das Dokument als angenommen und bestätigt.</p>
+          <p>Sofern wir bis einschließlich <strong>${deadlineStr}</strong> keine Rückmeldung (Kommentar oder Einwand) erhalten (Frist: 5 Werktage ab dem Datum dieser Mitteilung), gilt das Dokument als angenommen und bestätigt.</p>
           <p style="margin: 16px 0; font-size: 13px; color: #555;">Hinweis: Gemäß § 16 Abs. 1 VOB/B und § 15 Abs. 3 VOB/B bitten wir um Kenntnisnahme.</p>
           <p>Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.</p>
           ${closing.html}`;
@@ -266,7 +272,7 @@ z. B. Nachtrag, Arbeitszettel, Rapport, Regiebericht, Mehraufwand o. Ä.
 Bitte prüfen Sie das Dokument. Sollten Sie Hinweise, Anmerkungen oder Einwände haben, können Sie diese direkt im Dokument über den Button „Kommentar / Comment“ hinterlegen.
 Ein Kommentar im Dokument gilt als schriftliche Rückmeldung.
 
-Sofern wir innerhalb von 5 Werktagen ab dem Datum dieser Mitteilung (${dateStr}) keine Rückmeldung (Kommentar oder Einwand) erhalten, gilt das Dokument als angenommen und bestätigt.
+Sofern wir bis einschließlich ${deadlineStr} keine Rückmeldung (Kommentar oder Einwand) erhalten (Frist: 5 Werktage ab dem Datum dieser Mitteilung), gilt das Dokument als angenommen und bestätigt.
 
 Hinweis: Gemäß § 16 Abs. 1 VOB/B und § 15 Abs. 3 VOB/B bitten wir um Kenntnisnahme.
 

@@ -50,10 +50,10 @@
     "projectChatDescription": "Send messages, photos and documents. Realtime Database.",
     "noMessagesYet": "No messages yet. Send one to start.",
     "you": "You",
-    "admin": "Admin",
-    "adminLabel": "Auftragnehmer",
-    "client": "Client",
-    "clientLabel": "Auftraggeber",
+    "admin": "Auftraggeber",
+    "adminLabel": "Auftraggeber",
+    "client": "Auftragnehmer",
+    "clientLabel": "Auftragnehmer",
     "customer": "Customer",
     "reply": "Reply",
     "copy": "Copy",
@@ -67,7 +67,7 @@
     "attachImageOrPdf": "Attach image or PDF",
     "open": "Open",
     "download": "Download",
-    "customerTyping": "Customer is typing...",
+    "customerTyping": "Auftragnehmer schreibt …",
     "replyLabel": "Reply:",
     "pdfViewer": "PDF viewer",
     "messageActions": "Message actions"
@@ -193,7 +193,15 @@
     "entryFileSelected": "Selected: {{name}}",
     "deleteEntryTitle": "Delete PDF entry",
     "deleteEntryConfirm": "Delete the PDF entry \"{{name}}\"?",
-    "entryNameFallback": "Entry"
+    "entryNameFallback": "Entry",
+    "uploadPdfMaxHint": "Maximum file size: {{maxMb}} MB (hosting limit). Compress large PDFs if needed.",
+    "uploadErrorFileTooLarge": "This file is too large. Maximum size is {{maxMb}} MB. Try compressing the PDF or splitting it into smaller files.",
+    "uploadErrorMissing": "Please choose a PDF file and make sure a folder is selected.",
+    "uploadErrorCloudinary": "The file could not be processed. Check that it is a valid PDF and try again.",
+    "uploadErrorServer": "Upload could not be completed due to a server issue. Please try again in a few minutes or contact support.",
+    "uploadErrorGeneric": "Something went wrong while uploading. Please try again.",
+    "uploadErrorNetwork": "Network problem — check your connection and try again.",
+    "saveEntryFailed": "Could not save changes. Please try again."
   },
   "login": {
     "title": "Admin Sign In",
@@ -227,6 +235,7 @@
   "folders": {
     "00_New_Not_Viewed_Yet_": "New Not Viewed Yet",
     "01_Customer_Uploads": "Customer Uploads",
+    "01_Customer_Uploads.description": "Files uploaded by the customer for this project",
     "01_Customer_Uploads/Photos": "Photos",
     "01_Customer_Uploads/Documents": "Documents",
     "01_Customer_Uploads/Other": "Other",
@@ -283,8 +292,8 @@
     "title": "Projects",
     "description": "Manage all projects",
     "newProject": "New Project",
-    "filterLabel": "Filter by Project / Customer / Email / Year",
-    "searchPlaceholder": "Search by project name, customer number, email, or year...",
+    "filterLabel": "Filter by Project / Project # / Customer / Email / Year",
+    "searchPlaceholder": "Search by project name, project number, customer number, email, or year...",
     "noProjectsFound": "No projects found for the selected filters.",
     "tryAdjustingSearch": "Try adjusting your search query.",
     "noProjectsYet": "No projects yet",
@@ -297,9 +306,13 @@
     "projectDeleted": "Project deleted successfully",
     "projectDeleteFailed": "Failed to delete project",
     "projectName": "Project Name",
+    "projectNumberColumn": "Project #",
     "active": "Active",
     "inactive": "Inactive",
-    "createFirstProjectLink": "Create your first project"
+    "createFirstProjectLink": "Create your first project",
+    "unreadTotal": "Unread (files + chat)",
+    "unreadColumnTooltip": "Total unread: {{files}} in project files/folders + {{chat}} in project chat",
+    "unreadColumnTooltipZero": "No unread project files or chat messages"
   },
   "customers": {
     "title": "Customers",
@@ -444,6 +457,7 @@
     "customerMessages": {
       "title": "Customer messages",
       "subtitle": "{{count}} message(s) in this folder",
+      "subtitleConversations": "{{count}} conversation(s) in this folder",
       "noMessages": "No customer messages in this folder.",
       "new": "New",
       "read": "Read",
@@ -454,7 +468,19 @@
       "resolvedMessage": "Message marked as resolved. The customer will see the Resolved tag.",
       "resolveFailed": "Failed to mark as resolved.",
       "commentedOnFile": "The customer commented on file",
-      "subject": "Subject"
+      "mainComment": "Main comment",
+      "replyCountOne": "1 reply in thread",
+      "replyCountMany": "{{count}} replies in thread",
+      "subject": "Subject",
+      "fromCustomer": "Customer",
+      "fromTeam": "Team reply",
+      "adminTeam": "Admin",
+      "replyLabel": "Reply to customer",
+      "replyPlaceholder": "Write your reply…",
+      "sendReply": "Send reply",
+      "replySentTitle": "Reply sent",
+      "replySentMessage": "Your reply is visible to the customer in their comment history.",
+      "replyFailed": "Failed to send reply."
     }
   },
   "tracking": {
@@ -714,7 +740,19 @@
     "saveFailed": "Failed to save",
     "year": "Year",
     "folderNameSaved": "Saved",
-    "folderNameSavedMessage": "Folder name updated. Customer panel will show this name."
+    "folderNameSavedMessage": "Folder name updated. Customer panel will show this name.",
+    "addSubfolder": "Add subfolder",
+    "addSubfolderHint": "Creates a new subfolder under this category for everyone (admin and customer). Use letters and numbers only.",
+    "subfolderNamePlaceholder": "e.g. Site visit March",
+    "subfolderNameInvalid": "Enter a valid name (letters, numbers, spaces).",
+    "subfolderExists": "A subfolder with this name already exists.",
+    "subfolderCreated": "Subfolder created",
+    "subfolderCreatedMessage": "The new subfolder is available in the customer portal and file manager.",
+    "deleteSubfolder": "Remove subfolder",
+    "deleteSubfolderTitle": "Remove this subfolder?",
+    "deleteSubfolderConfirm": "This removes the subfolder from the project for everyone (customer portal and file manager). Files already stored in this folder are not deleted from storage.",
+    "subfolderDeleted": "Subfolder removed",
+    "subfolderDeletedMessage": "The subfolder no longer appears in the project. You can create it again with the + button if needed."
   },
   "projectsEdit": {
     "title": "Edit Project",
