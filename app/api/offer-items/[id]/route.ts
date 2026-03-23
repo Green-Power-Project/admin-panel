@@ -11,6 +11,35 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+async function deleteOfferImageFromStorage(
+  data: { imageStorageProvider?: string; imageStoragePath?: string } | undefined
+) {
+  if (!data?.imageStoragePath || !data.imageStorageProvider) return;
+
+  if (data.imageStorageProvider === 'vps') {
+    try {
+      await unlink(data.imageStoragePath);
+    } catch (error) {
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as { code?: unknown }).code)
+          : '';
+      if (code !== 'ENOENT') {
+        throw new Error('Failed to delete VPS image');
+      }
+    }
+    return;
+  }
+
+  if (data.imageStorageProvider === 'cloudinary') {
+    const result = await cloudinary.uploader.destroy(data.imageStoragePath, { resource_type: 'image' });
+    const status = typeof result?.result === 'string' ? result.result : 'ok';
+    if (status !== 'ok' && status !== 'not found') {
+      throw new Error(`Cloudinary delete failed: ${status}`);
+    }
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -78,17 +107,14 @@ export async function DELETE(
 
     const ref = db.collection('offerItems').doc(id);
     const snap = await ref.get();
-    const data = snap.exists
-      ? (snap.data() as { imageStorageProvider?: string; imageStoragePath?: string } | undefined)
-      : undefined;
-
-    await ref.delete();
-
-    if (data?.imageStorageProvider === 'vps' && data.imageStoragePath) {
-      await unlink(data.imageStoragePath).catch(() => undefined);
-    } else if (data?.imageStorageProvider === 'cloudinary' && data.imageStoragePath) {
-      await cloudinary.uploader.destroy(data.imageStoragePath, { resource_type: 'image' }).catch(() => undefined);
+    if (!snap.exists) {
+      return NextResponse.json({ error: 'Item not found' }, { status: 404 });
     }
+    const data = snap.data() as { imageStorageProvider?: string; imageStoragePath?: string } | undefined;
+
+    // Strict mode: storage + database must both be deleted.
+    await deleteOfferImageFromStorage(data);
+    await ref.delete();
 
     return NextResponse.json({ success: true });
   } catch (error) {

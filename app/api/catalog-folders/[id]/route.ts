@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { unlink } from 'node:fs/promises';
+import { v2 as cloudinary } from 'cloudinary';
+
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export const dynamic = 'force-dynamic';
 
@@ -41,10 +49,31 @@ async function deleteCatalogFolderCascade(db: Firestore, folderId: string): Prom
   for (const doc of subfolders.docs) {
     await deleteCatalogFolderCascade(db, doc.id);
   }
+
   const entries = await db.collection('catalogEntries').where('folderId', '==', folderId).get();
-  const batch = db.batch();
-  entries.docs.forEach((doc) => batch.delete(doc.ref));
-  await batch.commit();
+  for (const entryDoc of entries.docs) {
+    const entryData = entryDoc.data() as { storageProvider?: string; storagePath?: string };
+
+    // Delete underlying storage first (so we don't leave orphaned files).
+    if (entryData?.storageProvider === 'vps' && entryData.storagePath) {
+      try {
+        await unlink(entryData.storagePath);
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    } else if (entryData?.storageProvider === 'cloudinary' && entryData.storagePath) {
+      const result = await cloudinary.uploader.destroy(entryData.storagePath, { resource_type: 'raw' });
+      const storageResult = typeof result?.result === 'string' ? result.result : 'ok';
+      if (storageResult !== 'ok' && storageResult !== 'not found') {
+        throw new Error(`Cloudinary delete failed: ${storageResult}`);
+      }
+    }
+
+    // Then delete Firestore metadata.
+    await entryDoc.ref.delete();
+  }
+
+  // Finally delete the folder itself.
   await db.collection('catalogFolders').doc(folderId).delete();
 }
 

@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { v2 as cloudinary } from 'cloudinary';
+import { unlink } from 'node:fs/promises';
 
 export const dynamic = 'force-dynamic';
+
+cloudinary.config({
+  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 export async function PUT(
   request: NextRequest,
@@ -41,10 +49,35 @@ async function deleteFolderCascade(db: Firestore, folderId: string): Promise<voi
   for (const doc of subfolders.docs) {
     await deleteFolderCascade(db, doc.id);
   }
+
   const items = await db.collection('offerItems').where('folderId', '==', folderId).get();
-  const batch = db.batch();
-  items.docs.forEach((doc) => batch.delete(doc.ref));
-  await batch.commit();
+
+  // Strict mode: delete underlying storage first, then delete Firestore.
+  for (const itemDoc of items.docs) {
+    const itemData = itemDoc.data() as {
+      imageStorageProvider?: string;
+      imageStoragePath?: string;
+    };
+
+    if (itemData?.imageStorageProvider === 'vps' && itemData.imageStoragePath) {
+      try {
+        await unlink(itemData.imageStoragePath);
+      } catch (error: any) {
+        if (error?.code !== 'ENOENT') throw error;
+      }
+    } else if (itemData?.imageStorageProvider === 'cloudinary' && itemData.imageStoragePath) {
+      const result = await cloudinary.uploader.destroy(itemData.imageStoragePath, {
+        resource_type: 'image',
+      });
+      const storageResult = typeof result?.result === 'string' ? result.result : 'ok';
+      if (storageResult !== 'ok' && storageResult !== 'not found') {
+        throw new Error(`Cloudinary delete failed: ${storageResult}`);
+      }
+    }
+
+    await itemDoc.ref.delete();
+  }
+
   await db.collection('offerFolders').doc(folderId).delete();
 }
 

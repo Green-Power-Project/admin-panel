@@ -11,6 +11,35 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
+async function deleteCatalogFileFromStorage(
+  data: { storageProvider?: string; storagePath?: string } | undefined
+) {
+  if (!data?.storagePath || !data.storageProvider) return;
+
+  if (data.storageProvider === 'vps') {
+    try {
+      await unlink(data.storagePath);
+    } catch (error) {
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as { code?: unknown }).code)
+          : '';
+      if (code !== 'ENOENT') {
+        throw new Error('Failed to delete VPS file');
+      }
+    }
+    return;
+  }
+
+  if (data.storageProvider === 'cloudinary') {
+    const result = await cloudinary.uploader.destroy(data.storagePath, { resource_type: 'raw' });
+    const status = typeof result?.result === 'string' ? result.result : 'ok';
+    if (status !== 'ok' && status !== 'not found') {
+      throw new Error(`Cloudinary delete failed: ${status}`);
+    }
+  }
+}
+
 export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -61,16 +90,14 @@ export async function DELETE(
 
     const ref = db.collection('catalogEntries').doc(id);
     const snap = await ref.get();
-    const data = snap.exists ? (snap.data() as { storageProvider?: string; storagePath?: string } | undefined) : undefined;
-
-    await ref.delete();
-
-    // Cleanup storage best-effort; entry delete should not fail if file is already gone.
-    if (data?.storageProvider === 'vps' && data.storagePath) {
-      await unlink(data.storagePath).catch(() => undefined);
-    } else if (data?.storageProvider === 'cloudinary' && data.storagePath) {
-      await cloudinary.uploader.destroy(data.storagePath, { resource_type: 'raw' }).catch(() => undefined);
+    if (!snap.exists) {
+      return NextResponse.json({ error: 'Entry not found' }, { status: 404 });
     }
+    const data = snap.data() as { storageProvider?: string; storagePath?: string } | undefined;
+
+    // Strict mode: storage + database must both be deleted.
+    await deleteCatalogFileFromStorage(data);
+    await ref.delete();
 
     return NextResponse.json({ success: true });
   } catch (error) {

@@ -43,15 +43,10 @@ export async function DELETE(
 
     // Delete from Cloudinary
     if (imageData?.publicId) {
-      try {
-        await cloudinary.uploader.destroy(imageData.publicId);
-      } catch (cloudinaryError) {
-        console.error('Error deleting from Cloudinary:', cloudinaryError);
-        // Continue with Firestore deletion even if Cloudinary fails
-      }
+      await cloudinary.uploader.destroy(imageData.publicId);
     }
 
-    // Delete from Firestore
+    // Only delete from Firestore after Cloudinary delete succeeds.
     await adminDb.collection('gallery').doc(imageId).delete();
 
     return NextResponse.json({ success: true });

@@ -539,16 +539,20 @@ function ProjectFilesContent() {
       const folderPathId = segments.join('__');
       const filesRef = getProjectFolderRef(projectId, segments);
       const snapshot = await getDocs(query(filesRef, where('cloudinaryPublicId', '==', publicId)));
-      await Promise.all(
-        snapshot.docs.map((d) => deleteDoc(doc(dbInstance, 'files', 'projects', projectId, folderPathId, 'files', d.id)))
-      );
-      // Remove related data first so audit logs, tracking, etc. stay in sync
-      await deleteFileRelatedData(dbInstance, projectId, publicId);
       const deleted = await deleteFile(publicId);
       if (!deleted) {
         setAlertData({ title: t('files.deleteFailedTitle'), message: t('files.deleteFailedMessage'), type: 'error' });
         setShowAlert(true);
+        return;
       }
+
+      // Storage is already deleted successfully; now delete Firebase metadata.
+      await Promise.all(
+        snapshot.docs.map((d) => deleteDoc(doc(dbInstance, 'files', 'projects', projectId, folderPathId, 'files', d.id)))
+      );
+
+      // Remove related data so audit logs, tracking, etc. stay in sync.
+      await deleteFileRelatedData(dbInstance, projectId, publicId);
     } catch (err) {
       setAlertData({ title: t('messages.error.generic'), message: err instanceof Error ? err.message : t('files.fileDeleteFailed'), type: 'error' });
       setShowAlert(true);

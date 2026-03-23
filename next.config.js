@@ -2,11 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
-  // Allow larger multipart bodies (catalogue PDF uploads). Server Actions default is 1mb; route
-  // handlers also respect this in many Next.js setups.
+  // Allow larger multipart bodies (hybrid upload flow up to 150MB + overhead).
   experimental: {
     serverActions: {
-      bodySizeLimit: '50mb',
+      bodySizeLimit: '170mb',
     },
   },
   // Improve chunk loading reliability
