@@ -41,8 +41,15 @@ export async function DELETE(
 
     const imageData = imageDoc.data();
 
-    // Delete from Cloudinary
-    if (imageData?.publicId) {
+    // Delete from Cloudinary (single or grouped image record).
+    const publicIds = Array.isArray(imageData?.publicIds)
+      ? imageData.publicIds.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
+      : [];
+    if (publicIds.length > 0) {
+      for (const pid of publicIds) {
+        await cloudinary.uploader.destroy(pid);
+      }
+    } else if (imageData?.publicId) {
       await cloudinary.uploader.destroy(imageData.publicId);
     }
 
@@ -97,6 +104,7 @@ export async function GET(
     return NextResponse.json({
       id: docSnap.id,
       url: data.url ?? '',
+      imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : (data.url ? [data.url] : []),
       category: data.category ?? '',
       title: data.title ?? '',
       offerEligible: data.offerEligible === true,

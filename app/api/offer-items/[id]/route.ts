@@ -5,6 +5,13 @@ import { v2 as cloudinary } from 'cloudinary';
 
 export const dynamic = 'force-dynamic';
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter((v): v is string => v.length > 0);
+}
+
 cloudinary.config({
   cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
   api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
@@ -63,6 +70,8 @@ export async function PUT(
     if (typeof body?.unit === 'string') updates.unit = body.unit.trim();
     if (typeof body?.price === 'string') updates.price = body.price.trim();
     if (typeof body?.quantityUnit === 'string') updates.quantityUnit = body.quantityUnit.trim();
+    if (body?.colorOptions !== undefined) updates.colorOptions = toStringArray(body.colorOptions);
+    if (body?.dimensionOptions !== undefined) updates.dimensionOptions = toStringArray(body.dimensionOptions);
     if (body?.imageUrl !== undefined) updates.imageUrl = typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null;
     if (body?.imageStorageProvider !== undefined) {
       updates.imageStorageProvider =

@@ -459,6 +459,7 @@ export default function CatalogManager() {
     const isPathAncestor = descendantSelected && !isSelected;
 
     const isRootStyle = depth === 0;
+    const canCreateChildFolder = depth === 0;
 
     return (
       <div key={folder.id} className={depth === 0 ? 'space-y-1' : 'mt-1.5'}>
@@ -532,35 +533,37 @@ export default function CatalogManager() {
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                openAddFolder(folder.id);
-              }}
-              className={
-                isRootStyle
-                  ? `p-1 rounded ${
-                      isPrimaryActive
-                        ? 'hover:bg-white/20'
-                        : isPathAncestor
-                          ? 'hover:bg-green-power-200/70 text-green-power-700'
-                          : 'hover:bg-gray-200'
-                    }`
-                  : `p-1 rounded ${
-                      isPrimaryActive
-                        ? 'text-white/90 hover:bg-white/15'
-                        : isPathAncestor
-                          ? 'text-green-power-600 hover:bg-green-power-100'
-                          : 'text-gray-500 hover:bg-gray-200'
-                    }`
-              }
-              title={t('offers.addSubfolder')}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+            {canCreateChildFolder && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAddFolder(folder.id);
+                }}
+                className={
+                  isRootStyle
+                    ? `p-1 rounded ${
+                        isPrimaryActive
+                          ? 'hover:bg-white/20'
+                          : isPathAncestor
+                            ? 'hover:bg-green-power-200/70 text-green-power-700'
+                            : 'hover:bg-gray-200'
+                      }`
+                    : `p-1 rounded ${
+                        isPrimaryActive
+                          ? 'text-white/90 hover:bg-white/15'
+                          : isPathAncestor
+                            ? 'text-green-power-600 hover:bg-green-power-100'
+                            : 'text-gray-500 hover:bg-gray-200'
+                      }`
+                }
+                title={t('offers.addSubfolder')}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {

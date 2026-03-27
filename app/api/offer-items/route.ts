@@ -3,6 +3,13 @@ import { getAdminDb } from '@/lib/server/firebaseAdmin';
 
 export const dynamic = 'force-dynamic';
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (typeof v === 'string' ? v.trim() : ''))
+    .filter((v): v is string => v.length > 0);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const db = getAdminDb();
@@ -33,6 +40,8 @@ export async function GET(request: NextRequest) {
         unit: typeof data.unit === 'string' ? data.unit : '',
         price: typeof data.price === 'string' ? data.price : '',
         quantityUnit: typeof data.quantityUnit === 'string' ? data.quantityUnit : '',
+        colorOptions: toStringArray(data.colorOptions),
+        dimensionOptions: toStringArray(data.dimensionOptions),
         imageUrl:
           typeof data.imageUrl === 'string' && data.imageUrl
             ? `/api/offer-items/image/${doc.id}`
@@ -64,6 +73,8 @@ export async function POST(request: NextRequest) {
     const unit = typeof body?.unit === 'string' ? body.unit.trim() : '';
     const price = typeof body?.price === 'string' ? body.price.trim() : '';
     const quantityUnit = typeof body?.quantityUnit === 'string' ? body.quantityUnit.trim() : '';
+    const colorOptions = toStringArray(body?.colorOptions);
+    const dimensionOptions = toStringArray(body?.dimensionOptions);
     const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl.trim() || null : null;
     const imageStorageProvider =
       body?.imageStorageProvider === 'cloudinary' || body?.imageStorageProvider === 'vps'
@@ -86,6 +97,8 @@ export async function POST(request: NextRequest) {
       unit,
       price,
       quantityUnit,
+      colorOptions,
+      dimensionOptions,
       imageUrl,
       imageStorageProvider,
       imageStoragePath: imageStoragePath || null,

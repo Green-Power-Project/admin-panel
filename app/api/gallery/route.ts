@@ -28,6 +28,7 @@ export async function GET() {
       return {
         id: doc.id,
         url: data.url,
+        imageUrls: Array.isArray(data.imageUrls) ? data.imageUrls : (data.url ? [data.url] : []),
         category: data.category,
         title: data.title || '',
         uploadedAt: data.uploadedAt?.toDate() || new Date(),
@@ -96,7 +97,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const uploadResults = [];
+    const uploadedUrls: string[] = [];
+    const uploadedPublicIds: string[] = [];
 
     for (const file of files) {
       // Upload to Cloudinary
@@ -113,33 +115,40 @@ export async function POST(request: NextRequest) {
         ]
       });
 
-      // Save to Firestore
-      const galleryDoc: Record<string, unknown> = {
-        url: cloudinaryResponse.secure_url,
-        publicId: cloudinaryResponse.public_id,
-        category,
-        title: title || '',
-        uploadedBy,
-        uploadedAt: new Date(),
-        isActive: true,
-        fileSize: file.size,
-        fileType: file.type,
-      };
-      if (projectIds.length > 0) galleryDoc.projectIds = projectIds;
-
-      const docRef = await adminDb.collection('gallery').add(galleryDoc);
-      
-      uploadResults.push({
-        id: docRef.id,
-        url: cloudinaryResponse.secure_url,
-        category,
-        title: title || '',
-      });
+      uploadedUrls.push(cloudinaryResponse.secure_url);
+      uploadedPublicIds.push(cloudinaryResponse.public_id);
     }
+
+    // Save as a single gallery record, even when multiple files were uploaded.
+    const galleryDoc: Record<string, unknown> = {
+      url: uploadedUrls[0] ?? '',
+      imageUrls: uploadedUrls,
+      publicId: uploadedPublicIds[0] ?? '',
+      publicIds: uploadedPublicIds,
+      category,
+      title: title || '',
+      uploadedBy,
+      uploadedAt: new Date(),
+      isActive: true,
+      fileCount: files.length,
+      fileSize: files.reduce((sum, f) => sum + (f.size || 0), 0),
+      fileType: files[0]?.type || '',
+    };
+    if (projectIds.length > 0) galleryDoc.projectIds = projectIds;
+
+    const docRef = await adminDb.collection('gallery').add(galleryDoc);
 
     return NextResponse.json({ 
       success: true, 
-      uploadedImages: uploadResults 
+      uploadedImages: [
+        {
+          id: docRef.id,
+          url: uploadedUrls[0] ?? '',
+          imageUrls: uploadedUrls,
+          category,
+          title: title || '',
+        },
+      ],
     });
   } catch (error: unknown) {
     console.error('Error uploading gallery images:', error);

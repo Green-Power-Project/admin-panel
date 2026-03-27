@@ -46,6 +46,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Folder name is required' }, { status: 400 });
     }
 
+    if (parentId) {
+      const parentSnap = await db.collection('offerFolders').doc(parentId).get();
+      if (!parentSnap.exists) {
+        return NextResponse.json({ error: 'Parent folder not found' }, { status: 404 });
+      }
+      const parentData = parentSnap.data() as { parentId?: string | null } | undefined;
+      // Enforce one-level nesting only: root -> child.
+      if (parentData?.parentId) {
+        return NextResponse.json({ error: 'Sub-sub folders are not allowed' }, { status: 400 });
+      }
+    }
+
     const parentFolders = parentId
       ? await db.collection('offerFolders').where('parentId', '==', parentId).get()
       : await db.collection('offerFolders').where('parentId', '==', null).get();

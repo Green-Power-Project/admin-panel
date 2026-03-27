@@ -23,6 +23,7 @@ const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB
 interface GalleryImage {
   id: string;
   url: string;
+  imageUrls?: string[];
   category: string;
   title?: string;
   uploadedAt: Date;
@@ -90,7 +91,7 @@ function GalleryManagementContent() {
   const [dragOver, setDragOver] = useState(false);
   const [imageToDelete, setImageToDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewLightbox, setPreviewLightbox] = useState<{ urls: string[]; index: number } | null>(null);
   const [uploadPreviewIndex, setUploadPreviewIndex] = useState<number | null>(null);
   const [uploadPreviewObjectUrl, setUploadPreviewObjectUrl] = useState<string | null>(null);
   const uploadPreviewUrlRef = useRef<string | null>(null);
@@ -117,6 +118,7 @@ function GalleryManagementContent() {
   const [removeFromOffersConfirmImageId, setRemoveFromOffersConfirmImageId] = useState<string | null>(null);
   /** Toast message shown after hide/show (active) toggle */
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [previewAutoSlide, setPreviewAutoSlide] = useState(true);
 
   useEffect(() => {
     if (!removeFromOffersConfirmImageId || removingFromOffers) return;
@@ -133,6 +135,18 @@ function GalleryManagementContent() {
     const id = setTimeout(() => setToastMessage(null), 3000);
     return () => clearTimeout(id);
   }, [toastMessage]);
+
+  // Auto-slide only when the opened gallery image has multiple frames.
+  useEffect(() => {
+    if (!previewLightbox || !previewAutoSlide || previewLightbox.urls.length <= 1) return;
+    const timer = setInterval(() => {
+      setPreviewLightbox((prev) => {
+        if (!prev || prev.urls.length <= 1) return prev;
+        return { ...prev, index: (prev.index + 1) % prev.urls.length };
+      });
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [previewLightbox, previewAutoSlide]);
 
   // Create/revoke object URL for upload-modal lightbox; close if file at index was removed
   useEffect(() => {
@@ -292,6 +306,9 @@ function GalleryManagementContent() {
         return {
           id: d.id,
           url: data.url ?? '',
+          imageUrls: Array.isArray(data.imageUrls)
+            ? data.imageUrls.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
+            : (data.url ? [data.url] : []),
           category: typeof data.category === 'string' ? data.category.trim() : (data.category != null ? String(data.category).trim() : ''),
           title: data.title ?? '',
           uploadedAt: uploadedAt instanceof Date ? uploadedAt : new Date(uploadedAt),
@@ -846,6 +863,14 @@ function GalleryManagementContent() {
             <div className="grid grid-cols-1 gap-4">
               {filteredImages.map((image) => (
                 <div key={image.id} className="group relative bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden hover:shadow-md transition-shadow flex flex-row items-stretch">
+                  {(() => {
+                    const imageCount = (image.imageUrls?.length ?? 0) > 0 ? image.imageUrls!.length : 1;
+                    return imageCount > 1 ? (
+                      <div className="absolute top-2 left-2 z-10 px-2 py-0.5 rounded-full bg-black/65 text-white text-[10px] font-semibold">
+                        {imageCount}
+                      </div>
+                    ) : null;
+                  })()}
                   {/* Offer label + toggle + edit offer (when on) – top right corner of card */}
                   <div className="absolute top-2 right-2 z-10 flex flex-col items-end gap-1">
                     <div className="flex items-center gap-2">
@@ -890,7 +915,13 @@ function GalleryManagementContent() {
                   {/* 1. Image – unchanged */}
                   <button
                     type="button"
-                    onClick={() => setPreviewImageUrl(image.url)}
+                    onClick={() => {
+                      setPreviewAutoSlide(true);
+                      setPreviewLightbox({
+                        urls: image.imageUrls && image.imageUrls.length > 0 ? image.imageUrls : [image.url],
+                        index: 0,
+                      });
+                    }}
                     className="shrink-0 w-32 sm:w-40 aspect-[4/3] relative overflow-hidden bg-gray-50 block cursor-pointer text-left"
                   >
                     <img
@@ -1342,14 +1373,20 @@ function GalleryManagementContent() {
       )}
 
       {/* Image preview modal (in-portal, no new tab) */}
-      {previewImageUrl && (
+      {previewLightbox && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
-          onClick={() => setPreviewImageUrl(null)}
+          onClick={() => {
+            setPreviewAutoSlide(true);
+            setPreviewLightbox(null);
+          }}
         >
           <button
             type="button"
-            onClick={() => setPreviewImageUrl(null)}
+            onClick={() => {
+              setPreviewAutoSlide(true);
+              setPreviewLightbox(null);
+            }}
             className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
             aria-label={t('common.close')}
           >
@@ -1357,13 +1394,59 @@ function GalleryManagementContent() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
+          {previewLightbox.urls.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreviewAutoSlide(false);
+                  setPreviewLightbox((prev) => {
+                    if (!prev) return prev;
+                    return {
+                      ...prev,
+                      index: (prev.index - 1 + prev.urls.length) % prev.urls.length,
+                    };
+                  });
+                }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 text-white hover:bg-white/10 rounded-full transition-colors z-10"
+                aria-label={t('common.previous')}
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPreviewAutoSlide(false);
+                  setPreviewLightbox((prev) => {
+                    if (!prev) return prev;
+                    return { ...prev, index: (prev.index + 1) % prev.urls.length };
+                  });
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 text-white hover:bg-white/10 rounded-full transition-colors z-10"
+                aria-label={t('common.next')}
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
+          )}
           <div className="relative max-w-[95vw] max-h-[90vh] flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
             <img
-              src={previewImageUrl}
+              src={previewLightbox.urls[previewLightbox.index] || ''}
               alt=""
               className="max-h-[90vh] w-auto object-contain rounded-lg"
             />
           </div>
+          {previewLightbox.urls.length > 1 && (
+            <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/90 text-sm">
+              {previewLightbox.index + 1} / {previewLightbox.urls.length}
+            </p>
+          )}
         </div>
       )}
 

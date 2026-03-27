@@ -18,6 +18,8 @@ interface OfferCatalogItem {
   unit: string;
   price: string;
   quantityUnit: string;
+  colorOptions?: string[];
+  dimensionOptions?: string[];
   imageUrl: string | null;
   imageStorageProvider?: 'cloudinary' | 'vps' | null;
   imageStoragePath?: string | null;
@@ -58,6 +60,13 @@ function formatEta(seconds: number): string {
 
 const DEFAULT_CLOUDINARY_MAX_MB = 9;
 const DEFAULT_VPS_MAX_MB = 150;
+
+function parseOptionInput(raw: string): string[] {
+  return raw
+    .split(',')
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+}
 
 function uploadOfferItemImageWithProgress(
   formData: FormData,
@@ -160,6 +169,8 @@ export default function OfferCatalog() {
     unit: '',
     price: '',
     quantityUnit: '',
+    colorOptionsInput: '',
+    dimensionOptionsInput: '',
   });
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -328,7 +339,15 @@ export default function OfferCatalog() {
   const openAddItem = (folderId: string) => {
     setItemFolderId(folderId);
     setEditingItemId(null);
-    setItemForm({ name: '', description: '', unit: '', price: '', quantityUnit: '' });
+    setItemForm({
+      name: '',
+      description: '',
+      unit: '',
+      price: '',
+      quantityUnit: '',
+      colorOptionsInput: '',
+      dimensionOptionsInput: '',
+    });
     setItemImageFile(null);
     setItemImagePreviewUrl(null);
     setItemUploadProgress(null);
@@ -346,6 +365,8 @@ export default function OfferCatalog() {
       unit: item.unit,
       price: item.price,
       quantityUnit: item.quantityUnit,
+      colorOptionsInput: Array.isArray(item.colorOptions) ? item.colorOptions.join(', ') : '',
+      dimensionOptionsInput: Array.isArray(item.dimensionOptions) ? item.dimensionOptions.join(', ') : '',
     });
     setItemImageFile(null);
     setItemImagePreviewUrl(item.imageUrl || null);
@@ -358,6 +379,8 @@ export default function OfferCatalog() {
   const handleSaveItem = async () => {
     const name = itemForm.name.trim();
     if (!name || !itemFolderId) return;
+    const colorOptions = parseOptionInput(itemForm.colorOptionsInput);
+    const dimensionOptions = parseOptionInput(itemForm.dimensionOptionsInput);
     setSaving(true);
     try {
       let imagePayload: {
@@ -405,6 +428,8 @@ export default function OfferCatalog() {
             unit: itemForm.unit.trim(),
             price: itemForm.price.trim(),
             quantityUnit: itemForm.quantityUnit.trim(),
+            colorOptions,
+            dimensionOptions,
             imageUrl: imagePayload.imageUrl,
             imageStorageProvider: imagePayload.imageStorageProvider,
             imageStoragePath: imagePayload.imageStoragePath,
@@ -422,6 +447,8 @@ export default function OfferCatalog() {
             unit: itemForm.unit.trim(),
             price: itemForm.price.trim(),
             quantityUnit: itemForm.quantityUnit.trim(),
+            colorOptions,
+            dimensionOptions,
             imageUrl: imagePayload.imageUrl,
             imageStorageProvider: imagePayload.imageStorageProvider,
             imageStoragePath: imagePayload.imageStoragePath,
@@ -466,6 +493,7 @@ export default function OfferCatalog() {
     const isPathAncestor = descendantSelected && !isSelected;
 
     const isRootStyle = depth === 0;
+    const canCreateChildFolder = depth === 0;
 
     return (
       <div key={folder.id} className={depth === 0 ? 'space-y-1' : 'mt-1.5'}>
@@ -539,35 +567,37 @@ export default function OfferCatalog() {
             }`}
             onClick={(e) => e.stopPropagation()}
           >
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                openAddFolder(folder.id);
-              }}
-              className={
-                isRootStyle
-                  ? `p-1 rounded ${
-                      isPrimaryActive
-                        ? 'hover:bg-white/20'
-                        : isPathAncestor
-                          ? 'hover:bg-green-power-200/70 text-green-power-700'
-                          : 'hover:bg-gray-200'
-                    }`
-                  : `p-1 rounded ${
-                      isPrimaryActive
-                        ? 'text-white/90 hover:bg-white/15'
-                        : isPathAncestor
-                          ? 'text-green-power-600 hover:bg-green-power-100'
-                          : 'text-gray-500 hover:bg-gray-200'
-                    }`
-              }
-              title={t('offers.addSubfolder')}
-            >
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-            </button>
+            {canCreateChildFolder && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openAddFolder(folder.id);
+                }}
+                className={
+                  isRootStyle
+                    ? `p-1 rounded ${
+                        isPrimaryActive
+                          ? 'hover:bg-white/20'
+                          : isPathAncestor
+                            ? 'hover:bg-green-power-200/70 text-green-power-700'
+                            : 'hover:bg-gray-200'
+                      }`
+                    : `p-1 rounded ${
+                        isPrimaryActive
+                          ? 'text-white/90 hover:bg-white/15'
+                          : isPathAncestor
+                            ? 'text-green-power-600 hover:bg-green-power-100'
+                            : 'text-gray-500 hover:bg-gray-200'
+                      }`
+                }
+                title={t('offers.addSubfolder')}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            )}
             <button
               type="button"
               onClick={(e) => {
@@ -944,6 +974,26 @@ export default function OfferCatalog() {
                   value={itemForm.quantityUnit}
                   onChange={(e) => setItemForm((f) => ({ ...f, quantityUnit: e.target.value }))}
                   placeholder={t('offers.itemQuantityUnitPlaceholder')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Color options</label>
+                <input
+                  type="text"
+                  value={itemForm.colorOptionsInput}
+                  onChange={(e) => setItemForm((f) => ({ ...f, colorOptionsInput: e.target.value }))}
+                  placeholder="e.g. red, green, anthracite"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Dimension options</label>
+                <input
+                  type="text"
+                  value={itemForm.dimensionOptionsInput}
+                  onChange={(e) => setItemForm((f) => ({ ...f, dimensionOptionsInput: e.target.value }))}
+                  placeholder="e.g. 10x20 cm, 20x40 cm"
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg"
                 />
               </div>
