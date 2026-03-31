@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { buildEmailLogoHtml } from '@/lib/emailSignature';
 import { generateOfferPdfBuffer } from '@/lib/offerPdf';
+import { logProjectEmail } from '@/lib/server/emailLogger';
 
 export interface OfferRequestItem {
   itemType?: 'gallery' | 'folder' | 'catalogue';
@@ -229,7 +230,7 @@ export async function POST(request: NextRequest) {
 
       const text = `Neue Angebotsanfrage\n\nKunde: ${payload.firstName} ${payload.lastName}\nE-Mail: ${payload.email}\n\nDie vollständigen Details finden Sie in der angehängten PDF-Datei.\n\n${offersUrl ? `Admin-Bereich: ${offersUrl}\n\n` : ''}Anfrage-ID: ${docRef.id}`;
 
-      await transporter.sendMail({
+      const mailOptions = {
         from: `Grün Power <${EMAIL_USER}>`,
         to: adminEmails,
         subject: `Neue Angebotsanfrage von ${payload.firstName} ${payload.lastName}`,
@@ -242,7 +243,28 @@ export async function POST(request: NextRequest) {
             contentType: 'application/pdf',
           },
         ],
-      } as any);
+      } as any;
+
+      await transporter.sendMail(mailOptions);
+
+      // Log offer notification email (project-agnostic, so stored under "other")
+      try {
+        await logProjectEmail({
+          projectId: 'offerRequests',
+          direction: 'outgoing',
+          to: adminEmails,
+          from: EMAIL_USER,
+          subject: `Neue Angebotsanfrage von ${payload.firstName} ${payload.lastName}`,
+          text,
+          html,
+          related: {
+            type: 'offer',
+            id: docRef.id,
+          },
+        });
+      } catch (logErr) {
+        console.error('[offers/submit] Failed to log email:', logErr);
+      }
     }
 
     return withCors(NextResponse.json({ success: true, id: docRef.id }));

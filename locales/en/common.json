@@ -252,7 +252,7 @@
     "03_Reports.description": "Daily and weekly reports from the team",
     "03_Reports/Daily_Reports": "Daily Reports",
     "03_Reports/Weekly_Reports": "Weekly Reports",
-    "03_Reports/Acceptance_Protocols": "Acceptance Protocols",
+    "03_Reports/Acceptance_Protocols": "Signable Documents",
     "04_Emails": "Emails",
     "04_Emails.description": "Email communications and correspondence",
     "04_Emails/Incoming": "Incoming",
@@ -457,6 +457,17 @@
     "noFilesYetList": "No files yet.",
     "open": "Open",
     "deleting": "Deleting…",
+    "signatures": {
+      "title": "Signature details",
+      "signed": "Signed",
+      "notSigned": "Not signed",
+      "signatory": "Signatory",
+      "customerId": "Customer ID",
+      "date": "Signature date",
+      "location": "Location",
+      "signaturePreview": "Signature (stored securely)",
+      "signatureStoredExternal": "Signature image is stored securely and can be exported if needed."
+    },
     "customerMessages": {
       "title": "Customer messages",
       "subtitle": "{{count}} message(s) in this folder",

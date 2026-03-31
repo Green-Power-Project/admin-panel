@@ -76,6 +76,29 @@ interface CustomerMessageItem {
   messageType?: string;
 }
 
+interface ProjectEmailItem {
+  id: string;
+  direction: 'incoming' | 'outgoing';
+  to: string[];
+  from: string;
+  subject: string;
+  snippet: string;
+  createdAt: Date | null;
+  bodyText?: string;
+  bodyHtml?: string;
+}
+
+interface ReportSignatureItem {
+  id: string;
+  filePath: string;
+  fileName: string;
+  customerId: string | null;
+  signatoryName: string;
+  addressText: string;
+  gps?: { lat: number; lng: number; accuracy?: number | null } | null;
+  createdAt: Date | null;
+}
+
 function getFolderSegments(folderPath: string): string[] {
   return folderPath.split('/').filter(Boolean);
 }
@@ -207,6 +230,11 @@ function ProjectFilesContent() {
   const [viewerFile, setViewerFile] = useState<FileMetadata | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [contentReady, setContentReady] = useState(false);
+  const [projectEmails, setProjectEmails] = useState<ProjectEmailItem[]>([]);
+  const [projectEmailsLoading, setProjectEmailsLoading] = useState(false);
+  const [selectedEmail, setSelectedEmail] = useState<ProjectEmailItem | null>(null);
+  const [reportSignatures, setReportSignatures] = useState<Record<string, ReportSignatureItem>>({});
+  const [selectedSignature, setSelectedSignature] = useState<ReportSignatureItem | null>(null);
 
   /** Mark file as viewed by admin so project unread counts drop. */
   useEffect(() => {
@@ -346,6 +374,100 @@ function ProjectFilesContent() {
     });
     return () => unsub();
   }, [projectId, selectedFolder]);
+
+  // Listen to logged emails for this project when in E-Mails folder (any subfolder)
+  useEffect(() => {
+    if (!db || !projectId) return;
+    const scope = getScopeFolderForProject(selectedFolder, project?.dynamicSubfolders);
+    if (!scope || scope.path !== '04_Emails') {
+      setProjectEmails([]);
+      return;
+    }
+    setProjectEmailsLoading(true);
+    const q = query(
+      collection(db, 'projectEmails'),
+      where('projectId', '==', projectId),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: ProjectEmailItem[] = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            direction: (data.direction as 'incoming' | 'outgoing') || 'outgoing',
+            to: Array.isArray(data.to)
+              ? data.to.filter((v: unknown): v is string => typeof v === 'string')
+              : [],
+            from: typeof data.from === 'string' ? data.from : '',
+            subject: typeof data.subject === 'string' ? data.subject : '',
+            snippet: typeof data.snippet === 'string' ? data.snippet : '',
+            createdAt: data.createdAt?.toDate?.() ?? null,
+            bodyText: typeof (data.bodyText as unknown) === 'string' ? (data.bodyText as string) : undefined,
+            bodyHtml: typeof (data.bodyHtml as unknown) === 'string' ? (data.bodyHtml as string) : undefined,
+          };
+        });
+        setProjectEmails(list);
+        setProjectEmailsLoading(false);
+      },
+      (err) => {
+        console.error('Error loading project emails:', err);
+        setProjectEmails([]);
+        setProjectEmailsLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [db, projectId, selectedFolder, project?.dynamicSubfolders]);
+
+  // Listen to report signatures when Signable Documents folder is selected
+  useEffect(() => {
+    if (!db || !projectId) return;
+    if (selectedFolder !== '03_Reports/Acceptance_Protocols') {
+      setReportSignatures({});
+      return;
+    }
+    const q = query(
+      collection(db, 'reportSignatures'),
+      where('projectId', '==', projectId),
+      where('folderPath', '==', selectedFolder)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const map: Record<string, ReportSignatureItem> = {};
+        snap.forEach((d) => {
+          const data = d.data();
+          const item: ReportSignatureItem = {
+            id: d.id,
+            filePath: (data.filePath as string) || '',
+            fileName: (data.fileName as string) || '',
+            customerId: typeof data.customerId === 'string' ? data.customerId : null,
+            signatoryName: (data.signatoryName as string) || '',
+            addressText: (data.addressText as string) || '',
+            gps: data.gps
+              ? {
+                  lat: typeof data.gps.lat === 'number' ? data.gps.lat : 0,
+                  lng: typeof data.gps.lng === 'number' ? data.gps.lng : 0,
+                  accuracy:
+                    typeof data.gps.accuracy === 'number' ? data.gps.accuracy : null,
+                }
+              : null,
+            createdAt: data.createdAt?.toDate?.() ?? null,
+          };
+          if (item.filePath) {
+            map[item.filePath] = item;
+          }
+        });
+        setReportSignatures(map);
+      },
+      (err) => {
+        console.error('Error loading report signatures:', err);
+        setReportSignatures({});
+      }
+    );
+    return () => unsub();
+  }, [db, projectId, selectedFolder]);
 
   async function handleMarkMessageAsRead(msgId: string) {
     if (!db || !currentUser?.uid) return;
@@ -566,6 +688,13 @@ function ProjectFilesContent() {
   const paginatedFiles = files.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
   const totalPages = Math.max(1, Math.ceil(files.length / itemsPerPage));
   const scopeFolder = getScopeFolderForProject(selectedFolder, project?.dynamicSubfolders);
+  const isEmailsFolder = scopeFolder?.path === '04_Emails';
+  const emailFilterDirection: 'incoming' | 'outgoing' | null =
+    selectedFolder === '04_Emails/Incoming'
+      ? 'incoming'
+      : selectedFolder === '04_Emails/Outgoing'
+      ? 'outgoing'
+      : null;
 
   // During loading: no AdminLayout so we don’t show a second header/sidebar (avoids duplicate admin bar during transition)
   if (loading) {
@@ -629,7 +758,14 @@ function ProjectFilesContent() {
               </div>
               <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto space-y-4">
                 {scopeFolder && (() => {
-                  const hasSelectedChild = scopeFolder.children?.some((c) => selectedFolder === c.path);
+                  const isEmailsRoot = scopeFolder.path === '04_Emails';
+                  const emailsChildren = isEmailsRoot
+                    ? [
+                        { name: 'Received', path: '04_Emails/Incoming' },
+                        { name: 'Sent', path: '04_Emails/Outgoing' },
+                      ]
+                    : scopeFolder.children;
+                  const hasSelectedChild = emailsChildren?.some((c) => selectedFolder === c.path);
                   const isParentSelected = selectedFolder === scopeFolder.path && !hasSelectedChild;
                   const config = getFolderConfig(scopeFolder.path, t);
                   return (
@@ -650,9 +786,9 @@ function ProjectFilesContent() {
                         <span className="text-lg">{getFolderIcon(scopeFolder.path)}</span>
                         <span className="flex-1 font-medium">{formatFolderName(scopeFolder.path, t, project?.folderDisplayNames)}</span>
                       </button>
-                      {scopeFolder.children && (hasSelectedChild || isParentSelected) && (
+                      {emailsChildren && (hasSelectedChild || isParentSelected) && (
                         <div className="ml-6 mt-1.5 space-y-1 border-l-2 border-gray-200 pl-4">
-                          {scopeFolder.children.map((child) => (
+                          {emailsChildren.map((child) => (
                             <button
                               key={child.path}
                               type="button"
@@ -663,7 +799,13 @@ function ProjectFilesContent() {
                                   : 'text-gray-600 hover:bg-gray-50'
                               }`}
                             >
-                              <span>{formatFolderName(child.path, t, project?.folderDisplayNames)}</span>
+                              <span>
+                                {isEmailsRoot
+                                  ? child.name === 'Received'
+                                    ? 'Received'
+                                    : 'Sent'
+                                  : formatFolderName(child.path, t, project?.folderDisplayNames)}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -698,350 +840,502 @@ function ProjectFilesContent() {
           </div>
 
           <div className="lg:col-span-9 space-y-6">
-            {/* Upload */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="bg-gradient-to-r from-green-power-50 to-green-power-100 px-6 py-4 border-b border-green-power-200 flex items-center gap-3">
-                <img src="/logo.png" alt="" className="w-10 h-10 object-contain flex-shrink-0" aria-hidden />
-                <div>
-                  <h3 className="text-base font-bold text-gray-900 mb-1">{t('files.uploadFiles')}</h3>
-                  <p className="text-xs text-gray-600">{formatFolderName(selectedFolder, t, project?.folderDisplayNames)}</p>
-                </div>
-              </div>
-              <div className="p-6">
-                {uploadError && (
-                  <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm mb-4 rounded-r-lg">
-                    {uploadError}
-                  </div>
-                )}
-                {uploadSuccess && successFolder === selectedFolder && (
-                  <div className="bg-green-50 border-l-4 border-green-400 text-green-700 px-4 py-3 text-sm mb-4 rounded-r-lg">
-                    {uploadSuccess}
-                  </div>
-                )}
-                {isCustomerUploadsFolder(selectedFolder) ? (
-                  <div className="border-2 border-dashed border-amber-300 rounded-lg p-8 text-center bg-amber-50">
-                    <p className="text-sm text-amber-800 font-medium">{t('files.customerUploadsNoAdminUpload')}</p>
-                  </div>
-                ) : (
-                  <>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept=".pdf,.jpg,.jpeg,.png"
-                      multiple
-                      className="hidden"
-                      onChange={(e) => {
-                        const fl = Array.from(e.target.files || []);
-                        if (fl.length === 0) return;
-                        const tooBig = fl.find((f) => f.size > MAX_FILE_SIZE_BYTES);
-                        if (tooBig) {
-                          setUploadError(t('files.fileSizeTooLarge'));
-                          if (fileInputRef.current) fileInputRef.current.value = '';
-                          return;
-                        }
-                        setSelectedFiles(fl);
-                        setSelectedFile(fl[0]);
-                        setShowUploadPreview(true);
-                        setUploadError('');
-                      }}
-                    />
-                    <div
-                      onClick={() => fileInputRef.current?.click()}
-                      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(true); }}
-                      onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setDragOver(false); }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDragOver(false);
-                        const fl = Array.from(e.dataTransfer.files || []);
-                        if (fl.length === 0) return;
-                        const tooBig = fl.find((f) => f.size > MAX_FILE_SIZE_BYTES);
-                        if (tooBig) {
-                          setUploadError(t('files.fileSizeTooLarge'));
-                          return;
-                        }
-                        setSelectedFiles(fl);
-                        setSelectedFile(fl[0]);
-                        setShowUploadPreview(true);
-                        setUploadError('');
-                      }}
-                      className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
-                        dragOver ? 'border-green-power-500 bg-green-power-50' : 'border-gray-300 hover:border-green-power-400 hover:bg-green-power-50/30'
-                      }`}
-                    >
-                      <p className="text-sm text-gray-600">{t('files.clickToSelectFiles')}</p>
-                      <p className="text-xs text-gray-500 mt-1">{t('files.fileTypesHint')}</p>
+            {!isEmailsFolder && (
+              <>
+                {/* Upload */}
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                  <div className="bg-gradient-to-r from-green-power-50 to-green-power-100 px-6 py-4 border-b border-green-power-200 flex items-center gap-3">
+                    <img src="/logo.png" alt="" className="w-10 h-10 object-contain flex-shrink-0" aria-hidden />
+                    <div>
+                      <h3 className="text-base font-bold text-gray-900 mb-1">{t('files.uploadFiles')}</h3>
+                      <p className="text-xs text-gray-600">{formatFolderName(selectedFolder, t, project?.folderDisplayNames)}</p>
                     </div>
-                    {uploading && (
-                      <div className="mt-4">
-                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                          <div className="h-full bg-green-power-500 transition-all" style={{ width: `${uploadProgress}%` }} />
-                        </div>
-                        <p className="text-xs text-gray-600 mt-2">{uploadingFileName}</p>
+                  </div>
+                  <div className="p-6">
+                    {uploadError && (
+                      <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm mb-4 rounded-r-lg">
+                        {uploadError}
                       </div>
                     )}
-                    {selectedFiles.length > 0 && !uploading && (
-                      <div className="mt-4 flex flex-wrap gap-2 items-center">
-                        <span className="text-sm font-medium text-gray-700">{t('files.selectedFilesCount', { count: selectedFiles.length })}</span>
-                        <button
-                          type="button"
-                          onClick={() => setShowUploadPreview(true)}
-                          className="px-3 py-1.5 bg-green-power-600 text-white text-sm rounded-lg hover:bg-green-power-700"
+                    {uploadSuccess && successFolder === selectedFolder && (
+                      <div className="bg-green-50 border-l-4 border-green-400 text-green-700 px-4 py-3 text-sm mb-4 rounded-r-lg">
+                        {uploadSuccess}
+                      </div>
+                    )}
+                    {isCustomerUploadsFolder(selectedFolder) ? (
+                      <div className="border-2 border-dashed border-amber-300 rounded-lg p-8 text-center bg-amber-50">
+                        <p className="text-sm text-amber-800 font-medium">{t('files.customerUploadsNoAdminUpload')}</p>
+                      </div>
+                    ) : (
+                      <>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png"
+                          multiple
+                          className="hidden"
+                          onChange={(e) => {
+                            const fl = Array.from(e.target.files || []);
+                            if (fl.length === 0) return;
+                            const tooBig = fl.find((f) => f.size > MAX_FILE_SIZE_BYTES);
+                            if (tooBig) {
+                              setUploadError(t('files.fileSizeTooLarge'));
+                              if (fileInputRef.current) fileInputRef.current.value = '';
+                              return;
+                            }
+                            setSelectedFiles(fl);
+                            setSelectedFile(fl[0]);
+                            setShowUploadPreview(true);
+                            setUploadError('');
+                          }}
+                        />
+                        <div
+                          onClick={() => fileInputRef.current?.click()}
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDragOver(true);
+                          }}
+                          onDragLeave={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDragOver(false);
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDragOver(false);
+                            const fl = Array.from(e.dataTransfer.files || []);
+                            if (fl.length === 0) return;
+                            const tooBig = fl.find((f) => f.size > MAX_FILE_SIZE_BYTES);
+                            if (tooBig) {
+                              setUploadError(t('files.fileSizeTooLarge'));
+                              return;
+                            }
+                            setSelectedFiles(fl);
+                            setSelectedFile(fl[0]);
+                            setShowUploadPreview(true);
+                            setUploadError('');
+                          }}
+                          className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+                            dragOver
+                              ? 'border-green-power-500 bg-green-power-50'
+                              : 'border-gray-300 hover:border-green-power-400 hover:bg-green-power-50/30'
+                          }`}
                         >
-                          {t('common.upload')}
-                        </button>
-                        <button type="button" onClick={clearSelectedFiles} className="text-sm text-gray-600 hover:text-red-600">
-                          {t('files.clear')}
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Files list */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-base font-bold text-gray-900">{t('files.filesListTitle')}</h3>
-              </div>
-              <div className="p-4">
-                {files.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-8 text-center">{t('files.noFilesYetList')}</p>
-                ) : (
-                  <>
-                    <ul className="divide-y divide-gray-200">
-                      {paginatedFiles.map((file) => (
-                        <li key={file.cloudinaryPublicId} className="py-3 flex items-center justify-between gap-4">
-                          <div className="flex items-center gap-3 min-w-0">
-                            <span className="text-xl">
-                              {file.fileType === 'pdf' ? '📄' : file.fileType === 'image' ? '🖼️' : '📎'}
-                            </span>
-                            <div className="min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">{file.fileName}</p>
-                              {file.uploadedAt && (
-                                <p className="text-xs text-gray-500">
-                                  {file.uploadedAt.toLocaleDateString()}
-                                </p>
-                              )}
+                          <p className="text-sm text-gray-600">{t('files.clickToSelectFiles')}</p>
+                          <p className="text-xs text-gray-500 mt-1">{t('files.fileTypesHint')}</p>
+                        </div>
+                        {uploading && (
+                          <div className="mt-4">
+                            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="h-full bg-green-power-500 transition-all" style={{ width: `${uploadProgress}%` }} />
                             </div>
+                            <p className="text-xs text-gray-600 mt-2">{uploadingFileName}</p>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
+                        )}
+                        {selectedFiles.length > 0 && !uploading && (
+                          <div className="mt-4 flex flex-wrap gap-2 items-center">
+                            <span className="text-sm font-medium text-gray-700">
+                              {t('files.selectedFilesCount', { count: selectedFiles.length })}
+                            </span>
                             <button
                               type="button"
-                              onClick={() => setViewerFile(file)}
-                              className="text-sm text-green-power-600 hover:underline"
+                              onClick={() => setShowUploadPreview(true)}
+                              className="px-3 py-1.5 bg-green-power-600 text-white text-sm rounded-lg hover:bg-green-power-700"
                             >
-                              {t('files.open')}
+                              {t('common.upload')}
                             </button>
-                            {!isCustomerUploadsFolder(selectedFolder) && (
+                            <button
+                              type="button"
+                              onClick={clearSelectedFiles}
+                              className="text-sm text-gray-600 hover:text-red-600"
+                            >
+                              {t('files.clear')}
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Files list */}
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-gray-200">
+                    <h3 className="text-base font-bold text-gray-900">{t('files.filesListTitle')}</h3>
+                  </div>
+                  <div className="p-4">
+                    {files.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-8 text-center">{t('files.noFilesYetList')}</p>
+                    ) : (
+                      <>
+                        <ul className="divide-y divide-gray-200">
+                          {paginatedFiles.map((file) => {
+                            const sig = reportSignatures[file.cloudinaryPublicId];
+                            return (
+                              <li
+                                key={file.cloudinaryPublicId}
+                                className="py-3 flex items-center justify-between gap-4"
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <span className="text-xl">
+                                    {file.fileType === 'pdf'
+                                      ? '📄'
+                                      : file.fileType === 'image'
+                                      ? '🖼️'
+                                      : '📎'}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="text-sm font-medium text-gray-900 truncate">
+                                      {file.fileName}
+                                    </p>
+                                    {file.uploadedAt && (
+                                      <p className="text-xs text-gray-500">
+                                        {file.uploadedAt.toLocaleDateString()}
+                                      </p>
+                                    )}
+                                    {selectedFolder === '03_Reports/Acceptance_Protocols' && (
+                                      <div className="mt-1 flex items-center gap-2">
+                                        {sig ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedSignature(sig)}
+                                            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-100 text-green-800 hover:bg-green-200"
+                                          >
+                                            ✅ {t('files.signatures.signed')}
+                                          </button>
+                                        ) : (
+                                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-gray-100 text-gray-600">
+                                            {t('files.signatures.notSigned')}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 flex-shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => setViewerFile(file)}
+                                    className="text-sm text-green-power-600 hover:underline"
+                                  >
+                                    {t('files.open')}
+                                  </button>
+                                  {!isCustomerUploadsFolder(selectedFolder) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setDeleteFileData({
+                                          folderPath: selectedFolder,
+                                          publicId: file.cloudinaryPublicId,
+                                          fileName: file.fileName,
+                                        });
+                                        setShowDeleteConfirm(true);
+                                      }}
+                                      disabled={deleting === file.cloudinaryPublicId}
+                                      className="text-sm text-red-600 hover:underline disabled:opacity-50"
+                                    >
+                                      {deleting === file.cloudinaryPublicId
+                                        ? t('files.deleting')
+                                        : t('files.delete')}
+                                    </button>
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                        <Pagination
+                          currentPage={currentPage}
+                          totalPages={totalPages}
+                          totalItems={files.length}
+                          itemsPerPage={itemsPerPage}
+                          onPageChange={setCurrentPage}
+                          onItemsPerPageChange={(n) => {
+                            setItemsPerPage(n);
+                            setCurrentPage(1);
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Customer messages in this folder — scrollable list + accordion per thread */}
+                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                  <div className="px-6 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <h3 className="text-base font-bold text-gray-900">{t('files.customerMessages.title')}</h3>
+                    <p className="text-xs text-gray-600">
+                      {t('files.customerMessages.subtitleConversations', { count: customerMessageThreads.length })}
+                    </p>
+                  </div>
+                  <div className="p-3 max-h-[min(70vh,560px)] overflow-y-auto overscroll-contain">
+                    {customerMessagesList.length === 0 ? (
+                      <p className="text-sm text-gray-500 py-6 text-center">
+                        {t('files.customerMessages.noMessages')}
+                      </p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {customerMessageThreads.map((thread) => {
+                          const root = thread[0];
+                          const replies = thread.slice(1);
+                          const rootId = root.id;
+                          const draft = adminReplyDrafts[rootId] || '';
+                          const isOpen = expandedCustomerThreads.has(rootId);
+                          return (
+                            <li
+                              key={rootId}
+                              className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm"
+                            >
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setDeleteFileData({
-                                    folderPath: selectedFolder,
-                                    publicId: file.cloudinaryPublicId,
-                                    fileName: file.fileName,
-                                  });
-                                  setShowDeleteConfirm(true);
-                                }}
-                                disabled={deleting === file.cloudinaryPublicId}
-                                className="text-sm text-red-600 hover:underline disabled:opacity-50"
+                                onClick={() => toggleCustomerThread(rootId)}
+                                className="w-full flex items-start gap-2 sm:gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
+                                aria-expanded={isOpen}
                               >
-                                {deleting === file.cloudinaryPublicId ? t('files.deleting') : t('files.delete')}
+                                <span className="text-gray-500 shrink-0 mt-0.5" aria-hidden>
+                                  {isOpen ? (
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M19 9l-7 7-7-7"
+                                      />
+                                    </svg>
+                                  ) : (
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M9 5l7 7-7 7"
+                                      />
+                                    </svg>
+                                  )}
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                    {t('files.customerMessages.mainComment')}
+                                  </p>
+                                  {root.fileName && (
+                                    <p className="text-xs font-semibold text-blue-800 truncate mt-0.5">
+                                      {t('files.customerMessages.commentedOnFile')}: {root.fileName}
+                                    </p>
+                                  )}
+                                  {root.subject && (
+                                    <p className="text-xs text-gray-600 truncate">
+                                      {t('files.customerMessages.subject')}: {root.subject}
+                                    </p>
+                                  )}
+                                  <p className="text-sm text-gray-900 line-clamp-2 mt-1">{root.message}</p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    {customersMap.get(root.customerId) || root.customerId}
+                                    {root.createdAt && ` · ${root.createdAt.toLocaleString()}`}
+                                  </p>
+                                  {replies.length > 0 && (
+                                    <p className="text-xs text-green-power-700 font-medium mt-1">
+                                      {replies.length === 1
+                                        ? t('files.customerMessages.replyCountOne')
+                                        : t('files.customerMessages.replyCountMany', { count: replies.length })}
+                                    </p>
+                                  )}
+                                </div>
+                                <div className="flex flex-col items-end gap-1 shrink-0">
+                                  {root.status === 'resolved' ? (
+                                    <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800">
+                                      {t('files.customerMessages.resolved')}
+                                    </span>
+                                  ) : root.status === 'read' ? (
+                                    <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
+                                      {t('files.customerMessages.read')}
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">
+                                      {t('files.customerMessages.new')}
+                                    </span>
+                                  )}
+                                </div>
                               </button>
-                            )}
-                          </div>
+
+                              {isOpen && (
+                                <div className="border-t border-gray-200 bg-gray-50/90 px-3 py-3 space-y-3">
+                                  <div className="rounded-lg border border-gray-100 bg-white p-3">
+                                    <p className="text-xs font-semibold text-gray-700 mb-2">
+                                      {t('files.customerMessages.fromCustomer')}
+                                    </p>
+                                    <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                                      {root.message}
+                                    </p>
+                                    <p className="text-xs text-gray-500 mt-2">
+                                      {customersMap.get(root.customerId) || root.customerId}
+                                      {root.createdAt && ` · ${root.createdAt.toLocaleString()}`}
+                                    </p>
+                                    {root.status !== 'resolved' && (
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        {root.status === 'unread' && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleMarkMessageAsRead(root.id)}
+                                            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
+                                          >
+                                            {t('files.customerMessages.markAsRead')}
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => handleResolveMessage(root.id)}
+                                          disabled={resolvingMessageId === root.id}
+                                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50"
+                                        >
+                                          {resolvingMessageId === root.id
+                                            ? t('common.loading')
+                                            : t('files.customerMessages.resolve')}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {replies.map((msg) => (
+                                    <div
+                                      key={msg.id}
+                                      className={`rounded-lg border px-3 py-2.5 ${
+                                        msg.authorType === 'admin'
+                                          ? 'bg-green-power-50/50 border-green-power-200 border-l-4 border-l-green-power-500'
+                                          : 'bg-white border-gray-200 border-l-4 border-l-gray-300'
+                                      }`}
+                                    >
+                                      <p className="text-xs font-semibold text-gray-700 mb-1">
+                                        {msg.authorType === 'admin'
+                                          ? t('files.customerMessages.fromTeam')
+                                          : t('files.customerMessages.fromCustomer')}
+                                      </p>
+                                      <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">
+                                        {msg.message}
+                                      </p>
+                                      <p className="text-xs text-gray-500 mt-1">
+                                        {msg.authorType === 'admin'
+                                          ? t('files.customerMessages.adminTeam')
+                                          : customersMap.get(msg.customerId) || msg.customerId}
+                                        {msg.createdAt && ` · ${msg.createdAt.toLocaleString()}`}
+                                      </p>
+                                    </div>
+                                  ))}
+
+                                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                                    <label
+                                      className="block text-xs font-medium text-gray-700 mb-1"
+                                      htmlFor={`admin-reply-${rootId}`}
+                                    >
+                                      {t('files.customerMessages.replyLabel')}
+                                    </label>
+                                    <textarea
+                                      id={`admin-reply-${rootId}`}
+                                      value={draft}
+                                      onChange={(e) =>
+                                        setAdminReplyDrafts((prev) => ({ ...prev, [rootId]: e.target.value }))
+                                      }
+                                      rows={3}
+                                      maxLength={2000}
+                                      disabled={submittingAdminReplyThreadId === rootId}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 resize-y min-h-[4.5rem] max-h-40 bg-white disabled:opacity-50"
+                                      placeholder={t('files.customerMessages.replyPlaceholder')}
+                                    />
+                                    <div className="mt-2 flex items-center justify-between gap-2">
+                                      <span className="text-xs text-gray-400">{draft.length}/2000</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAdminReply(thread)}
+                                        disabled={!draft.trim() || submittingAdminReplyThreadId === rootId}
+                                        className="px-4 py-2 text-xs font-medium rounded-lg bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                      >
+                                        {submittingAdminReplyThreadId === rootId
+                                          ? t('common.loading')
+                                          : t('files.customerMessages.sendReply')}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {isEmailsFolder && (
+              <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-cyan-50 flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">E-Mails</h3>
+                    <p className="text-xs text-gray-600">
+                      Alle E-Mails zu diesem Projekt (eingehend &amp; ausgehend)
+                    </p>
+                  </div>
+                </div>
+                <div className="p-4">
+                  {projectEmailsLoading ? (
+                    <div className="py-8 flex flex-col items-center justify-center gap-2">
+                      <div className="h-6 w-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      <p className="text-xs text-gray-500">E-Mails werden geladen…</p>
+                    </div>
+                  ) : projectEmails.length === 0 ? (
+                    <p className="text-sm text-gray-500 py-8 text-center">
+                      Für dieses Projekt wurden noch keine E-Mails protokolliert.
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-gray-200">
+                      {projectEmails
+                        .filter((email) =>
+                          emailFilterDirection ? email.direction === emailFilterDirection : true
+                        )
+                        .map((email) => (
+                        <li key={email.id}>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedEmail(email)}
+                            className="w-full text-left px-3 py-3 flex items-start gap-3 hover:bg-gray-50 transition-colors"
+                          >
+                            <span className="mt-1 text-lg" aria-hidden>
+                              {email.direction === 'incoming' ? '⬅️' : '➡️'}
+                            </span>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-gray-900 truncate">
+                                  {email.subject || '(Kein Betreff)'}
+                                </p>
+                                {email.createdAt && (
+                                  <p className="text-xs text-gray-500 whitespace-nowrap">
+                                    {email.createdAt.toLocaleString()}
+                                  </p>
+                                )}
+                              </div>
+                              <p className="text-xs text-gray-600 truncate">
+                                {email.direction === 'incoming' ? 'Von' : 'An'}{' '}
+                                {email.direction === 'incoming'
+                                  ? email.from || 'Unbekannt'
+                                  : email.to.join(', ') || 'Unbekannt'}
+                              </p>
+                              {email.snippet && (
+                                <p className="text-xs text-gray-500 mt-1 line-clamp-2">{email.snippet}</p>
+                              )}
+                            </div>
+                            <span className="ml-2 mt-1 text-gray-400 text-xs" aria-hidden>
+                              Vollansicht →
+                            </span>
+                          </button>
                         </li>
                       ))}
                     </ul>
-                    <Pagination
-                      currentPage={currentPage}
-                      totalPages={totalPages}
-                      totalItems={files.length}
-                      itemsPerPage={itemsPerPage}
-                      onPageChange={setCurrentPage}
-                      onItemsPerPageChange={(n) => {
-                        setItemsPerPage(n);
-                        setCurrentPage(1);
-                      }}
-                    />
-                  </>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-
-            {/* Customer messages in this folder — scrollable list + accordion per thread */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="px-6 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
-                <h3 className="text-base font-bold text-gray-900">{t('files.customerMessages.title')}</h3>
-                <p className="text-xs text-gray-600">
-                  {t('files.customerMessages.subtitleConversations', { count: customerMessageThreads.length })}
-                </p>
-              </div>
-              <div className="p-3 max-h-[min(70vh,560px)] overflow-y-auto overscroll-contain">
-                {customerMessagesList.length === 0 ? (
-                  <p className="text-sm text-gray-500 py-6 text-center">{t('files.customerMessages.noMessages')}</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {customerMessageThreads.map((thread) => {
-                      const root = thread[0];
-                      const replies = thread.slice(1);
-                      const rootId = root.id;
-                      const draft = adminReplyDrafts[rootId] || '';
-                      const isOpen = expandedCustomerThreads.has(rootId);
-                      return (
-                        <li key={rootId} className="rounded-lg border border-gray-200 bg-white overflow-hidden shadow-sm">
-                          <button
-                            type="button"
-                            onClick={() => toggleCustomerThread(rootId)}
-                            className="w-full flex items-start gap-2 sm:gap-3 px-3 py-2.5 text-left hover:bg-gray-50 transition-colors"
-                            aria-expanded={isOpen}
-                          >
-                            <span className="text-gray-500 shrink-0 mt-0.5" aria-hidden>
-                              {isOpen ? (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                              ) : (
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                </svg>
-                              )}
-                            </span>
-                            <div className="min-w-0 flex-1">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
-                                {t('files.customerMessages.mainComment')}
-                              </p>
-                              {root.fileName && (
-                                <p className="text-xs font-semibold text-blue-800 truncate mt-0.5">
-                                  {t('files.customerMessages.commentedOnFile')}: {root.fileName}
-                                </p>
-                              )}
-                              {root.subject && (
-                                <p className="text-xs text-gray-600 truncate">{t('files.customerMessages.subject')}: {root.subject}</p>
-                              )}
-                              <p className="text-sm text-gray-900 line-clamp-2 mt-1">{root.message}</p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                {customersMap.get(root.customerId) || root.customerId}
-                                {root.createdAt && ` · ${root.createdAt.toLocaleString()}`}
-                              </p>
-                              {replies.length > 0 && (
-                                <p className="text-xs text-green-power-700 font-medium mt-1">
-                                  {replies.length === 1
-                                    ? t('files.customerMessages.replyCountOne')
-                                    : t('files.customerMessages.replyCountMany', { count: replies.length })}
-                                </p>
-                              )}
-                            </div>
-                            <div className="flex flex-col items-end gap-1 shrink-0">
-                              {root.status === 'resolved' ? (
-                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-green-100 text-green-800">
-                                  {t('files.customerMessages.resolved')}
-                                </span>
-                              ) : root.status === 'read' ? (
-                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-800">
-                                  {t('files.customerMessages.read')}
-                                </span>
-                              ) : (
-                                <span className="inline-flex px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800">
-                                  {t('files.customerMessages.new')}
-                                </span>
-                              )}
-                            </div>
-                          </button>
-
-                          {isOpen && (
-                            <div className="border-t border-gray-200 bg-gray-50/90 px-3 py-3 space-y-3">
-                              <div className="rounded-lg border border-gray-100 bg-white p-3">
-                                <p className="text-xs font-semibold text-gray-700 mb-2">{t('files.customerMessages.fromCustomer')}</p>
-                                <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{root.message}</p>
-                                <p className="text-xs text-gray-500 mt-2">
-                                  {customersMap.get(root.customerId) || root.customerId}
-                                  {root.createdAt && ` · ${root.createdAt.toLocaleString()}`}
-                                </p>
-                                {root.status !== 'resolved' && (
-                                  <div className="mt-3 flex flex-wrap gap-2">
-                                    {root.status === 'unread' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleMarkMessageAsRead(root.id)}
-                                        className="px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 text-white hover:bg-blue-700"
-                                      >
-                                        {t('files.customerMessages.markAsRead')}
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => handleResolveMessage(root.id)}
-                                      disabled={resolvingMessageId === root.id}
-                                      className="px-3 py-1.5 text-xs font-medium rounded-lg bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50"
-                                    >
-                                      {resolvingMessageId === root.id ? t('common.loading') : t('files.customerMessages.resolve')}
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-
-                              {replies.map((msg) => (
-                                <div
-                                  key={msg.id}
-                                  className={`rounded-lg border px-3 py-2.5 ${
-                                    msg.authorType === 'admin'
-                                      ? 'bg-green-power-50/50 border-green-power-200 border-l-4 border-l-green-power-500'
-                                      : 'bg-white border-gray-200 border-l-4 border-l-gray-300'
-                                  }`}
-                                >
-                                  <p className="text-xs font-semibold text-gray-700 mb-1">
-                                    {msg.authorType === 'admin'
-                                      ? t('files.customerMessages.fromTeam')
-                                      : t('files.customerMessages.fromCustomer')}
-                                  </p>
-                                  <p className="text-sm text-gray-900 whitespace-pre-wrap break-words">{msg.message}</p>
-                                  <p className="text-xs text-gray-500 mt-1">
-                                    {msg.authorType === 'admin'
-                                      ? t('files.customerMessages.adminTeam')
-                                      : customersMap.get(msg.customerId) || msg.customerId}
-                                    {msg.createdAt && ` · ${msg.createdAt.toLocaleString()}`}
-                                  </p>
-                                </div>
-                              ))}
-
-                              <div className="rounded-lg border border-gray-200 bg-white p-3">
-                                <label className="block text-xs font-medium text-gray-700 mb-1" htmlFor={`admin-reply-${rootId}`}>
-                                  {t('files.customerMessages.replyLabel')}
-                                </label>
-                                <textarea
-                                  id={`admin-reply-${rootId}`}
-                                  value={draft}
-                                  onChange={(e) => setAdminReplyDrafts((prev) => ({ ...prev, [rootId]: e.target.value }))}
-                                  rows={3}
-                                  maxLength={2000}
-                                  disabled={submittingAdminReplyThreadId === rootId}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-power-500 resize-y min-h-[4.5rem] max-h-40 bg-white disabled:opacity-50"
-                                  placeholder={t('files.customerMessages.replyPlaceholder')}
-                                />
-                                <div className="mt-2 flex items-center justify-between gap-2">
-                                  <span className="text-xs text-gray-400">{draft.length}/2000</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAdminReply(thread)}
-                                    disabled={!draft.trim() || submittingAdminReplyThreadId === rootId}
-                                    className="px-4 py-2 text-xs font-medium rounded-lg bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  >
-                                    {submittingAdminReplyThreadId === rootId ? t('common.loading') : t('files.customerMessages.sendReply')}
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1086,6 +1380,143 @@ function ProjectFilesContent() {
             <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
               {viewerFile.fileName}
             </p>
+          </div>
+        </div>
+      )}
+      {selectedEmail && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setSelectedEmail(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setSelectedEmail(null)}
+            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+            aria-label={t('common.close')}
+          >
+            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <div
+            className="relative max-w-4xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+              <p className="text-xs font-semibold text-gray-500 mb-1">
+                {selectedEmail.direction === 'incoming' ? 'Eingehend' : 'Ausgehend'}
+              </p>
+              <h2 className="text-lg font-bold text-gray-900">
+                {selectedEmail.subject || '(Kein Betreff)'}
+              </h2>
+              <div className="mt-2 text-xs text-gray-600 space-y-0.5">
+                <p>
+                  <span className="font-semibold">
+                    {selectedEmail.direction === 'incoming' ? 'Von: ' : 'An: '}
+                  </span>
+                  {selectedEmail.direction === 'incoming'
+                    ? selectedEmail.from || 'Unbekannt'
+                    : selectedEmail.to.join(', ') || 'Unbekannt'}
+                </p>
+                {selectedEmail.direction === 'incoming' && selectedEmail.to.length > 0 && (
+                  <p>
+                    <span className="font-semibold">An: </span>
+                    {selectedEmail.to.join(', ')}
+                  </p>
+                )}
+                {selectedEmail.direction === 'outgoing' && selectedEmail.from && (
+                  <p>
+                    <span className="font-semibold">Von: </span>
+                    {selectedEmail.from}
+                  </p>
+                )}
+                {selectedEmail.createdAt && (
+                  <p>
+                    <span className="font-semibold">Datum: </span>
+                    {selectedEmail.createdAt.toLocaleString()}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto px-6 py-4 bg-white">
+              <pre className="whitespace-pre-wrap break-words text-sm text-gray-900">
+                {selectedEmail.bodyText || selectedEmail.snippet || ''}
+              </pre>
+            </div>
+          </div>
+        </div>
+      )}
+      {selectedSignature && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setSelectedSignature(null)}
+        >
+          <div
+            className="relative max-w-xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900">
+                  {t('files.signatures.title')}
+                </h2>
+                <p className="text-xs text-gray-600 mt-0.5 break-all">
+                  {selectedSignature.fileName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedSignature(null)}
+                className="p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+                aria-label={t('common.close')}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-4 space-y-3 overflow-y-auto">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-700">
+                <div>
+                  <p className="font-semibold">{t('files.signatures.signatory')}</p>
+                  <p>{selectedSignature.signatoryName || '—'}</p>
+                </div>
+                <div>
+                  <p className="font-semibold">{t('files.signatures.customerId')}</p>
+                  <p>{selectedSignature.customerId || '—'}</p>
+                </div>
+                <div>
+                  <p className="font-semibold">{t('files.signatures.date')}</p>
+                  <p>
+                    {selectedSignature.createdAt
+                      ? selectedSignature.createdAt.toLocaleString()
+                      : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-semibold">{t('files.signatures.location')}</p>
+                  {selectedSignature.gps ? (
+                    <p>
+                      {selectedSignature.gps.lat.toFixed(5)},{' '}
+                      {selectedSignature.gps.lng.toFixed(5)}
+                      {typeof selectedSignature.gps.accuracy === 'number'
+                        ? ` ±${Math.round(selectedSignature.gps.accuracy)}m`
+                        : ''}
+                    </p>
+                  ) : (
+                    <p>{selectedSignature.addressText || '—'}</p>
+                  )}
+                </div>
+              </div>
+              <p className="text-xs font-semibold text-gray-700 mt-2">
+                {t('files.signatures.signaturePreview')}
+              </p>
+              <div className="border border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center min-h-[120px]">
+                <p className="text-xs text-gray-500">
+                  {t('files.signatures.signatureStoredExternal')}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       )}

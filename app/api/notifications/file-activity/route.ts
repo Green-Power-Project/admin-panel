@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { logProjectEmail } from '@/lib/server/emailLogger';
 import { buildEmailLogoHtml } from '@/lib/emailSignature';
 
 type FileActivityEventType = 'read' | 'approved';
@@ -181,15 +182,38 @@ export async function POST(request: NextRequest) {
       `Kunde: ${customerNumber || '—'}${customerEmail ? ` · ${customerEmail}` : ''}`,
     ];
 
-    await transporter.sendMail({
+    const mailOptions = {
       from: `Grün Power <${EMAIL_USER}>`,
       to: adminEmails.join(','),
       subject,
       html: `<!DOCTYPE html><html><body style="font-family: Arial, sans-serif;">${buildEmailLogoHtml()}${html}</body></html>`,
       text: textLines.join('\n'),
-    });
+    };
+
+    await transporter.sendMail(mailOptions);
 
     console.log('[file-activity] ✅ Notification email sent for', eventType, filePath);
+
+    // Log this notification in projectEmails so it appears in the Emails folder
+    try {
+      await logProjectEmail({
+        projectId,
+        direction: 'outgoing',
+        to: adminEmails,
+        from: EMAIL_USER,
+        subject,
+        text: textLines.join('\n'),
+        html: typeof mailOptions.html === 'string' ? mailOptions.html : undefined,
+        related: {
+          type: 'fileActivity',
+          filePath,
+          folderPath,
+          customerId: resolvedCustomerId || undefined,
+        },
+      });
+    } catch (logErr) {
+      console.error('[file-activity] Failed to log email:', logErr);
+    }
     return withCors(NextResponse.json({ success: true }, { status: 200 }));
   } catch (error) {
     console.error('[file-activity] Error:', error);

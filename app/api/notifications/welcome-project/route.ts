@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { logProjectEmail } from '@/lib/server/emailLogger';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 
 const PORTAL_URL_DEFAULT = 'https://window-app-roan.vercel.app';
@@ -127,6 +128,25 @@ ${closing.text}`;
 
     await transporter.sendMail(mailOptions);
     console.log('[welcome-project] ✅ Project welcome email sent to:', toEmail);
+
+    // Log welcome mail against the project so it appears under "Sent"
+    try {
+      await logProjectEmail({
+        projectId,
+        direction: 'outgoing',
+        to: [toEmail],
+        from: EMAIL_USER,
+        subject,
+        text: emailContentText,
+        html: typeof mailOptions.html === 'string' ? mailOptions.html : undefined,
+        related: {
+          type: 'welcomeProject',
+          customerId,
+        },
+      });
+    } catch (logErr) {
+      console.error('[welcome-project] Failed to log email:', logErr);
+    }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error: any) {

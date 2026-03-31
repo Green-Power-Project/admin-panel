@@ -157,7 +157,14 @@ function ChildList({
     <div className="max-h-[240px] overflow-y-auto space-y-2 pt-2 pr-1 custom-scrollbar animate-in fade-in slide-in-from-top-2 duration-300">
       {childrenFolders.map((child, idx) => {
         const isEditing = editingFolderPath === child.path;
-        const displayName = getProjectFolderDisplayName(child.path, folderDisplayNames, t);
+        const isEmailsIncoming = child.path === '04_Emails/Incoming';
+        const isEmailsOutgoing = child.path === '04_Emails/Outgoing';
+        const isEmailsSystemFolder = isEmailsIncoming || isEmailsOutgoing;
+        const displayName = isEmailsIncoming
+          ? 'Received'
+          : isEmailsOutgoing
+          ? 'Sent'
+          : getProjectFolderDisplayName(child.path, folderDisplayNames, t);
         const u = unreadCounts?.get(child.path) || 0;
         const isDynamic =
           !!onRequestDeleteDynamicSubfolder &&
@@ -215,14 +222,31 @@ function ChildList({
                       {u}
                     </span>
                   )}
-                  <button
-                    type="button"
-                    onClick={(e) => { e.stopPropagation(); onStartEdit(child.path, displayName); }}
-                    className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                    title={t('common.editName')}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                  </button>
+                  {!isEmailsSystemFolder && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onStartEdit(child.path, displayName);
+                      }}
+                      className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                      title={t('common.editName')}
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                        />
+                      </svg>
+                    </button>
+                  )}
                   {isDynamic && (
                     <button
                       type="button"

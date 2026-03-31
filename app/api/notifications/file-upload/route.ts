@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { logProjectEmail } from '@/lib/server/emailLogger';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 import { addWorkingDays } from '@/lib/reportApproval';
 
@@ -358,6 +359,31 @@ ${closing.text}`;
     
     await transporter.sendMail(mailOptions);
     console.log('[file-upload-notification] ✅ Email sent successfully to:', recipientEmail);
+
+    // Best-effort email logging for project "E-Mails" view
+    try {
+      const logDirection = isCustomerUpload ? 'incoming' : 'outgoing';
+      const logFrom = isCustomerUpload
+        ? customerEmail || customerName || customerId || 'customer'
+        : EMAIL_USER;
+      await logProjectEmail({
+        projectId,
+        direction: logDirection,
+        to: recipientEmail.split(',').map((e) => e.trim()).filter(Boolean),
+        from: logFrom,
+        subject,
+        text: emailContentText,
+        html: typeof mailOptions.html === 'string' ? mailOptions.html : undefined,
+        related: {
+          type: 'fileUpload',
+          filePath,
+          folderPath,
+          customerId: customerId || undefined,
+        },
+      });
+    } catch (logErr) {
+      console.error('[file-upload-notification] Failed to log email:', logErr);
+    }
 
     return withCors(NextResponse.json({ success: true }, { status: 200 }));
   } catch (error) {

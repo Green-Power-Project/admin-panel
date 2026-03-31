@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
+import { logProjectEmail } from '@/lib/server/emailLogger';
 
 const PORTAL_URL_DEFAULT = 'https://window-app-roan.vercel.app';
 const CONTACT_EMAIL = 'info@gruen-power.de';
@@ -149,6 +150,25 @@ ${closing.text}`;
 
     await transporter.sendMail(mailOptions);
     console.log('[welcome-customer] ✅ Welcome email sent to:', customerEmail);
+
+    // Log welcome email for project email history (uses customerId as projectId surrogate)
+    try {
+      await logProjectEmail({
+        projectId: String(customerId),
+        direction: 'outgoing',
+        to: [customerEmail],
+        from: EMAIL_USER,
+        subject,
+        text: emailContentText,
+        html: emailContentHtml,
+        related: {
+          type: 'welcomeCustomer',
+          customerId: String(customerId),
+        },
+      });
+    } catch (logErr) {
+      console.error('[welcome-customer] Failed to log email:', logErr);
+    }
 
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (error: any) {

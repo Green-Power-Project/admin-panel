@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { buildEmailLogoHtml } from '@/lib/emailSignature';
+import { logProjectEmail } from '@/lib/server/emailLogger';
 
 // CORS: allow customer panel (different origin) to call this API
 function withCors(response: NextResponse) {
@@ -76,13 +77,35 @@ export async function POST(request: NextRequest) {
       ? `✅ Customer commented on file: ${fileName}`
       : 'New customer message';
 
-    await transporter.sendMail({
+    const mailOptions = {
       from: `Grün Power <${EMAIL_USER}>`,
       to: adminEmails.join(','),
       subject: emailSubject,
       html: `<!DOCTYPE html><html><body style="font-family: Arial, sans-serif;">${buildEmailLogoHtml()}${html}</body></html>`,
       text,
-    });
+    };
+    await transporter.sendMail(mailOptions);
+
+    // Customer-originated message should appear under "Received"
+    try {
+      const customerFrom = typeof customerId === 'string' && customerId.trim() ? customerId.trim() : 'customer';
+      await logProjectEmail({
+        projectId: String(projectId),
+        direction: 'incoming',
+        to: adminEmails,
+        from: customerFrom,
+        subject: emailSubject,
+        text,
+        html: typeof mailOptions.html === 'string' ? mailOptions.html : undefined,
+        related: {
+          type: 'other',
+          folderPath: String(folderPath),
+          customerId: typeof customerId === 'string' ? customerId : undefined,
+        },
+      });
+    } catch (logErr) {
+      console.error('[customer-message] Failed to log project email:', logErr);
+    }
 
     return withCors(NextResponse.json({ success: true }, { status: 200 }));
   } catch (error) {
