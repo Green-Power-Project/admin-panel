@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
-import { v2 as cloudinary } from 'cloudinary';
-
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+import { saveGalleryImage } from '@/lib/server/vpsStorage';
 
 export async function GET() {
   try {
@@ -87,44 +80,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
-    const apiKey = process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY;
-    const apiSecret = process.env.CLOUDINARY_API_SECRET;
-    if (!cloudName || !apiKey || !apiSecret) {
-      return NextResponse.json(
-        { error: 'Gallery upload is not configured (Cloudinary credentials missing).' },
-        { status: 500 }
-      );
-    }
-
     const uploadedUrls: string[] = [];
-    const uploadedPublicIds: string[] = [];
+    const storagePaths: string[] = [];
 
     for (const file of files) {
-      // Upload to Cloudinary
-      const buffer = await file.arrayBuffer();
-      const base64String = Buffer.from(buffer).toString('base64');
-      const dataURI = `data:${file.type};base64,${base64String}`;
-
-      const cloudinaryResponse = await cloudinary.uploader.upload(dataURI, {
-        folder: `gallery/${category.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-        resource_type: 'image',
-        transformation: [
-          { width: 1200, height: 1200, crop: 'limit', quality: 'auto' },
-          { fetch_format: 'auto' }
-        ]
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const saved = await saveGalleryImage({
+        buffer,
+        category,
+        originalName: file.name || 'image',
       });
-
-      uploadedUrls.push(cloudinaryResponse.secure_url);
-      uploadedPublicIds.push(cloudinaryResponse.public_id);
+      uploadedUrls.push(saved.fileUrl);
+      storagePaths.push(saved.storagePath);
     }
 
     // Save as a single gallery record, even when multiple files were uploaded.
     const galleryDoc: Record<string, unknown> = {
       url: uploadedUrls[0] ?? '',
       imageUrls: uploadedUrls,
-      publicId: uploadedPublicIds[0] ?? '',
-      publicIds: uploadedPublicIds,
+      storagePaths,
+      storageProvider: 'vps',
+      publicId: '',
+      publicIds: [],
       category,
       title: title || '',
       uploadedBy,
@@ -153,10 +130,6 @@ export async function POST(request: NextRequest) {
   } catch (error: unknown) {
     console.error('Error uploading gallery images:', error);
     const message = error instanceof Error ? error.message : 'Failed to upload images';
-    const isConfig = /cloudinary|credentials|config|environment/i.test(message);
-    return NextResponse.json(
-      { error: isConfig ? 'Gallery upload is not configured (check Cloudinary and Firebase).' : message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

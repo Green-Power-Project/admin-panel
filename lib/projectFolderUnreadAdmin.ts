@@ -5,6 +5,7 @@
 import { db } from '@/lib/firebase';
 import { collection, doc, getDoc, getDocs, limit, query, where } from 'firebase/firestore';
 import { mergeDynamicSubfolders, PROJECT_FOLDER_STRUCTURE, type Folder } from '@/lib/folderStructure';
+import { fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 
 const UNREAD_COUNT_QUERY_LIMIT = 300;
 
@@ -69,7 +70,8 @@ async function countUnreadFilesInLeaf(
     const snapshot = await getDocs(filesQuery);
     let unread = 0;
     snapshot.forEach((docSnap) => {
-      const filePath = docSnap.data().cloudinaryPublicId as string;
+      const d = docSnap.data();
+      const filePath = fileKeyFromFirestoreDoc(d as Record<string, unknown>);
       if (!readPaths.has(filePath)) unread++;
     });
     return unread;

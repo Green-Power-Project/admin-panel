@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 type OfferImageDoc = {
   imageUrl?: string | null;
-  imageStorageProvider?: 'cloudinary' | 'vps' | null;
+  imageStorageProvider?: 'vps' | null;
   imageStoragePath?: string | null;
 };
 

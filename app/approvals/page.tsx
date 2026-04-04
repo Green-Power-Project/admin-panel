@@ -17,6 +17,7 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import Pagination from '@/components/Pagination';
+import { fileUrlFromFirestoreDoc } from '@/lib/fileDocFields';
 
 function getFolderSegments(folderPath: string): string[] {
   return folderPath.split('/').filter(Boolean);
@@ -322,7 +323,7 @@ function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
     if (!db) return;
     setOpeningFileId(approval.id);
     try {
-      // filePath (Cloudinary public_id) format: projects/{projectId}/{folderPath}/{fileName}
+      // filePath format: projects/{projectId}/{folderPath}/{fileName}
       const parts = approval.filePath.split('/').filter(Boolean);
       const projectId = approval.projectId || (parts[0] === 'projects' ? parts[1] : undefined);
       const folderPath = parts.length >= 4 ? parts.slice(2, -1).join('/') : undefined;
@@ -335,10 +336,14 @@ function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
       const segments = folderPath ? getFolderSegments(folderPath) : [];
       if (segments.length > 0) {
         const filesRef = getProjectFolderRef(projectId, segments);
-        const q = query(filesRef, where('cloudinaryPublicId', '==', approval.filePath));
+        const q = query(
+          filesRef,
+          where('fileKey', '==', approval.filePath)
+        );
         const snapshot = await getDocs(q);
         const first = snapshot.docs[0];
-        const url = first?.data()?.cloudinaryUrl as string | undefined;
+        const d = first?.data();
+        const url = d ? fileUrlFromFirestoreDoc(d as Record<string, unknown>) : undefined;
         if (url) {
           setViewerUrl(url);
           setViewerFileName(approval.fileName || 'file');

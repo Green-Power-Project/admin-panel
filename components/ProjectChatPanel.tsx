@@ -175,7 +175,7 @@ export default function ProjectChatPanel({
             <button type="button" onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-200">{t('common.close')}</button>
           </div>
           <div className="p-6 text-center text-gray-500">
-            <p>Chat is not available. Configure Firebase Realtime Database (NEXT_PUBLIC_FIREBASE_DATABASE_URL) and Storage.</p>
+            <p>Chat is not available. Configure Firebase Realtime Database (NEXT_PUBLIC_FIREBASE_DATABASE_URL).</p>
           </div>
         </div>
       </div>

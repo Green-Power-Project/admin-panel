@@ -8,15 +8,16 @@ import {
   where,
 } from 'firebase/firestore';
 import { getAllFolderPathsArray } from '@/lib/folderStructure';
-import { deleteFile } from '@/lib/cloudinary';
+import { deleteFile } from '@/lib/fileStorage';
+import { fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 
 function getFolderSegments(folderPath: string): string[] {
   return folderPath.split('/').filter(Boolean);
 }
 
 /**
- * Delete all project files (Firestore metadata + Cloudinary assets), fileReadStatus,
- * reportApprovals, and the project document.
+ * Delete all project files (Firestore metadata + local files), fileReadStatus,
+ * reportApprovals, reportSignatures, and the project document.
  * Call this before deleting a project or as part of customer cascade.
  */
 export async function deleteProjectCascade(
@@ -35,9 +36,10 @@ export async function deleteProjectCascade(
 
     for (const d of snapshot.docs) {
       const data = d.data();
-      const publicId = data.cloudinaryPublicId as string | undefined;
+      const publicId = fileKeyFromFirestoreDoc(data as Record<string, unknown>) || undefined;
+      const fileName = data.fileName as string | undefined;
       if (publicId) {
-        await deleteFile(publicId);
+        await deleteFile(publicId, fileName);
       }
       await deleteDoc(doc(db, 'files', 'projects', projectId, folderPathId, 'files', d.id));
     }
@@ -59,25 +61,32 @@ export async function deleteProjectCascade(
     approvalsSnapshot.docs.map((d) => deleteDoc(doc(db, 'reportApprovals', d.id)))
   );
 
+  const reportSigRef = collection(db, 'reportSignatures');
+  const reportSigQuery = query(reportSigRef, where('projectId', '==', projectId));
+  const reportSigSnapshot = await getDocs(reportSigQuery);
+  await Promise.all(
+    reportSigSnapshot.docs.map((d) => deleteDoc(doc(db, 'reportSignatures', d.id)))
+  );
+
   // Delete the project document
   await deleteDoc(doc(db, 'projects', projectId));
 }
 
 /**
- * Delete related data for a single file (fileReadStatus, reportApprovals).
+ * Delete related data for a single file (fileReadStatus, reportApprovals, reportSignatures).
  * Call when deleting a file from a project so admin screens (audit logs, tracking) stay in sync.
- * filePath in both collections is the Cloudinary public ID.
+ * filePath in these collections is the storage file key (logical path).
  */
 export async function deleteFileRelatedData(
   db: Firestore,
   projectId: string,
-  cloudinaryPublicId: string
+  fileKey: string
 ): Promise<void> {
   const readStatusRef = collection(db, 'fileReadStatus');
   const readStatusQuery = query(
     readStatusRef,
     where('projectId', '==', projectId),
-    where('filePath', '==', cloudinaryPublicId)
+    where('filePath', '==', fileKey)
   );
   const readStatusSnapshot = await getDocs(readStatusQuery);
   await Promise.all(
@@ -88,10 +97,18 @@ export async function deleteFileRelatedData(
   const approvalsQuery = query(
     approvalsRef,
     where('projectId', '==', projectId),
-    where('filePath', '==', cloudinaryPublicId)
+    where('filePath', '==', fileKey)
   );
   const approvalsSnapshot = await getDocs(approvalsQuery);
   await Promise.all(
     approvalsSnapshot.docs.map((d) => deleteDoc(doc(db, 'reportApprovals', d.id)))
+  );
+
+  const reportSigRef = collection(db, 'reportSignatures');
+  // fileKey is the full logical path (includes projectId); single-field query avoids composite index.
+  const reportSigQuery = query(reportSigRef, where('filePath', '==', fileKey));
+  const reportSigSnapshot = await getDocs(reportSigQuery);
+  await Promise.all(
+    reportSigSnapshot.docs.map((d) => deleteDoc(doc(db, 'reportSignatures', d.id)))
   );
 }

@@ -1,4 +1,6 @@
-export interface CloudinaryFile {
+/** Local VPS-backed file API. */
+
+export interface StorageFile {
   public_id: string;
   public_id_full?: string;
   secure_url: string;
@@ -16,9 +18,11 @@ export interface UploadResult {
   bytes: number;
   format: string;
   resource_type: string;
+  storagePath?: string;
+  storageProvider?: 'vps';
 }
 
-const CLOUDINARY_BASE = '/api/cloudinary';
+const STORAGE_BASE = '/api/storage';
 
 export async function uploadFile(
   file: File | Blob,
@@ -29,67 +33,58 @@ export async function uploadFile(
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append('file', file);
-    const preset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
-    if (preset) {
-      formData.append('upload_preset', preset);
-    }
     if (fileName) {
-      // public_id should contain the full path including folder
-      // Remove file extension for public_id (Cloudinary will add it back)
       const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, '');
       formData.append('public_id', `${folderPath}/${fileNameWithoutExt}`);
     } else {
-      // If no fileName provided, use folder to set the path
       formData.append('folder', folderPath);
     }
 
     const xhr = new XMLHttpRequest();
 
-    // Track upload progress
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable && onProgress) {
-        // Calculate percentage (0-90% for upload, remaining 10% for processing)
         const uploadProgress = Math.round((e.loaded / e.total) * 90);
         onProgress(uploadProgress);
       }
     });
 
-    // Handle completion
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        // Simulate processing phase (90-100%)
-        if (onProgress) {
-          onProgress(95);
-        }
-        
+        if (onProgress) onProgress(95);
         try {
           const data = JSON.parse(xhr.responseText);
-          // Final progress update
-          if (onProgress) {
-            onProgress(100);
-          }
-          
+          if (onProgress) onProgress(100);
           resolve({
             public_id: data.public_id,
             secure_url: data.secure_url,
             bytes: data.bytes,
             format: data.format,
             resource_type: data.resource_type,
+            storagePath: data.storagePath,
+            storageProvider: data.storageProvider,
           });
-        } catch (error) {
+        } catch {
           reject(new Error('Failed to parse response'));
         }
       } else {
         try {
-          const error = JSON.parse(xhr.responseText);
-          reject(new Error(error.error || 'Upload failed'));
+          const body = JSON.parse(xhr.responseText) as { error?: string; fileName?: string };
+          if (body.error === 'duplicate_file_name') {
+            const err = Object.assign(new Error('duplicate_file_name'), {
+              code: 'DUPLICATE_FILE_NAME' as const,
+              fileName: typeof body.fileName === 'string' ? body.fileName : '',
+            });
+            reject(err);
+          } else {
+            reject(new Error(body.error || 'Upload failed'));
+          }
         } catch {
           reject(new Error('Upload failed'));
         }
       }
     });
 
-    // Handle errors
     xhr.addEventListener('error', () => {
       reject(new Error('Network error during upload'));
     });
@@ -98,15 +93,14 @@ export async function uploadFile(
       reject(new Error('Upload aborted'));
     });
 
-    // Start upload
-    xhr.open('POST', `${CLOUDINARY_BASE}/upload`);
+    xhr.open('POST', `${STORAGE_BASE}/upload`);
     xhr.send(formData);
   });
 }
 
-export async function listFiles(folderPath: string): Promise<CloudinaryFile[]> {
+export async function listFiles(folderPath: string): Promise<StorageFile[]> {
   try {
-    const response = await fetch(`${CLOUDINARY_BASE}/list?folder=${encodeURIComponent(folderPath)}`);
+    const response = await fetch(`${STORAGE_BASE}/list?folder=${encodeURIComponent(folderPath)}`);
     if (!response.ok) {
       return [];
     }
@@ -118,20 +112,20 @@ export async function listFiles(folderPath: string): Promise<CloudinaryFile[]> {
   }
 }
 
-export async function deleteFile(publicId: string): Promise<boolean> {
+export async function deleteFile(publicId: string, hintFileName?: string): Promise<boolean> {
   try {
-    const response = await fetch(`${CLOUDINARY_BASE}/delete`, {
+    const response = await fetch(`${STORAGE_BASE}/delete`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ publicId }),
+      body: JSON.stringify({ publicId, fileName: hintFileName }),
     });
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       console.error('Delete API error:', errorData);
       return false;
     }
-    
+
     const result = await response.json();
     return result.success === true;
   } catch (error) {
@@ -142,7 +136,7 @@ export async function deleteFile(publicId: string): Promise<boolean> {
 
 export async function deleteFolder(folderPath: string): Promise<boolean> {
   try {
-    const response = await fetch(`${CLOUDINARY_BASE}/delete-folder`, {
+    const response = await fetch(`${STORAGE_BASE}/delete-folder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ folderPath }),
@@ -153,4 +147,3 @@ export async function deleteFolder(folderPath: string): Promise<boolean> {
     return false;
   }
 }
-

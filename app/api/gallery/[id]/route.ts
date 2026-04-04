@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
-import { v2 as cloudinary } from 'cloudinary';
-
-// Configure Cloudinary
-cloudinary.config({
-  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+import { unlinkQuiet } from '@/lib/server/vpsStorage';
 
 export async function DELETE(
   request: NextRequest,
@@ -16,53 +9,34 @@ export async function DELETE(
   try {
     const adminDb = getAdminDb();
     if (!adminDb) {
-      return NextResponse.json(
-        { error: 'Database not available' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Database not available' }, { status: 500 });
     }
 
     const imageId = params.id;
     if (!imageId) {
-      return NextResponse.json(
-        { error: 'Image ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Image ID is required' }, { status: 400 });
     }
 
-    // Get image data from Firestore
     const imageDoc = await adminDb.collection('gallery').doc(imageId).get();
     if (!imageDoc.exists) {
-      return NextResponse.json(
-        { error: 'Image not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ error: 'Image not found' }, { status: 404 });
     }
 
     const imageData = imageDoc.data();
-
-    // Delete from Cloudinary (single or grouped image record).
-    const publicIds = Array.isArray(imageData?.publicIds)
-      ? imageData.publicIds.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
+    const storagePaths = Array.isArray(imageData?.storagePaths)
+      ? imageData.storagePaths.filter((v: unknown): v is string => typeof v === 'string' && v.length > 0)
       : [];
-    if (publicIds.length > 0) {
-      for (const pid of publicIds) {
-        await cloudinary.uploader.destroy(pid);
-      }
-    } else if (imageData?.publicId) {
-      await cloudinary.uploader.destroy(imageData.publicId);
+
+    for (const p of storagePaths) {
+      await unlinkQuiet(p);
     }
 
-    // Only delete from Firestore after Cloudinary delete succeeds.
     await adminDb.collection('gallery').doc(imageId).delete();
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error deleting gallery image:', error);
-    return NextResponse.json(
-      { error: 'Failed to delete image' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to delete image' }, { status: 500 });
   }
 }
 
@@ -73,18 +47,12 @@ export async function GET(
   try {
     const adminDb = getAdminDb();
     if (!adminDb) {
-      return NextResponse.json(
-        { error: 'Database not available' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Database not available' }, { status: 500 });
     }
 
     const imageId = params.id;
     if (!imageId) {
-      return NextResponse.json(
-        { error: 'Image ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Image ID is required' }, { status: 400 });
     }
 
     const docSnap = await adminDb.collection('gallery').doc(imageId).get();
@@ -117,10 +85,7 @@ export async function GET(
     });
   } catch (error) {
     console.error('Error fetching gallery image:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch image' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to fetch image' }, { status: 500 });
   }
 }
 
@@ -131,20 +96,14 @@ export async function PUT(
   try {
     const adminDb = getAdminDb();
     if (!adminDb) {
-      return NextResponse.json(
-        { error: 'Database not available' },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: 'Database not available' }, { status: 500 });
     }
 
     const imageId = params.id;
     const body = await request.json();
 
     if (!imageId) {
-      return NextResponse.json(
-        { error: 'Image ID is required' },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'Image ID is required' }, { status: 400 });
     }
 
     const updates: Record<string, unknown> = { updatedAt: new Date() };
@@ -176,9 +135,6 @@ export async function PUT(
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Error updating gallery image:', error);
-    return NextResponse.json(
-      { error: 'Failed to update image' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: 'Failed to update image' }, { status: 500 });
   }
 }

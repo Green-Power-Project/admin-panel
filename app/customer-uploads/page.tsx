@@ -18,6 +18,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import Pagination from '@/components/Pagination';
+import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 
 interface Project {
   id: string;
@@ -253,9 +254,10 @@ function CustomerUploadsContent() {
           if (fileNameLower.endsWith('.pdf')) fileType = 'pdf';
           else if (fileNameLower.match(/\.(jpg|jpeg|png|gif|webp)$/)) fileType = 'image';
 
+          const fk = fileKeyFromFirestoreDoc(data as Record<string, unknown>);
           allUploadsData.push({
             fileName,
-            filePath: data.cloudinaryPublicId as string,
+            filePath: fk,
             folderPath,
             projectId,
             projectName,
@@ -265,8 +267,10 @@ function CustomerUploadsContent() {
             uploadDate,
             fileSize: 0, // Not stored in Firestore
             fileType,
-            downloadUrl: data.cloudinaryUrl as string,
-            adminReadStatus: adminReadStatusMap.has(data.cloudinaryPublicId as string) ? 'read' : 'unread',
+            downloadUrl: fileUrlFromFirestoreDoc(data as Record<string, unknown>),
+            adminReadStatus: adminReadStatusMap.has(fk)
+              ? 'read'
+              : 'unread',
           });
         });
       });
@@ -331,7 +335,7 @@ function CustomerUploadsContent() {
     return translateFolderPath(folderPath, t);
   }
 
-  // Firestore document IDs cannot contain '/'. Encode filePath (Cloudinary public_id) for use as doc ID.
+  // Firestore document IDs cannot contain '/'. Encode filePath (storage key) for use as doc ID.
   function adminReadStatusDocId(filePath: string): string {
     return filePath.replace(/\//g, '__');
   }

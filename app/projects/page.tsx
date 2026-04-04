@@ -240,7 +240,7 @@ function ProjectsContent() {
     setDeleting(projectId);
     
     try {
-      // Cascade: delete project files (Firestore + Cloudinary), fileReadStatus, reportApprovals, then project
+      // Cascade: delete project files (Firestore + VPS storage), fileReadStatus, reportApprovals, then project
       await deleteProjectCascade(dbInstance, projectId);
       // No need to reload - real-time listener will update automatically
     } catch (error) {

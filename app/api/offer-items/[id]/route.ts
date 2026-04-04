@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { unlink } from 'node:fs/promises';
-import { v2 as cloudinary } from 'cloudinary';
 
 export const dynamic = 'force-dynamic';
 
@@ -12,37 +11,19 @@ function toStringArray(value: unknown): string[] {
     .filter((v): v is string => v.length > 0);
 }
 
-cloudinary.config({
-  cloud_name: process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
-
 async function deleteOfferImageFromStorage(
   data: { imageStorageProvider?: string; imageStoragePath?: string } | undefined
 ) {
-  if (!data?.imageStoragePath || !data.imageStorageProvider) return;
-
-  if (data.imageStorageProvider === 'vps') {
-    try {
-      await unlink(data.imageStoragePath);
-    } catch (error) {
-      const code =
-        typeof error === 'object' && error !== null && 'code' in error
-          ? String((error as { code?: unknown }).code)
-          : '';
-      if (code !== 'ENOENT') {
-        throw new Error('Failed to delete VPS image');
-      }
-    }
-    return;
-  }
-
-  if (data.imageStorageProvider === 'cloudinary') {
-    const result = await cloudinary.uploader.destroy(data.imageStoragePath, { resource_type: 'image' });
-    const status = typeof result?.result === 'string' ? result.result : 'ok';
-    if (status !== 'ok' && status !== 'not found') {
-      throw new Error(`Cloudinary delete failed: ${status}`);
+  if (!data?.imageStoragePath || data.imageStorageProvider !== 'vps') return;
+  try {
+    await unlink(data.imageStoragePath);
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : '';
+    if (code !== 'ENOENT') {
+      throw new Error('Failed to delete VPS image');
     }
   }
 }
@@ -74,10 +55,7 @@ export async function PUT(
     if (body?.dimensionOptions !== undefined) updates.dimensionOptions = toStringArray(body.dimensionOptions);
     if (body?.imageUrl !== undefined) updates.imageUrl = typeof body.imageUrl === 'string' && body.imageUrl.trim() ? body.imageUrl.trim() : null;
     if (body?.imageStorageProvider !== undefined) {
-      updates.imageStorageProvider =
-        body.imageStorageProvider === 'cloudinary' || body.imageStorageProvider === 'vps'
-          ? body.imageStorageProvider
-          : null;
+      updates.imageStorageProvider = body.imageStorageProvider === 'vps' ? 'vps' : null;
     }
     if (body?.imageStoragePath !== undefined) {
       updates.imageStoragePath =

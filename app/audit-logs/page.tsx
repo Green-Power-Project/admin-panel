@@ -18,6 +18,7 @@ import {
 import { getAllFolderPathsArray } from '@/lib/folderStructure';
 import { exportFilteredLogsToPDF, exportFilteredLogsToPDFBlob, AuditLogEntry, PdfLanguage } from '@/lib/pdfExport';
 import Pagination from '@/components/Pagination';
+import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 
 interface FileReadStatus {
   id: string;
@@ -265,9 +266,9 @@ function AuditLogsContent() {
 
         filesSnapshot.forEach((docSnap) => {
           const data = docSnap.data();
-          const storagePath = data.cloudinaryPublicId as string;
+          const storagePath = fileKeyFromFirestoreDoc(data as Record<string, unknown>);
           const fileName = (data.fileName as string) || 'file';
-          const downloadUrl = data.cloudinaryUrl as string | undefined;
+          const downloadUrl = fileUrlFromFirestoreDoc(data as Record<string, unknown>) || undefined;
           const readStatuses = readStatusesMap.get(storagePath) || [];
           const readStatus = readStatuses.length > 0 ? readStatuses[0] : null;
           const isRead = readStatus !== null;

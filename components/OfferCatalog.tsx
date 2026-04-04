@@ -21,7 +21,7 @@ interface OfferCatalogItem {
   colorOptions?: string[];
   dimensionOptions?: string[];
   imageUrl: string | null;
-  imageStorageProvider?: 'cloudinary' | 'vps' | null;
+  imageStorageProvider?: 'vps' | null;
   imageStoragePath?: string | null;
   imageSizeBytes?: number | null;
   order: number;
@@ -32,7 +32,7 @@ type OfferItemImageUploadBody = {
   maxMb?: number;
   error?: string;
   imageUrl?: string;
-  storageProvider?: 'cloudinary' | 'vps';
+  storageProvider?: 'vps';
   storagePath?: string;
   imageSizeBytes?: number;
 };
@@ -58,7 +58,6 @@ function formatEta(seconds: number): string {
   return `${mins}m ${secs}s`;
 }
 
-const DEFAULT_CLOUDINARY_MAX_MB = 9;
 const DEFAULT_VPS_MAX_MB = 150;
 
 function parseOptionInput(raw: string): string[] {
@@ -385,7 +384,7 @@ export default function OfferCatalog() {
     try {
       let imagePayload: {
         imageUrl?: string | null;
-        imageStorageProvider?: 'cloudinary' | 'vps' | null;
+        imageStorageProvider?: 'vps' | null;
         imageStoragePath?: string | null;
         imageSizeBytes?: number | null;
       } = {};
@@ -1010,8 +1009,7 @@ export default function OfferCatalog() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-sm file:font-medium file:bg-green-power-50 file:text-green-power-700 hover:file:bg-green-power-100"
                 />
                 <p className="text-[11px] text-gray-500 mt-1">
-                  {t('offers.uploadImageMaxHintHybrid', {
-                    cloudinaryMaxMb: DEFAULT_CLOUDINARY_MAX_MB,
+                  {t('offers.uploadImageMaxHintServer', {
                     vpsMaxMb: DEFAULT_VPS_MAX_MB,
                   })}
                 </p>

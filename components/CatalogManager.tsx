@@ -34,7 +34,6 @@ function getFirstChildId(folders: CatalogFolder[], folderId: string): string | n
 }
 
 /** UI upload hints; keep aligned with server env defaults. */
-const DEFAULT_CLOUDINARY_MAX_MB = 9;
 const DEFAULT_VPS_MAX_MB = 150;
 
 type CatalogUploadErrorBody = {
@@ -109,8 +108,6 @@ function messageForCatalogUploadError(
       return t('catalog.uploadErrorFileTooLarge', { maxMb });
     case 'MISSING_FILE_OR_FOLDER':
       return t('catalog.uploadErrorMissing');
-    case 'CLOUDINARY_REJECTED':
-      return t('catalog.uploadErrorCloudinary');
     case 'INVALID_FILE_TYPE':
       return t('catalog.uploadErrorInvalidType');
     case 'VPS_STORAGE_ERROR':
@@ -927,8 +924,7 @@ export default function CatalogManager() {
                     </p>
                   )}
                   <p className="text-[11px] text-gray-500 mt-1">
-                    {t('catalog.uploadPdfMaxHintHybrid', {
-                      cloudinaryMaxMb: DEFAULT_CLOUDINARY_MAX_MB,
+                    {t('catalog.uploadPdfMaxHintServer', {
                       vpsMaxMb: DEFAULT_VPS_MAX_MB,
                     })}
                   </p>

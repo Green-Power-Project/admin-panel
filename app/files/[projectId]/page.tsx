@@ -5,7 +5,7 @@ import { useParams, useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
-import { db } from '@/lib/firebase';
+import { auth, db } from '@/lib/firebase';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { translateFolderPath, getProjectFolderDisplayName } from '@/lib/translations';
 import {
@@ -32,7 +32,7 @@ import {
   type Folder,
 } from '@/lib/folderStructure';
 import { useAuth } from '@/contexts/AuthContext';
-import { uploadFile, deleteFile } from '@/lib/cloudinary';
+import { uploadFile, deleteFile } from '@/lib/fileStorage';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
 import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
@@ -40,6 +40,7 @@ import Pagination from '@/components/Pagination';
 import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
 import { deleteFileRelatedData } from '@/lib/cascadeDelete';
 import { groupMessagesByThread, sortThreadsNewestFirst } from '@/lib/customerMessageThreads';
+import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 interface Project {
   id: string;
   name: string;
@@ -52,8 +53,8 @@ interface Project {
 
 interface FileMetadata {
   fileName: string;
-  cloudinaryUrl: string;
-  cloudinaryPublicId: string;
+  fileUrl: string;
+  fileKey: string;
   fileType: 'pdf' | 'image' | 'file';
   folderPath: string;
   uploadedAt: Date | null;
@@ -97,6 +98,14 @@ interface ReportSignatureItem {
   addressText: string;
   gps?: { lat: number; lng: number; accuracy?: number | null } | null;
   createdAt: Date | null;
+  signatureDataUrl?: string;
+}
+
+/** Same fileKey can be reused after delete/re-upload; ignore signatures older than the file row. */
+function signatureAppliesToFile(sig: ReportSignatureItem | undefined, file: FileMetadata): boolean {
+  if (!sig) return false;
+  if (!file.uploadedAt || !sig.createdAt) return true;
+  return sig.createdAt.getTime() >= file.uploadedAt.getTime() - 5000;
 }
 
 function getFolderSegments(folderPath: string): string[] {
@@ -239,19 +248,19 @@ function ProjectFilesContent() {
   /** Mark file as viewed by admin so project unread counts drop. */
   useEffect(() => {
     if (!viewerFile || !db || !projectId || !project?.customerId) return;
-    const docId = viewerFile.cloudinaryPublicId.replace(/\//g, '__');
+    const docId = viewerFile.fileKey.replace(/\//g, '__');
     setDoc(
       doc(db, 'adminFileReadStatus', docId),
       {
         adminRead: true,
-        filePath: viewerFile.cloudinaryPublicId,
+        filePath: viewerFile.fileKey,
         projectId,
         customerId: project.customerId,
         readAt: serverTimestamp(),
       },
       { merge: true }
     ).catch((e) => console.error('adminFileReadStatus', e));
-  }, [viewerFile?.cloudinaryPublicId, projectId, project?.customerId]);
+  }, [viewerFile?.fileKey, projectId, project?.customerId]);
 
   // Avoid flash of folder UI (sidebar with "Emails" etc.) during navigation – show content only after a short delay once project is loaded
   useEffect(() => {
@@ -303,8 +312,8 @@ function ProjectFilesContent() {
           const data = d.data();
           return {
             fileName: data.fileName as string,
-            cloudinaryUrl: data.cloudinaryUrl as string,
-            cloudinaryPublicId: data.cloudinaryPublicId as string,
+            fileUrl: fileUrlFromFirestoreDoc(data as Record<string, unknown>),
+            fileKey: fileKeyFromFirestoreDoc(data as Record<string, unknown>),
             fileType: deriveFileType((data.fileName as string) || ''),
             folderPath: selectedFolder,
             uploadedAt: data.uploadedAt?.toDate ? data.uploadedAt.toDate() : null,
@@ -420,54 +429,85 @@ function ProjectFilesContent() {
     return () => unsub();
   }, [db, projectId, selectedFolder, project?.dynamicSubfolders]);
 
-  // Listen to report signatures when Signable Documents folder is selected
+  /** Load via Admin API so Firestore client rules do not need reportSignatures read access. */
   useEffect(() => {
-    if (!db || !projectId) return;
+    if (!projectId) return;
     if (selectedFolder !== '03_Reports/Acceptance_Protocols') {
       setReportSignatures({});
       return;
     }
-    const q = query(
-      collection(db, 'reportSignatures'),
-      where('projectId', '==', projectId),
-      where('folderPath', '==', selectedFolder)
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
+    let cancelled = false;
+    const load = async () => {
+      if (!auth?.currentUser) {
+        setReportSignatures({});
+        return;
+      }
+      try {
+        const token = await auth.currentUser.getIdToken();
+        const qs = new URLSearchParams({ projectId, folderPath: selectedFolder });
+        const res = await fetch(`/api/report-signatures/list?${qs.toString()}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          console.error('Error loading report signatures:', res.status);
+          if (!cancelled) setReportSignatures({});
+          return;
+        }
+        const data = (await res.json()) as { items?: unknown[] };
+        const rows = Array.isArray(data.items) ? data.items : [];
+        if (cancelled) return;
         const map: Record<string, ReportSignatureItem> = {};
-        snap.forEach((d) => {
-          const data = d.data();
+        for (const row of rows) {
+          const r = row as Record<string, unknown>;
           const item: ReportSignatureItem = {
-            id: d.id,
-            filePath: (data.filePath as string) || '',
-            fileName: (data.fileName as string) || '',
-            customerId: typeof data.customerId === 'string' ? data.customerId : null,
-            signatoryName: (data.signatoryName as string) || '',
-            addressText: (data.addressText as string) || '',
-            gps: data.gps
-              ? {
-                  lat: typeof data.gps.lat === 'number' ? data.gps.lat : 0,
-                  lng: typeof data.gps.lng === 'number' ? data.gps.lng : 0,
-                  accuracy:
-                    typeof data.gps.accuracy === 'number' ? data.gps.accuracy : null,
-                }
-              : null,
-            createdAt: data.createdAt?.toDate?.() ?? null,
+            id: typeof r.id === 'string' ? r.id : '',
+            filePath: typeof r.filePath === 'string' ? r.filePath : '',
+            fileName: typeof r.fileName === 'string' ? r.fileName : '',
+            customerId: typeof r.customerId === 'string' ? r.customerId : null,
+            signatoryName: typeof r.signatoryName === 'string' ? r.signatoryName : '',
+            addressText: typeof r.addressText === 'string' ? r.addressText : '',
+            gps:
+              r.gps && typeof r.gps === 'object'
+                ? {
+                    lat: typeof (r.gps as { lat?: number }).lat === 'number' ? (r.gps as { lat: number }).lat : 0,
+                    lng: typeof (r.gps as { lng?: number }).lng === 'number' ? (r.gps as { lng: number }).lng : 0,
+                    accuracy:
+                      typeof (r.gps as { accuracy?: number }).accuracy === 'number'
+                        ? (r.gps as { accuracy: number }).accuracy
+                        : null,
+                  }
+                : null,
+            createdAt:
+              typeof r.createdAt === 'string' && r.createdAt
+                ? new Date(r.createdAt)
+                : null,
+            signatureDataUrl:
+              typeof r.signatureDataUrl === 'string' && r.signatureDataUrl.startsWith('data:image/')
+                ? r.signatureDataUrl
+                : undefined,
           };
           if (item.filePath) {
-            map[item.filePath] = item;
+            const prev = map[item.filePath];
+            const prevT = prev?.createdAt?.getTime() ?? 0;
+            const nextT = item.createdAt?.getTime() ?? 0;
+            if (!prev || nextT >= prevT) {
+              map[item.filePath] = item;
+            }
           }
-        });
+        }
         setReportSignatures(map);
-      },
-      (err) => {
+      } catch (err) {
         console.error('Error loading report signatures:', err);
-        setReportSignatures({});
+        if (!cancelled) setReportSignatures({});
       }
-    );
-    return () => unsub();
-  }, [db, projectId, selectedFolder]);
+    };
+    void load();
+    const interval = window.setInterval(load, 20000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [projectId, selectedFolder, currentUser?.uid]);
 
   async function handleMarkMessageAsRead(msgId: string) {
     if (!db || !currentUser?.uid) return;
@@ -617,10 +657,12 @@ function ProjectFilesContent() {
         const filesRef = getProjectFolderRef(projectId, segments);
         const docData: Record<string, unknown> = {
           fileName: file.name,
-          cloudinaryUrl: result.secure_url,
-          cloudinaryPublicId: result.public_id,
+          fileUrl: result.secure_url,
+          fileKey: result.public_id,
+          storageProvider: 'vps' as const,
           uploadedAt: serverTimestamp(),
         };
+        if (result.storagePath) docData.storagePath = result.storagePath;
         if (isReportFile(selectedFolder) && file.name.toLowerCase().endsWith('.pdf')) {
           docData.autoApproveDate = Timestamp.fromDate(addWorkingDays(new Date(), 5));
         }
@@ -643,7 +685,20 @@ function ProjectFilesContent() {
       clearSelectedFiles();
       scheduleSuccessMessage(t('files.filesUploadedSuccess', { count: uploadedFiles.length }));
     } catch (err: unknown) {
-      setUploadError(err instanceof Error ? err.message : t('files.uploadFailed'));
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code?: string }).code === 'DUPLICATE_FILE_NAME'
+      ) {
+        const fn =
+          'fileName' in err && typeof (err as { fileName?: string }).fileName === 'string'
+            ? (err as { fileName: string }).fileName
+            : '';
+        setUploadError(t('files.duplicateFileName', { name: fn }));
+      } else {
+        setUploadError(err instanceof Error ? err.message : t('files.uploadFailed'));
+      }
     } finally {
       setUploading(false);
       setUploadProgress(0);
@@ -660,8 +715,11 @@ function ProjectFilesContent() {
       const segments = getFolderSegments(folderPath);
       const folderPathId = segments.join('__');
       const filesRef = getProjectFolderRef(projectId, segments);
-      const snapshot = await getDocs(query(filesRef, where('cloudinaryPublicId', '==', publicId)));
-      const deleted = await deleteFile(publicId);
+      const snapshot = await getDocs(
+        query(filesRef, where('fileKey', '==', publicId))
+      );
+      const hintName = snapshot.docs[0]?.data()?.fileName as string | undefined;
+      const deleted = await deleteFile(publicId, hintName);
       if (!deleted) {
         setAlertData({ title: t('files.deleteFailedTitle'), message: t('files.deleteFailedMessage'), type: 'error' });
         setShowAlert(true);
@@ -972,10 +1030,11 @@ function ProjectFilesContent() {
                       <>
                         <ul className="divide-y divide-gray-200">
                           {paginatedFiles.map((file) => {
-                            const sig = reportSignatures[file.cloudinaryPublicId];
+                            const sigCandidate = reportSignatures[file.fileKey];
+                            const sig = signatureAppliesToFile(sigCandidate, file) ? sigCandidate : undefined;
                             return (
                               <li
-                                key={file.cloudinaryPublicId}
+                                key={file.fileKey}
                                 className="py-3 flex items-center justify-between gap-4"
                               >
                                 <div className="flex items-center gap-3 min-w-0">
@@ -1028,15 +1087,15 @@ function ProjectFilesContent() {
                                       onClick={() => {
                                         setDeleteFileData({
                                           folderPath: selectedFolder,
-                                          publicId: file.cloudinaryPublicId,
+                                          publicId: file.fileKey,
                                           fileName: file.fileName,
                                         });
                                         setShowDeleteConfirm(true);
                                       }}
-                                      disabled={deleting === file.cloudinaryPublicId}
+                                      disabled={deleting === file.fileKey}
                                       className="text-sm text-red-600 hover:underline disabled:opacity-50"
                                     >
-                                      {deleting === file.cloudinaryPublicId
+                                      {deleting === file.fileKey
                                         ? t('files.deleting')
                                         : t('files.delete')}
                                     </button>
@@ -1366,13 +1425,13 @@ function ProjectFilesContent() {
           <div className="relative max-w-[95vw] max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
             {viewerFile.fileType === 'image' ? (
               <img
-                src={viewerFile.cloudinaryUrl}
+                src={viewerFile.fileUrl}
                 alt={viewerFile.fileName}
                 className="max-h-[90vh] w-auto object-contain rounded-lg"
               />
             ) : (
               <iframe
-                src={viewerFile.cloudinaryUrl}
+                src={viewerFile.fileUrl}
                 title={viewerFile.fileName}
                 className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
               />
@@ -1457,12 +1516,8 @@ function ProjectFilesContent() {
           >
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">
-                  {t('files.signatures.title')}
-                </h2>
-                <p className="text-xs text-gray-600 mt-0.5 break-all">
-                  {selectedSignature.fileName}
-                </p>
+                <h2 className="text-lg font-bold text-gray-900">{t('files.signatures.title')}</h2>
+                <p className="text-xs text-gray-600 mt-0.5 break-all">{selectedSignature.fileName}</p>
               </div>
               <button
                 type="button"
@@ -1488,17 +1543,14 @@ function ProjectFilesContent() {
                 <div>
                   <p className="font-semibold">{t('files.signatures.date')}</p>
                   <p>
-                    {selectedSignature.createdAt
-                      ? selectedSignature.createdAt.toLocaleString()
-                      : '—'}
+                    {selectedSignature.createdAt ? selectedSignature.createdAt.toLocaleString() : '—'}
                   </p>
                 </div>
                 <div>
                   <p className="font-semibold">{t('files.signatures.location')}</p>
                   {selectedSignature.gps ? (
                     <p>
-                      {selectedSignature.gps.lat.toFixed(5)},{' '}
-                      {selectedSignature.gps.lng.toFixed(5)}
+                      {selectedSignature.gps.lat.toFixed(5)}, {selectedSignature.gps.lng.toFixed(5)}
                       {typeof selectedSignature.gps.accuracy === 'number'
                         ? ` ±${Math.round(selectedSignature.gps.accuracy)}m`
                         : ''}
@@ -1508,13 +1560,18 @@ function ProjectFilesContent() {
                   )}
                 </div>
               </div>
-              <p className="text-xs font-semibold text-gray-700 mt-2">
-                {t('files.signatures.signaturePreview')}
-              </p>
-              <div className="border border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center min-h-[120px]">
-                <p className="text-xs text-gray-500">
-                  {t('files.signatures.signatureStoredExternal')}
-                </p>
+              <p className="text-xs font-semibold text-gray-700 mt-2">{t('files.signatures.signaturePreview')}</p>
+              <div className="border border-gray-200 rounded-lg bg-gray-50 flex items-center justify-center min-h-[120px] overflow-hidden">
+                {selectedSignature.signatureDataUrl?.startsWith('data:image/') ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedSignature.signatureDataUrl}
+                    alt=""
+                    className="max-h-[200px] max-w-full object-contain"
+                  />
+                ) : (
+                  <p className="text-xs text-gray-500 px-3 py-4">{t('files.signatures.signatureStoredExternal')}</p>
+                )}
               </div>
             </div>
           </div>

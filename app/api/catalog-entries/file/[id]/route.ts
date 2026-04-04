@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 type CatalogFileDoc = {
   fileUrl?: string;
   fileName?: string;
-  storageProvider?: 'cloudinary' | 'vps';
+  storageProvider?: 'vps';
   storagePath?: string;
 };
 

@@ -9,7 +9,7 @@ import { db } from '@/lib/firebase';
 import { collection, addDoc, getDocs, query, orderBy, where, doc, updateDoc } from 'firebase/firestore';
 import { createProjectFolderStructure } from '@/lib/projectUtils';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { uploadFile } from '@/lib/cloudinary';
+import { uploadFile } from '@/lib/fileStorage';
 
 interface Customer {
   uid: string;
@@ -204,7 +204,7 @@ function NewProjectContent() {
         }
       }
 
-      // Create folder structure in Firebase Storage
+      // Legacy no-op hook (paths are created on VPS when files upload)
       try {
         await createProjectFolderStructure(projectId);
       } catch (folderError) {

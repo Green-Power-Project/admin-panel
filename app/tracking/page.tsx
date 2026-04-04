@@ -20,6 +20,7 @@ import {
 } from 'firebase/firestore';
 import { PROJECT_FOLDER_STRUCTURE, getAllFolderPathsArray } from '@/lib/folderStructure';
 import Pagination from '@/components/Pagination';
+import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 
 interface FileReadStatus {
   id: string;
@@ -321,9 +322,9 @@ function TrackingContent() {
 
         filesSnapshot.forEach((docSnap) => {
           const data = docSnap.data();
-          const storagePath = data.cloudinaryPublicId as string;
+          const storagePath = fileKeyFromFirestoreDoc(data as Record<string, unknown>);
           const fileName = (data.fileName as string) || '';
-          const downloadUrl = data.cloudinaryUrl as string | undefined;
+          const downloadUrl = fileUrlFromFirestoreDoc(data as Record<string, unknown>) || undefined;
           const readStatuses = readStatusesMap.get(storagePath) || [];
           const readStatus = readStatuses.length > 0 ? readStatuses[0] : null;
           const isRead = readStatus !== null;

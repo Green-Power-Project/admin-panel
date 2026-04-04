@@ -76,10 +76,7 @@ export async function POST(request: NextRequest) {
     const colorOptions = toStringArray(body?.colorOptions);
     const dimensionOptions = toStringArray(body?.dimensionOptions);
     const imageUrl = typeof body?.imageUrl === 'string' ? body.imageUrl.trim() || null : null;
-    const imageStorageProvider =
-      body?.imageStorageProvider === 'cloudinary' || body?.imageStorageProvider === 'vps'
-        ? body.imageStorageProvider
-        : null;
+    const imageStorageProvider = body?.imageStorageProvider === 'vps' ? 'vps' : null;
     const imageStoragePath = typeof body?.imageStoragePath === 'string' ? body.imageStoragePath.trim() : '';
     const imageSizeBytes = typeof body?.imageSizeBytes === 'number' ? body.imageSizeBytes : null;
 
