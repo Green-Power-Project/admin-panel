@@ -9,6 +9,8 @@ type ListItem = {
   fileName: string;
   customerId: string | null;
   signatoryName: string;
+  signRole: 'client' | 'representative' | null;
+  placeText: string;
   addressText: string;
   gps: { lat: number; lng: number; accuracy: number | null } | null;
   createdAt: string | null;
@@ -38,12 +40,17 @@ function serializeDoc(id: string, data: DocumentData): ListItem {
     typeof data.signatureDataUrl === 'string' && data.signatureDataUrl.startsWith('data:image/')
       ? data.signatureDataUrl
       : undefined;
+  const sr = data.signRole;
+  const signRole =
+    sr === 'client' || sr === 'representative' ? sr : null;
   return {
     id,
     filePath: typeof data.filePath === 'string' ? data.filePath : '',
     fileName: typeof data.fileName === 'string' ? data.fileName : '',
     customerId: typeof data.customerId === 'string' ? data.customerId : null,
     signatoryName: typeof data.signatoryName === 'string' ? data.signatoryName : '',
+    signRole,
+    placeText: typeof data.placeText === 'string' ? data.placeText : '',
     addressText: typeof data.addressText === 'string' ? data.addressText : '',
     gps,
     createdAt: toIso(data, 'createdAt'),

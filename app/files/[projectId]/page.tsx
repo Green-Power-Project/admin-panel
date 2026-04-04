@@ -95,6 +95,8 @@ interface ReportSignatureItem {
   fileName: string;
   customerId: string | null;
   signatoryName: string;
+  signRole: 'client' | 'representative' | null;
+  placeText: string;
   addressText: string;
   gps?: { lat: number; lng: number; accuracy?: number | null } | null;
   createdAt: Date | null;
@@ -459,12 +461,17 @@ function ProjectFilesContent() {
         const map: Record<string, ReportSignatureItem> = {};
         for (const row of rows) {
           const r = row as Record<string, unknown>;
+          const sr = r.signRole;
+          const signRoleParsed =
+            sr === 'client' || sr === 'representative' ? sr : null;
           const item: ReportSignatureItem = {
             id: typeof r.id === 'string' ? r.id : '',
             filePath: typeof r.filePath === 'string' ? r.filePath : '',
             fileName: typeof r.fileName === 'string' ? r.fileName : '',
             customerId: typeof r.customerId === 'string' ? r.customerId : null,
             signatoryName: typeof r.signatoryName === 'string' ? r.signatoryName : '',
+            signRole: signRoleParsed,
+            placeText: typeof r.placeText === 'string' ? r.placeText : '',
             addressText: typeof r.addressText === 'string' ? r.addressText : '',
             gps:
               r.gps && typeof r.gps === 'object'
@@ -1533,6 +1540,16 @@ function ProjectFilesContent() {
             <div className="px-6 py-4 space-y-3 overflow-y-auto">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs text-gray-700">
                 <div>
+                  <p className="font-semibold">{t('files.signatures.signRole')}</p>
+                  <p>
+                    {selectedSignature.signRole === 'representative'
+                      ? t('files.signatures.roleRepresentative')
+                      : selectedSignature.signRole === 'client'
+                        ? t('files.signatures.roleClient')
+                        : '—'}
+                  </p>
+                </div>
+                <div>
                   <p className="font-semibold">{t('files.signatures.signatory')}</p>
                   <p>{selectedSignature.signatoryName || '—'}</p>
                 </div>
@@ -1546,7 +1563,11 @@ function ProjectFilesContent() {
                     {selectedSignature.createdAt ? selectedSignature.createdAt.toLocaleString() : '—'}
                   </p>
                 </div>
-                <div>
+                <div className="sm:col-span-2">
+                  <p className="font-semibold">{t('files.signatures.place')}</p>
+                  <p>{selectedSignature.placeText || '—'}</p>
+                </div>
+                <div className="sm:col-span-2">
                   <p className="font-semibold">{t('files.signatures.location')}</p>
                   {selectedSignature.gps ? (
                     <p>

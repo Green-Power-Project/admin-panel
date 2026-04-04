@@ -110,18 +110,23 @@ function wrapTextToLines(text: string, font: PDFFont, size: number, maxWidth: nu
   return lines;
 }
 
+/** Fixed legal text on the stamped PDF (English). */
+const STAMP_CONFIRMATION_TEXT =
+  'I hereby confirm that I have read all pages of the report, everything is in order, and I agree.';
+
+type StampTextRow = { text: string; size: number; color: ReturnType<typeof rgb>; gapAfter: number };
+
 async function stampPdfBuffer(
   pdfInput: Uint8Array | ArrayBuffer,
   opts: {
-    fileName: string;
+    signRole: 'client' | 'representative';
     signatoryName: string;
-    addressText: string;
-    gps?: { lat?: number; lng?: number };
+    placeText: string;
     signedAt: Date;
     signatureDataUrl?: string;
   }
 ): Promise<Uint8Array> {
-  const { signatoryName, addressText, gps, signedAt, signatureDataUrl } = opts;
+  const { signRole, signatoryName, placeText, signedAt, signatureDataUrl } = opts;
 
   const pdfDoc = await PDFDocument.load(pdfInput);
   const pages = pdfDoc.getPages();
@@ -147,7 +152,9 @@ async function stampPdfBuffer(
   }
 
   const margin = 32;
-  const sigMaxW = 140;
+  const pad = 10;
+  const colW = Math.min(340, width - margin * 2 - 16);
+  const sigMaxW = Math.min(240, colW - 8);
   const sigH = signatureImage ? (signatureImage.height / signatureImage.width) * sigMaxW : 0;
 
   const signedAtStr = signedAt.toLocaleString('de-DE', {
@@ -158,52 +165,51 @@ async function stampPdfBuffer(
     minute: '2-digit',
   });
 
-  const locationText =
-    (addressText && addressText.trim()) ||
-    (gps && typeof gps.lat === 'number' && typeof gps.lng === 'number'
-      ? `${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}`
-      : '');
-
-  const nameSize = 9;
   const bodySize = 8;
   const sectionLabelSize = 7;
-  const labelW = 220;
-  const pad = 8;
-
-  /** Section labels + values: Name → Date, time → Address (PDF bottom-left grows upward). */
-  const LABEL_NAME = 'Name';
-  const LABEL_DATETIME = 'Date, time';
-  const LABEL_ADDRESS = 'Address';
+  const roleLineSize = 9;
   const labelMuted = rgb(0.42, 0.44, 0.48);
-  const nameColor = rgb(0.12, 0.14, 0.18);
+  const bodyColor = rgb(0.12, 0.14, 0.18);
   const dateColor = rgb(0.35, 0.38, 0.42);
-  const addrColor = rgb(0.1, 0.12, 0.16);
+  const placeColor = rgb(0.1, 0.12, 0.16);
 
-  const nameLines = wrapTextToLines(signatoryName.trim() || '—', font, nameSize, labelW);
-  const dateLines = wrapTextToLines(signedAtStr, font, bodySize, labelW);
-  const addrLines = locationText
-    ? wrapTextToLines(locationText, font, bodySize, labelW)
-    : wrapTextToLines('—', font, bodySize, labelW);
+  const nameSafe = signatoryName.trim() || '—';
+  const placeSafe = placeText.trim() || '—';
+  const roleLine =
+    signRole === 'representative'
+      ? `Representative: "${nameSafe}"`
+      : `Client: "${nameSafe}"`;
 
-  type StampRow = { text: string; size: number; color: ReturnType<typeof rgb>; gapAfter: number };
-  const rows: StampRow[] = [];
+  const placeLines = wrapTextToLines(placeSafe, font, bodySize, colW);
+  const dateLines = wrapTextToLines(signedAtStr, font, bodySize, colW);
+  const confirmationLines = wrapTextToLines(STAMP_CONFIRMATION_TEXT, font, bodySize, colW);
 
-  rows.push({ text: LABEL_NAME, size: sectionLabelSize, color: labelMuted, gapAfter: 8 });
-  for (const nl of nameLines) {
-    rows.push({ text: nl, size: nameSize, color: nameColor, gapAfter: 12 });
+  const gapSection = 10;
+  const gapBeforeImage = 10;
+  const gapAfterImage = 10;
+
+  /** Bottom → top: Place, Date/time, Role, Image, Confirmation (reading top → bottom is reverse). */
+  const bottomRows: StampTextRow[] = [];
+  bottomRows.push({ text: 'Place', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
+  for (const pl of placeLines) {
+    bottomRows.push({ text: pl, size: bodySize, color: placeColor, gapAfter: 11 });
   }
-  rows.push({ text: LABEL_DATETIME, size: sectionLabelSize, color: labelMuted, gapAfter: 8 });
+  bottomRows.push({ text: 'Date, time', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
   for (const dl of dateLines) {
-    rows.push({ text: dl, size: bodySize, color: dateColor, gapAfter: 12 });
+    bottomRows.push({ text: dl, size: bodySize, color: dateColor, gapAfter: 11 });
   }
-  rows.push({ text: LABEL_ADDRESS, size: sectionLabelSize, color: labelMuted, gapAfter: 8 });
-  for (const al of addrLines) {
-    rows.push({ text: al, size: bodySize, color: addrColor, gapAfter: 12 });
-  }
+  bottomRows.push({ text: roleLine, size: roleLineSize, color: bodyColor, gapAfter: gapSection });
 
-  const textBlockH = rows.reduce((sum, r) => sum + r.gapAfter, 0) + 4;
-  const totalH = Math.max(signatureImage ? sigH + pad * 2 : 0, textBlockH + pad * 2);
-  const boxW = pad + labelW + pad + sigMaxW + pad;
+  const hBottom = bottomRows.reduce((s, r) => s + r.gapAfter, 0);
+  const hImageBlock = signatureImage ? gapBeforeImage + sigH + gapAfterImage : 0;
+  const topRows: StampTextRow[] = [];
+  for (const cl of confirmationLines) {
+    topRows.push({ text: cl, size: bodySize, color: bodyColor, gapAfter: 11 });
+  }
+  const hTop = topRows.reduce((s, r) => s + r.gapAfter, 0);
+
+  const totalH = pad * 2 + hBottom + hImageBlock + hTop + 4;
+  const boxW = colW + pad * 2;
   const boxX = width - margin - boxW;
 
   page.drawRectangle({
@@ -218,30 +224,37 @@ async function stampPdfBuffer(
   });
 
   const textLeft = boxX + pad;
-  const imgX = textLeft + labelW + pad;
   let textY = margin + pad;
 
-  for (const row of rows) {
-    if (row.text.trim()) {
-      page.drawText(row.text, {
-        x: textLeft,
-        y: textY,
-        size: row.size,
-        font,
-        color: row.color,
-      });
+  const drawRows = (rows: StampTextRow[]) => {
+    for (const row of rows) {
+      if (row.text.trim()) {
+        page.drawText(row.text, {
+          x: textLeft,
+          y: textY,
+          size: row.size,
+          font,
+          color: row.color,
+        });
+      }
+      textY += row.gapAfter;
     }
-    textY += row.gapAfter;
-  }
+  };
+
+  drawRows(bottomRows);
 
   if (signatureImage) {
+    textY += gapBeforeImage;
     page.drawImage(signatureImage, {
-      x: imgX,
-      y: margin + pad,
+      x: textLeft,
+      y: textY,
       width: sigMaxW,
       height: sigH,
     });
+    textY += sigH + gapAfterImage;
   }
+
+  drawRows(topRows);
 
   return pdfDoc.save();
 }
@@ -256,9 +269,9 @@ async function attachSignatureToPdf(params: {
   folderPath: string;
   filePath: string;
   fileName: string;
+  signRole: 'client' | 'representative';
   signatoryName: string;
-  addressText: string;
-  gps?: { lat?: number; lng?: number };
+  placeText: string;
   signedAt: Date;
   signatureDataUrl?: string;
 }): Promise<StampResult> {
@@ -268,18 +281,17 @@ async function attachSignatureToPdf(params: {
     folderPath,
     filePath,
     fileName: paramFileName,
+    signRole,
     signatoryName,
-    addressText,
-    gps,
+    placeText,
     signedAt,
     signatureDataUrl,
   } = params;
 
   const stampOpts = {
-    fileName: paramFileName,
+    signRole,
     signatoryName,
-    addressText,
-    gps,
+    placeText,
     signedAt,
     signatureDataUrl,
   };
@@ -304,8 +316,6 @@ async function attachSignatureToPdf(params: {
       return { stamped: false, reason: 'not_pdf' };
     }
 
-    const stampOptsResolved = { ...stampOpts, fileName: storedName || paramFileName };
-
     const storagePathRaw = typeof fileData.storagePath === 'string' ? fileData.storagePath : '';
 
     async function stampAtAbsolute(resolved: string): Promise<StampResult> {
@@ -315,7 +325,7 @@ async function attachSignatureToPdf(params: {
       }
       try {
         const pdfBuf = await readFile(resolved);
-        const stampedBytes = await stampPdfBuffer(pdfBuf, stampOptsResolved);
+        const stampedBytes = await stampPdfBuffer(pdfBuf, stampOpts);
         await writeFile(resolved, Buffer.from(stampedBytes));
         console.log('[report-signatures] PDF stamped (local)', { projectId, filePath });
         return { stamped: true };
@@ -376,10 +386,17 @@ export async function POST(request: NextRequest) {
       fileName,
       customerId,
       signatoryName,
+      signRole: signRoleRaw,
+      placeText: placeTextRaw,
+      confirmationAccepted,
       addressText,
       gps,
       signatureDataUrl,
     } = body as Record<string, unknown>;
+
+    const signRole =
+      signRoleRaw === 'representative' || signRoleRaw === 'client' ? signRoleRaw : null;
+    const placeText = typeof placeTextRaw === 'string' ? placeTextRaw.trim() : '';
 
     if (
       typeof projectId !== 'string' ||
@@ -389,9 +406,26 @@ export async function POST(request: NextRequest) {
       typeof filePath !== 'string' ||
       !filePath ||
       typeof signatoryName !== 'string' ||
-      !signatoryName.trim()
+      !signatoryName.trim() ||
+      !signRole ||
+      !placeText ||
+      confirmationAccepted !== true
     ) {
       return withCors(NextResponse.json({ success: false, error: 'Missing required fields' }, { status: 400 }));
+    }
+
+    const alreadySigned = await db
+      .collection('reportSignatures')
+      .where('filePath', '==', filePath)
+      .limit(1)
+      .get();
+    if (!alreadySigned.empty) {
+      return withCors(
+        NextResponse.json(
+          { success: false, error: 'already_signed', code: 'ALREADY_SIGNED' },
+          { status: 409 }
+        )
+      );
     }
 
     const doc: Record<string, unknown> = {
@@ -401,6 +435,9 @@ export async function POST(request: NextRequest) {
       fileName: typeof fileName === 'string' ? fileName : '',
       customerId: typeof customerId === 'string' ? customerId : null,
       signatoryName: signatoryName.trim(),
+      signRole,
+      placeText,
+      confirmationAccepted: true,
       addressText: typeof addressText === 'string' ? addressText.trim() : '',
       createdAt: new Date(),
     };
@@ -429,9 +466,9 @@ export async function POST(request: NextRequest) {
       folderPath,
       filePath,
       fileName: typeof fileName === 'string' ? fileName : '',
+      signRole,
       signatoryName: signatoryName.trim(),
-      addressText: typeof addressText === 'string' ? addressText.trim() : '',
-      gps: gps && typeof gps === 'object' ? (gps as { lat?: number; lng?: number }) : undefined,
+      placeText,
       signedAt: createdAt,
       signatureDataUrl: typeof signatureDataUrl === 'string' ? signatureDataUrl : undefined,
     });
