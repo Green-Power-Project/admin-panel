@@ -54,7 +54,7 @@ export async function uploadCatalogFileToVpsStorage(opts: {
   originalFileName: string;
 }) {
   const dir = resolveCatalogUploadDir();
-  const baseUrl = (process.env.VPS_PUBLIC_BASE_URL || DEFAULT_VPS_BASE_URL).replace(/\/+$/, '');
+  const baseUrl = (process.env.VPS_PUBLIC_BASE_URL || DEFAULT_VPS_BASE_URL).trim().replace(/\/+$/, '');
   const safeName = sanitizeFileName(opts.originalFileName);
   const uniquePrefix = `${Date.now()}-${crypto.randomUUID()}`;
   const savedFileName = `${uniquePrefix}-${safeName}`;
@@ -80,7 +80,7 @@ export async function uploadOfferImageToVpsStorage(opts: {
 }) {
   const dir = resolveCatalogUploadDir();
   const targetDir = path.join(dir, '..', 'offer-items');
-  const baseUrlRoot = (process.env.VPS_PUBLIC_BASE_URL || DEFAULT_VPS_BASE_URL).replace(/\/+$/, '');
+  const baseUrlRoot = (process.env.VPS_PUBLIC_BASE_URL || DEFAULT_VPS_BASE_URL).trim().replace(/\/+$/, '');
   const baseUrl = `${baseUrlRoot.replace(/\/catalogue$/, '')}/offer-items`;
   const safeName = sanitizeGenericFileName(opts.originalFileName, 'item-image');
   const uniquePrefix = `${Date.now()}-${crypto.randomUUID()}`;

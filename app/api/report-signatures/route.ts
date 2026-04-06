@@ -4,7 +4,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { PDFDocument, StandardFonts, rgb, PDFImage, type PDFFont } from 'pdf-lib';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
-import { getUploadRoot, resolveProjectFileAbsolute } from '@/lib/server/vpsStorage';
+import {
+  absolutePathFromPublicFileUrl,
+  getUploadRoot,
+  resolveProjectFileAbsolute,
+} from '@/lib/server/vpsStorage';
 import { fileUrlFromFirestoreDoc } from '@/lib/fileDocFields';
 
 export type StampResult = {
@@ -347,6 +351,11 @@ async function attachSignatureToPdf(params: {
     }
 
     const fileUrl = fileUrlFromFirestoreDoc(fileData as Record<string, unknown>);
+    const fromVpsUrl = absolutePathFromPublicFileUrl(fileUrl);
+    if (fromVpsUrl) {
+      return await stampAtAbsolute(fromVpsUrl);
+    }
+
     if (fileUrl.startsWith('/')) {
       const abs = path.join(process.cwd(), 'public', fileUrl.replace(/^\//, ''));
       return await stampAtAbsolute(abs);
