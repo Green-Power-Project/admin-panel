@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DuplicateFileNameError, getUploadRoot, saveProjectUpload } from '@/lib/server/vpsStorage';
+import { DuplicateFileNameError, saveProjectUpload } from '@/lib/server/vpsStorage';
 
 const ADMIN_ONLY = '09_Admin_Only';
 
@@ -41,12 +41,6 @@ export async function POST(request: NextRequest) {
       buffer,
       publicId: targetPublicId,
       originalName,
-    });
-
-    console.log('[storage/upload] ok', {
-      storagePath: result.storagePath,
-      uploadRoot: getUploadRoot(),
-      targetPublicId,
     });
 
     return NextResponse.json({

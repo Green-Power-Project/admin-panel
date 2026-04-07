@@ -341,8 +341,16 @@ async function attachSignatureToPdf(params: {
       }
     }
 
+    // Prefer storagePath when it points at this server's upload root. If it is stale (e.g. dev
+    // machine path) or outside VPS_UPLOAD_DIR, fall through to fileKey / fileUrl resolution.
     if (storagePathRaw) {
-      return await stampAtAbsolute(path.resolve(storagePathRaw));
+      const fromStorage = await stampAtAbsolute(path.resolve(storagePathRaw));
+      if (fromStorage.stamped) return fromStorage;
+      console.warn('[report-signatures] Stamping via storagePath failed; trying fileKey / fileUrl', {
+        projectId,
+        filePath,
+        reason: fromStorage.reason,
+      });
     }
 
     const resolvedByKey = await resolveProjectFileAbsolute(filePath, storedName);
