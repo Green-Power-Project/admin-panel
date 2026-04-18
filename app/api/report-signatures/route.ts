@@ -114,9 +114,9 @@ function wrapTextToLines(text: string, font: PDFFont, size: number, maxWidth: nu
   return lines;
 }
 
-/** Fixed legal text on the stamped PDF (English). */
+/** Must match customer confirmation checkbox copy (English). */
 const STAMP_CONFIRMATION_TEXT =
-  'I hereby confirm that I have read all pages of the report, everything is in order, and I agree.';
+  'I confirm that I have read and reviewed all pages of the report.';
 
 type StampTextRow = { text: string; size: number; color: ReturnType<typeof rgb>; gapAfter: number };
 
@@ -158,8 +158,13 @@ async function stampPdfBuffer(
   const margin = 32;
   const pad = 10;
   const colW = Math.min(340, width - margin * 2 - 16);
-  const sigMaxW = Math.min(240, colW - 8);
-  const sigH = signatureImage ? (signatureImage.height / signatureImage.width) * sigMaxW : 0;
+  let sigMaxW = Math.min(220, colW - 8);
+  let sigH = signatureImage ? (signatureImage.height / signatureImage.width) * sigMaxW : 0;
+  const maxStampHeight = page.getSize().height - margin * 2 - 40;
+  if (signatureImage && sigH > maxStampHeight * 0.35) {
+    sigMaxW = Math.max(120, sigMaxW * 0.75);
+    sigH = (signatureImage.height / signatureImage.width) * sigMaxW;
+  }
 
   const signedAtStr = signedAt.toLocaleString('de-DE', {
     day: '2-digit',
@@ -181,7 +186,7 @@ async function stampPdfBuffer(
   const placeSafe = placeText.trim() || '—';
   const roleLine =
     signRole === 'representative'
-      ? `Representative: "${nameSafe}"`
+      ? `Authorized representative: "${nameSafe}"`
       : `Client: "${nameSafe}"`;
 
   const placeLines = wrapTextToLines(placeSafe, font, bodySize, colW);
@@ -189,30 +194,34 @@ async function stampPdfBuffer(
   const confirmationLines = wrapTextToLines(STAMP_CONFIRMATION_TEXT, font, bodySize, colW);
 
   const gapSection = 10;
-  const gapBeforeImage = 10;
-  const gapAfterImage = 10;
+  const gapBeforeImage = 8;
+  const gapAfterImage = 8;
 
-  /** Bottom → top: Place, Date/time, Role, Image, Confirmation (reading top → bottom is reverse). */
-  const bottomRows: StampTextRow[] = [];
-  bottomRows.push({ text: 'Place', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
-  for (const pl of placeLines) {
-    bottomRows.push({ text: pl, size: bodySize, color: placeColor, gapAfter: 11 });
-  }
-  bottomRows.push({ text: 'Date, time', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
-  for (const dl of dateLines) {
-    bottomRows.push({ text: dl, size: bodySize, color: dateColor, gapAfter: 11 });
-  }
-  bottomRows.push({ text: roleLine, size: roleLineSize, color: bodyColor, gapAfter: gapSection });
-
+  /** Bottom → top (PDF y): role+name, signature image, place/date, confirmation at top. */
+  const bottomRows: StampTextRow[] = [
+    { text: roleLine, size: roleLineSize, color: bodyColor, gapAfter: gapSection },
+  ];
   const hBottom = bottomRows.reduce((s, r) => s + r.gapAfter, 0);
   const hImageBlock = signatureImage ? gapBeforeImage + sigH + gapAfterImage : 0;
+
+  const middleRows: StampTextRow[] = [];
+  middleRows.push({ text: 'Place', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
+  for (const pl of placeLines) {
+    middleRows.push({ text: pl, size: bodySize, color: placeColor, gapAfter: 11 });
+  }
+  middleRows.push({ text: 'Date, time', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
+  for (const dl of dateLines) {
+    middleRows.push({ text: dl, size: bodySize, color: dateColor, gapAfter: 11 });
+  }
+  const hMiddle = middleRows.reduce((s, r) => s + r.gapAfter, 0);
+
   const topRows: StampTextRow[] = [];
   for (const cl of confirmationLines) {
     topRows.push({ text: cl, size: bodySize, color: bodyColor, gapAfter: 11 });
   }
   const hTop = topRows.reduce((s, r) => s + r.gapAfter, 0);
 
-  const totalH = pad * 2 + hBottom + hImageBlock + hTop + 4;
+  const totalH = pad * 2 + hBottom + hImageBlock + hMiddle + hTop + gapSection * 2 + 4;
   const boxW = colW + pad * 2;
   const boxX = width - margin - boxW;
 
@@ -258,6 +267,9 @@ async function stampPdfBuffer(
     textY += sigH + gapAfterImage;
   }
 
+  textY += gapSection;
+  drawRows(middleRows);
+  textY += gapSection;
   drawRows(topRows);
 
   return pdfDoc.save();

@@ -8,14 +8,19 @@
  * - 00_New_Not_Viewed_Yet_ (root level)
  * - 01_Customer_Uploads (with Photos, Documents, Other subfolders)
  * - 02_Photos (with Before, During_Work, After, Damages_and_Defects subfolders)
- * - 03_Reports (with Daily_Reports, Weekly_Reports, Acceptance_Protocols subfolders)
+ * - 03_Reports (with Daily_Reports, Weekly_Reports subfolders)
  * - 04_Emails (with Incoming, Outgoing subfolders)
  * - 05_Quotations (with Drafts, Approved, Rejected subfolders)
  * - 06_Invoices (with Progress_Invoices, Final_Invoices, Credit_Notes subfolders)
  * - 07_Delivery_Notes (with Material_Delivery_Notes, Piecework_Delivery_Notes, Reports_Linked_to_Delivery_Notes subfolders)
  * - 08_General (with Contracts, Plans, Other_Documents subfolders)
+ * - 11_Signature_Required_Documents (with Signable_Documents subfolder – PDF signing for customers)
  * - 09_Admin_Only (admin-only private folder – not visible to customers; e.g. material prices, internal notes)
  */
+
+/** Customer signable PDFs live under this path (not under Reports). */
+export const SIGNABLE_DOCUMENTS_FOLDER_PATH =
+  '11_Signature_Required_Documents/Signable_Documents' as const;
 
 /** Folder path for the admin-only private folder. Must match the path used in window-app blocking logic. */
 export const ADMIN_ONLY_FOLDER_PATH = '09_Admin_Only' as const;
@@ -60,7 +65,6 @@ export const PROJECT_FOLDER_STRUCTURE: Folder[] = [
     children: [
       { name: 'Daily_Reports', path: '03_Reports/Daily_Reports' },
       { name: 'Weekly_Reports', path: '03_Reports/Weekly_Reports' },
-      { name: 'Acceptance_Protocols', path: '03_Reports/Acceptance_Protocols' },
     ],
   },
   {
@@ -105,6 +109,16 @@ export const PROJECT_FOLDER_STRUCTURE: Folder[] = [
       { name: 'Contracts', path: '08_General/Contracts' },
       { name: 'Plans', path: '08_General/Plans' },
       { name: 'Other_Documents', path: '08_General/Other_Documents' },
+    ],
+  },
+  {
+    name: '11_Signature_Required_Documents',
+    path: '11_Signature_Required_Documents',
+    children: [
+      {
+        name: 'Signable_Documents',
+        path: '11_Signature_Required_Documents/Signable_Documents',
+      },
     ],
   },
   {

@@ -25,6 +25,7 @@ import {
 } from 'firebase/firestore';
 import {
   PROJECT_FOLDER_STRUCTURE,
+  SIGNABLE_DOCUMENTS_FOLDER_PATH,
   isValidFolderPath,
   isValidFolderPathForProject,
   getScopeFolderForProject,
@@ -141,6 +142,7 @@ function getFolderConfig(path: string, t: (key: string) => string) {
     '06_Invoices': { gradient: 'from-red-500 to-rose-500', icon: '🧾' },
     '07_Delivery_Notes': { gradient: 'from-teal-500 to-cyan-500', icon: '📦' },
     '08_General': { gradient: 'from-gray-500 to-slate-500', icon: '📋' },
+    '11_Signature_Required_Documents': { gradient: 'from-violet-500 to-fuchsia-600', icon: '✍️' },
     '09_Admin_Only': { gradient: 'from-amber-600 to-orange-600', icon: '🔒' },
   };
   const base = configs[path] || { gradient: 'from-gray-400 to-gray-500', icon: '📁' };
@@ -162,6 +164,7 @@ function getFolderIcon(path: string): string {
   if (path.startsWith('08_')) return '📋';
   if (path.startsWith('09_')) return '🔒';
   if (path.startsWith('10_')) return '📂';
+  if (path.startsWith('11_')) return '✍️';
   return '📁';
 }
 
@@ -434,7 +437,7 @@ function ProjectFilesContent() {
   /** Load via Admin API so Firestore client rules do not need reportSignatures read access. */
   useEffect(() => {
     if (!projectId) return;
-    if (selectedFolder !== '03_Reports/Acceptance_Protocols') {
+    if (selectedFolder !== SIGNABLE_DOCUMENTS_FOLDER_PATH) {
       setReportSignatures({});
       return;
     }
@@ -1061,7 +1064,7 @@ function ProjectFilesContent() {
                                         {file.uploadedAt.toLocaleDateString()}
                                       </p>
                                     )}
-                                    {selectedFolder === '03_Reports/Acceptance_Protocols' && (
+                                    {selectedFolder === SIGNABLE_DOCUMENTS_FOLDER_PATH && (
                                       <div className="mt-1 flex items-center gap-2">
                                         {sig ? (
                                           <button
