@@ -239,7 +239,7 @@ function ProfileContent() {
   const initial = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-10 min-w-0 max-w-full">
       {/* Hero identity strip */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-green-power-600 via-green-power-700 to-emerald-800 shadow-xl shadow-green-power-900/20 mb-8">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_80%_80%_at_50%_-20%,rgba(255,255,255,0.15),transparent)]" />

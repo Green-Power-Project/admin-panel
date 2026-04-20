@@ -260,7 +260,7 @@ function ProjectsContent() {
   const totalProjects = (filteredProjects && filteredProjects.length) || 0;
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6 min-w-0 max-w-full">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">

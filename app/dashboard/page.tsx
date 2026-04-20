@@ -284,7 +284,7 @@ function DashboardContent() {
   }, []);
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-w-0 max-w-full">
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('dashboard.title')}</h2>
           <p className="text-sm text-gray-600">{t('dashboard.overview')}</p>

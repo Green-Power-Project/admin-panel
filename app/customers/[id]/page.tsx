@@ -255,7 +255,7 @@ function CustomerDetailContent() {
   // Don't show full-page loading - use skeleton in content area instead
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-w-0 max-w-full">
       {/* Breadcrumb */}
       <div className="mb-6">
         <Link
@@ -281,7 +281,7 @@ function CustomerDetailContent() {
           <div className="h-2 bg-gradient-to-r from-blue-500 via-cyan-500 to-emerald-500"></div>
           
           {/* Customer Info Section */}
-          <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 border-b border-gray-200">
+          <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 border-b border-gray-200 min-w-0 max-w-full">
             {/* Edit Button */}
             {!editing && (
               <div className="absolute top-4 right-4 sm:top-6 sm:right-6 lg:top-8 lg:right-8">

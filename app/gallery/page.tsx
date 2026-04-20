@@ -673,7 +673,7 @@ function GalleryManagementContent() {
   const inactiveCount = totalCount - activeCount;
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 h-[calc(100vh-2rem)] flex flex-col min-h-0">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 flex flex-col min-h-0 min-w-0 max-w-full h-[min(calc(100dvh-5rem),calc(100vh-5rem))] max-h-[min(calc(100dvh-5rem),calc(100vh-5rem))]">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
         {/* Top bar: title + stats + Upload */}
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
@@ -705,9 +705,9 @@ function GalleryManagementContent() {
         </div>
 
         {/* Two columns: left = categories, right = images (both scroll inside their area) */}
-        <div className="flex flex-1 min-h-0 overflow-hidden">
+        <div className="flex flex-col md:flex-row flex-1 min-h-0 min-w-0 overflow-hidden">
           {/* Left sidebar – Categories (scrollable, fixed height) */}
-          <aside className="w-64 sm:w-72 flex-shrink-0 min-h-0 border-r border-gray-200 bg-gray-50/50 flex flex-col overflow-hidden">
+          <aside className="w-full md:w-64 lg:w-72 flex-shrink-0 min-h-0 max-h-[40vh] md:max-h-none border-b md:border-b-0 md:border-r border-gray-200 bg-gray-50/50 flex flex-col overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-200 bg-white flex-shrink-0 flex items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-gray-900">{t('gallery.categories')}</h3>
               <button
@@ -1021,7 +1021,7 @@ function GalleryManagementContent() {
       {/* Remove from offers – custom confirm modal */}
       {removeFromOffersConfirmImageId && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/50"
           onClick={() => !removingFromOffers && setRemoveFromOffersConfirmImageId(null)}
           role="dialog"
           aria-modal="true"
@@ -1072,7 +1072,7 @@ function GalleryManagementContent() {
       {/* Add Category Modal */}
       {showAddCategoryModal && (
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/50"
           onClick={() => setShowAddCategoryModal(false)}
         >
           <div
@@ -1119,7 +1119,7 @@ function GalleryManagementContent() {
 
       {/* Upload Modal */}
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/50">
           <div className="bg-white rounded-xl shadow-xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="p-5">
               <div className="flex items-center justify-between mb-4">
@@ -1322,7 +1322,7 @@ function GalleryManagementContent() {
       {/* Upload modal: full-size preview with Previous/Next when clicking a selected image */}
       {showUploadModal && uploadPreviewIndex !== null && uploadPreviewObjectUrl && selectedFiles.length > 0 && (
         <div
-          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-[60] admin-modal-host bg-black/90"
           onClick={() => setUploadPreviewIndex(null)}
         >
           <button
@@ -1375,7 +1375,7 @@ function GalleryManagementContent() {
       {/* Image preview modal (in-portal, no new tab) */}
       {previewLightbox && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/90"
           onClick={() => {
             setPreviewAutoSlide(true);
             setPreviewLightbox(null);
@@ -1452,7 +1452,7 @@ function GalleryManagementContent() {
 
       {/* Offer details modal */}
       {offerEditImageId && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50" onClick={() => !savingOffer && setOfferEditImageId(null)}>
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/50" onClick={() => !savingOffer && setOfferEditImageId(null)}>
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-gray-900 mb-1">{t('gallery.offerDetailsTitle')}</h3>
             <div className="space-y-3">
@@ -1593,7 +1593,7 @@ function GalleryManagementContent() {
       {/* Edit image modal */}
       {editImageId && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/50"
           onClick={() => !savingEdit && setEditImageId(null)}
         >
           <div

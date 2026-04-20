@@ -132,8 +132,8 @@ function NewCustomerContent() {
   }
 
   return (
-    <div className="px-8 py-8">
-      <div className="max-w-3xl mx-auto">
+    <div className="px-4 sm:px-8 py-6 sm:py-8 min-w-0 max-w-full">
+      <div className="max-w-3xl mx-auto min-w-0">
         <div className="mb-6">
           <Link
             href="/customers"
@@ -145,8 +145,8 @@ function NewCustomerContent() {
           <p className="text-sm text-gray-500 mt-1">{t('customersNew.createCustomerAccountDescription')}</p>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-sm">
-          <div className="px-6 py-5">
+        <div className="bg-white border border-gray-200 rounded-sm min-w-0">
+          <div className="px-4 sm:px-6 py-5">
             <form onSubmit={handleSubmit} className="space-y-5">
               {error && (
                 <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm">
@@ -204,7 +204,7 @@ function NewCustomerContent() {
                 <label htmlFor="address" className="block text-sm font-medium text-gray-700 mb-1.5">
                   Address (ZIP / City)
                 </label>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <input
                       id="zipCode"
@@ -336,17 +336,17 @@ function NewCustomerContent() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-end space-x-3 pt-4">
+              <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-2 sm:gap-3 pt-4">
                 <Link
                   href="/customers"
-                  className="px-4 py-2 text-sm text-gray-700 border border-gray-300 rounded-sm hover:bg-gray-50 font-medium"
+                  className="inline-flex items-center justify-center min-h-[44px] px-4 py-2.5 text-sm text-gray-700 border border-gray-300 rounded-sm hover:bg-gray-50 font-medium text-center w-full sm:w-auto touch-manipulation"
                 >
                   {t('common.cancel')}
                 </Link>
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="min-h-[44px] px-4 py-2.5 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation w-full sm:w-auto"
                 >
                   {loading ? t('customersNew.creating') : t('customersNew.createAccount')}
                 </button>

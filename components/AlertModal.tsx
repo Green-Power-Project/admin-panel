@@ -153,9 +153,9 @@ export default function AlertModal({
       />
 
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="flex min-h-full admin-modal-host">
         <div
-          className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-lg"
+          className="relative my-auto w-full max-h-[min(100dvh,100svh)] min-h-0 overflow-y-auto transform overflow-hidden rounded-lg bg-white shadow-xl transition-all sm:max-w-lg"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
@@ -177,7 +177,7 @@ export default function AlertModal({
           <div className="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:px-6">
             <button
               type="button"
-              className={`inline-flex w-full justify-center rounded-md px-3 py-2 text-sm font-semibold text-white shadow-sm sm:ml-3 sm:w-auto ${getButtonColors()}`}
+              className={`inline-flex w-full min-h-[44px] items-center justify-center rounded-md px-3 py-2.5 text-sm font-semibold text-white shadow-sm sm:ml-3 sm:w-auto touch-manipulation ${getButtonColors()}`}
               onClick={onClose}
             >
               {defaultButtonText}

@@ -25,7 +25,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
+      <div className="flex items-center justify-center min-h-[100dvh] min-w-0 px-4 bg-gradient-to-br from-slate-50 via-white to-slate-50">
         <div className="text-center">
           {/* Modern animated loader */}
           <div className="relative inline-block mb-8">
@@ -95,14 +95,15 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   // But don't show access denied if user is logging out (to prevent flash of error message)
   if ((!currentUser || !currentUser.isAdmin) && !isLoggingOut) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
-        <div className="text-center">
-          <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm max-w-md">
+      <div className="flex items-center justify-center min-h-[100dvh] min-w-0 px-4 py-8 bg-gray-50">
+        <div className="text-center w-full max-w-md min-w-0">
+          <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm max-w-md mx-auto text-left sm:text-center">
             <p className="font-semibold">Access Denied</p>
             <p className="mt-2">You do not have permission to access this page.</p>
             <button
+              type="button"
               onClick={() => router.push('/login')}
-              className="mt-4 px-4 py-2 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600"
+              className="mt-4 w-full sm:w-auto min-h-[44px] px-4 py-2.5 bg-green-power-500 text-white text-sm font-medium rounded-sm hover:bg-green-power-600 touch-manipulation"
             >
               Go to Login
             </button>

@@ -325,7 +325,7 @@ export default function ProjectChatPanel({
 
       {/* In-panel viewer for image/PDF */}
       {viewerFile && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setViewerFile(null)}>
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/60" onClick={() => setViewerFile(null)}>
           <div className="bg-white rounded-lg shadow-xl max-w-4xl max-h-[90vh] w-full overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between px-4 py-2 border-b">
               <span className="text-sm font-medium text-gray-700">{viewerFile.type === 'pdf' ? 'PDF' : 'Image'}</span>

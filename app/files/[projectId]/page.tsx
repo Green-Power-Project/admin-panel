@@ -767,7 +767,7 @@ function ProjectFilesContent() {
   // During loading: no AdminLayout so we don’t show a second header/sidebar (avoids duplicate admin bar during transition)
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50">
+      <div className="min-h-[100dvh] min-w-0 flex flex-col items-center justify-center gap-4 bg-gray-50">
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-green-power-500 border-t-transparent" />
         <p className="text-sm text-gray-500">{t('common.loading')}</p>
       </div>
@@ -787,7 +787,7 @@ function ProjectFilesContent() {
 
   if (!contentReady) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-gray-50">
+      <div className="min-h-[100dvh] min-w-0 flex flex-col items-center justify-center gap-4 bg-gray-50">
         <div className="animate-spin rounded-full h-10 w-10 border-2 border-green-power-500 border-t-transparent" />
         <p className="text-sm text-gray-500">{t('common.loading')}</p>
       </div>
@@ -795,7 +795,7 @@ function ProjectFilesContent() {
   }
 
   return (
-    <div className="p-4 sm:p-6">
+    <div className="p-4 sm:p-6 min-w-0 max-w-full">
       <div className="mb-6">
         <Link
           href={fromProject ? `/projects/${projectId}` : '/projects'}
@@ -824,7 +824,7 @@ function ProjectFilesContent() {
                 <h3 className="text-sm font-bold text-gray-900">{t('files.thisFolder')}</h3>
                 <p className="text-xs text-gray-600 mt-1">{t('files.switchWithinFolderOnly')}</p>
               </div>
-              <div className="p-4 max-h-[calc(100vh-200px)] overflow-y-auto space-y-4">
+              <div className="p-4 max-h-[calc(100dvh-200px)] overflow-y-auto space-y-4">
                 {scopeFolder && (() => {
                   const isEmailsRoot = scopeFolder.path === '04_Emails';
                   const emailsChildren = isEmailsRoot
@@ -1419,7 +1419,7 @@ function ProjectFilesContent() {
       {/* File viewer modal (in-portal, no new tab) */}
       {viewerFile && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/90"
           onClick={() => setViewerFile(null)}
         >
           <button
@@ -1432,18 +1432,18 @@ function ProjectFilesContent() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <div className="relative max-w-[95vw] max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <div className="relative max-w-[95vw] max-h-[min(90dvh,90svh)] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
             {viewerFile.fileType === 'image' ? (
               <img
                 src={viewerFile.fileUrl}
                 alt={viewerFile.fileName}
-                className="max-h-[90vh] w-auto object-contain rounded-lg"
+                className="max-h-[min(90dvh,90svh)] w-auto object-contain rounded-lg"
               />
             ) : (
               <iframe
                 src={viewerFile.fileUrl}
                 title={viewerFile.fileName}
-                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
+                className="w-full max-w-4xl h-[min(90dvh,90svh)] rounded-lg bg-white"
               />
             )}
             <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
@@ -1454,7 +1454,7 @@ function ProjectFilesContent() {
       )}
       {selectedEmail && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/80"
           onClick={() => setSelectedEmail(null)}
         >
           <button
@@ -1468,7 +1468,7 @@ function ProjectFilesContent() {
             </svg>
           </button>
           <div
-            className="relative max-w-4xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            className="relative max-w-4xl w-full max-h-[min(90dvh,90svh)] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
@@ -1517,11 +1517,11 @@ function ProjectFilesContent() {
       )}
       {selectedSignature && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/80"
           onClick={() => setSelectedSignature(null)}
         >
           <div
-            className="relative max-w-xl w-full max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            className="relative max-w-xl w-full max-h-[min(90dvh,90svh)] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-gray-200 bg-gray-50 flex items-center justify-between">

@@ -846,7 +846,7 @@ export default function OfferCatalog() {
       )}
 
       {folderToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">{t('offers.deleteFolder')}</h3>
             <p className="text-sm text-gray-600 mb-4">
@@ -883,7 +883,7 @@ export default function OfferCatalog() {
       )}
 
       {showFolderModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/50">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-semibold mb-4">
               {editingFolderId ? t('offers.renameFolder') : t('offers.addFolder')}
@@ -918,7 +918,7 @@ export default function OfferCatalog() {
       )}
 
       {showItemModal && itemFolderId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/50 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 my-8">
             <h3 className="text-lg font-semibold mb-4">
               {editingItemId ? t('common.edit') : t('offers.addItem')}

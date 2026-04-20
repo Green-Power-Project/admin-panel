@@ -219,7 +219,9 @@
     "tooManyRequests": "Too many failed login attempts. Please try again later.",
     "networkError": "Network error. Please check your connection and try again.",
     "signInError": "Unable to sign in. Please try again.",
-    "copyright": "© {{year}} Grün Power. All rights reserved."
+    "copyright": "© {{year}} Grün Power. All rights reserved.",
+    "showPassword": "Show password",
+    "hidePassword": "Hide password"
   },
   "dashboard": {
     "title": "Dashboard",

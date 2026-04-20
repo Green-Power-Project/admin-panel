@@ -137,9 +137,9 @@ export default function FileUploadPreviewModal({
       />
 
       {/* Modal */}
-      <div className="flex min-h-full items-center justify-center p-4">
+      <div className="flex min-h-full admin-modal-host">
         <div
-          className="relative transform overflow-hidden rounded-lg bg-white shadow-xl transition-all sm:my-8 sm:w-full sm:max-w-2xl"
+          className="relative my-auto w-full max-h-[min(100dvh,100svh)] min-h-0 overflow-y-auto transform overflow-hidden rounded-lg bg-white shadow-xl transition-all sm:max-w-2xl"
           onClick={(e) => e.stopPropagation()}
         >
           <div className="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
@@ -148,13 +148,13 @@ export default function FileUploadPreviewModal({
           </div>
 
           {/* Buttons */}
-          <div className="bg-gray-50 px-4 py-3 sm:flex sm:flex-row-reverse sm:items-center sm:gap-3 sm:px-6">
+          <div className="bg-gray-50 px-4 py-3 flex flex-col-reverse gap-2 sm:flex sm:flex-row-reverse sm:items-center sm:gap-3 sm:px-6">
             <div className="hidden sm:block flex-shrink-0">
               <img src="/logo.png" alt="" className="w-8 h-8 object-contain" aria-hidden />
             </div>
             <button
               type="button"
-              className="inline-flex w-full justify-center items-center gap-2 rounded-md bg-green-power-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-green-power-700 focus:ring-green-power-500 sm:ml-auto sm:w-auto"
+              className="inline-flex w-full min-h-[44px] justify-center items-center gap-2 rounded-md bg-green-power-600 px-3 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-power-700 focus:ring-green-power-500 sm:ml-auto sm:w-auto touch-manipulation"
               onClick={onConfirm}
             >
               <img src="/logo.png" alt="" className="w-5 h-5 object-contain sm:hidden" aria-hidden />
@@ -162,7 +162,7 @@ export default function FileUploadPreviewModal({
             </button>
             <button
               type="button"
-              className="mt-3 inline-flex w-full justify-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto"
+              className="inline-flex w-full min-h-[44px] justify-center items-center rounded-md bg-white px-3 py-2.5 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50 sm:mt-0 sm:w-auto touch-manipulation"
               onClick={onCancel}
             >
               Cancel

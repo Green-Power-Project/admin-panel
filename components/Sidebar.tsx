@@ -39,21 +39,23 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       {/* Mobile Overlay */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden touch-none"
           onClick={onClose}
+          aria-hidden="true"
         />
       )}
       
       {/* Sidebar */}
       <div className={`
-        flex flex-col h-screen bg-gradient-to-b from-green-power-700 to-green-power-800 text-white 
-        w-64 fixed left-0 top-0 z-50 shadow-2xl
+        flex flex-col h-[100dvh] max-h-[100dvh] min-h-0 bg-gradient-to-b from-green-power-700 to-green-power-800 text-white 
+        w-64 max-w-[85vw] fixed left-0 top-0 z-50 shadow-2xl
+        pt-[env(safe-area-inset-top)]
         transform transition-transform duration-300 ease-in-out
         lg:translate-x-0
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
       {/* Logo Section */}
-      <div className="flex items-center px-6 py-5 border-b border-green-power-600/30">
+      <div className="flex items-center px-4 sm:px-6 py-4 sm:py-5 border-b border-green-power-600/30 shrink-0">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center shadow-lg overflow-hidden">
             <img 
@@ -70,7 +72,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       </div>
 
       {/* Navigation Menu */}
-      <nav className="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
+      <nav className="flex-1 min-h-0 px-3 sm:px-4 py-4 sm:py-6 space-y-1 overflow-y-auto overscroll-y-contain touch-pan-y">
         {navigation.map((item) => {
           const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
           return (
@@ -85,7 +87,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
                 }
               }}
               className={`
-                flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200
+                flex items-center space-x-3 px-4 py-3 min-h-[44px] rounded-lg transition-all duration-200 touch-manipulation
                 ${
                   isActive
                     ? 'bg-white text-green-power-700 shadow-lg font-semibold'
@@ -101,7 +103,7 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
       </nav>
 
       {/* User Info Footer */}
-      <div className="px-4 py-4 border-t border-green-power-600/30">
+      <div className="px-3 sm:px-4 py-3 sm:py-4 border-t border-green-power-600/30 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <div className="flex items-center space-x-3 px-3 py-2 rounded-lg bg-green-power-700/30">
           <div className="w-8 h-8 bg-white rounded-full flex items-center justify-center">
             <span className="text-green-power-700 font-semibold text-sm">

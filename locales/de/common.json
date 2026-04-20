@@ -219,7 +219,9 @@
     "tooManyRequests": "Zu viele fehlgeschlagene Anmeldeversuche. Bitte versuchen Sie es später erneut.",
     "networkError": "Netzwerkfehler. Bitte überprüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
     "signInError": "Anmeldung nicht möglich. Bitte versuchen Sie es erneut.",
-    "copyright": "© {{year}} Grün Power. Alle Rechte vorbehalten."
+    "copyright": "© {{year}} Grün Power. Alle Rechte vorbehalten.",
+    "showPassword": "Passwort anzeigen",
+    "hidePassword": "Passwort verbergen"
   },
   "dashboard": {
     "title": "Dashboard",

@@ -786,8 +786,8 @@ function ProjectDetailContent() {
 
   if (error && !project) {
     return (
-      <div className="px-8 py-8">
-          <div className="bg-white border border-gray-200 rounded-sm p-8">
+      <div className="px-4 sm:px-8 py-6 sm:py-8 min-w-0 max-w-full">
+          <div className="bg-white border border-gray-200 rounded-sm p-4 sm:p-8 min-w-0">
             <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm mb-4">
               {error}
             </div>
@@ -804,7 +804,7 @@ function ProjectDetailContent() {
   }
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 sm:px-8 py-6 sm:py-8 min-w-0 max-w-full">
         <div className="mb-6">
           <Link
             href="/projects"
@@ -908,12 +908,12 @@ function ProjectDetailContent() {
 
       {addSubfolderParent && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/40"
+          className="fixed inset-0 z-[100] admin-modal-host bg-black/40"
           role="dialog"
           aria-modal="true"
           aria-labelledby="add-subfolder-title"
         >
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-gray-200">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[min(100dvh,100svh)] overflow-y-auto my-auto p-6 border border-gray-200 min-h-0">
             <h3 id="add-subfolder-title" className="text-lg font-bold text-gray-900 mb-2">
               {t('projectsDetail.addSubfolder')}
             </h3>
@@ -933,14 +933,14 @@ function ProjectDetailContent() {
                 }
               }}
             />
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
               <button
                 type="button"
                 onClick={() => {
                   setAddSubfolderParent(null);
                   setAddSubfolderName('');
                 }}
-                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100"
+                className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 touch-manipulation"
               >
                 {t('common.cancel')}
               </button>
@@ -948,7 +948,7 @@ function ProjectDetailContent() {
                 type="button"
                 disabled={addingSubfolder || !addSubfolderName.trim()}
                 onClick={() => void handleConfirmAddSubfolder()}
-                className="px-4 py-2 rounded-lg text-sm font-semibold text-white bg-green-power-600 hover:bg-green-power-700 disabled:opacity-50"
+                className="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-lg text-sm font-semibold text-white bg-green-power-600 hover:bg-green-power-700 disabled:opacity-50 touch-manipulation"
               >
                 {addingSubfolder ? t('common.loading') : t('common.create')}
               </button>

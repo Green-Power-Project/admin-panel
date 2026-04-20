@@ -25,11 +25,11 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
   }, []);
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex min-h-0 h-[100dvh] max-h-[100dvh] bg-gray-50">
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <div className="flex-1 flex flex-col lg:ml-64 overflow-hidden">
+      <div className="flex-1 flex flex-col lg:ml-64 overflow-hidden min-w-0 min-h-0">
         <AppHeader title={title} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth touch-pan-y pb-[env(safe-area-inset-bottom)]">
           {children}
         </main>
       </div>

@@ -397,7 +397,7 @@ function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
   const approvedCount = approvals.filter((a) => getEffectiveStatus(a) === 'approved' || getEffectiveStatus(a) === 'auto-approved').length;
 
   return (
-    <div className="px-8 py-8 space-y-6">
+    <div className="px-4 sm:px-8 py-6 sm:py-8 space-y-6 min-w-0 max-w-full">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -612,7 +612,7 @@ function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
       {/* File viewer modal (in-portal, no new tab) */}
       {viewerUrl && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/90"
           onClick={() => { setViewerUrl(null); setViewerFileName(null); }}
         >
           <button
@@ -625,7 +625,7 @@ function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             </svg>
           </button>
-          <div className="relative max-w-[95vw] max-h-[90vh] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+          <div className="relative max-w-[95vw] max-h-[min(90dvh,90svh)] min-h-0 my-auto w-full flex items-center justify-center overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {viewerFileName && /\.(jpg|jpeg|png|gif|webp)$/i.test(viewerFileName) ? (
               <img
                 src={viewerUrl}

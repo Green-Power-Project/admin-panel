@@ -810,7 +810,7 @@ export default function CatalogManager() {
       )}
 
       {showFolderModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/40">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">
               {editingFolderId ? t('catalog.editFolderTitle') : t('catalog.addFolderTitle')}
@@ -850,7 +850,7 @@ export default function CatalogManager() {
       )}
 
       {folderToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/40">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">{t('catalog.deleteFolderTitle')}</h3>
             <p className="text-xs text-gray-600">
@@ -879,7 +879,7 @@ export default function CatalogManager() {
       )}
 
       {showEntryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/40">
           <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">
               {editingEntryId ? t('catalog.editEntryTitle') : t('catalog.addEntryTitle')}
@@ -971,7 +971,7 @@ export default function CatalogManager() {
       )}
 
       {entryToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="fixed inset-0 z-50 admin-modal-host bg-black/40">
           <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-4 space-y-3">
             <h3 className="text-sm font-semibold text-gray-900">{t('catalog.deleteEntryTitle')}</h3>
             <p className="text-xs text-gray-600">

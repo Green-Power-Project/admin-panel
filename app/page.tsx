@@ -39,7 +39,7 @@ export default function Home() {
   }, [router]);
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50">
+    <div className="flex items-center justify-center min-h-[100dvh] min-w-0 px-4 bg-gradient-to-br from-slate-50 via-white to-slate-50">
       <div className="text-center">
         {/* Modern animated loader */}
         <div className="relative inline-block mb-8">

@@ -151,7 +151,7 @@ function OffersContent() {
   }, []);
 
   return (
-    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 space-y-4 sm:space-y-6 min-w-0 max-w-full">
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-green-power-50 to-green-power-100">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -323,7 +323,7 @@ function OffersContent() {
 
       {viewPdfUrl && (
         <div
-          className="fixed inset-0 z-50 flex flex-col bg-white"
+          className="fixed inset-0 z-50 flex flex-col min-h-0 bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
           role="dialog"
           aria-modal="true"
           aria-label={t('offers.viewPdf')}
@@ -353,7 +353,7 @@ function OffersContent() {
 
       {detailOffer && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          className="fixed inset-0 z-50 admin-modal-host bg-black/50"
           role="dialog"
           aria-modal="true"
           aria-label={t('offers.detailTitle')}

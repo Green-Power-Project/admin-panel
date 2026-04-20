@@ -183,7 +183,7 @@ function EditProjectContent() {
 
   if (loading) {
     return (
-      <div className="px-8 py-8">
+      <div className="px-4 sm:px-8 py-6 sm:py-8 min-w-0 max-w-full">
         <div className="max-w-3xl mx-auto">
           <div className="bg-white border border-gray-200 rounded-sm p-12 text-center">
             <div className="inline-block h-8 w-8 border-3 border-gray-300 border-t-green-power-500 rounded-full animate-spin"></div>
@@ -196,7 +196,7 @@ function EditProjectContent() {
 
   if (error && !project) {
     return (
-      <div className="px-8 py-8">
+      <div className="px-4 sm:px-8 py-6 sm:py-8 min-w-0 max-w-full">
         <div className="max-w-3xl mx-auto">
           <div className="bg-white border border-gray-200 rounded-sm p-8">
             <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-3 text-sm mb-4">
@@ -215,7 +215,7 @@ function EditProjectContent() {
   }
 
   return (
-    <div className="px-8 py-8">
+    <div className="px-4 sm:px-8 py-6 sm:py-8 min-w-0 max-w-full">
       <div className="max-w-3xl mx-auto">
         <div className="mb-6">
           <Link

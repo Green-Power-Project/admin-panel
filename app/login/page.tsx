@@ -56,8 +56,8 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 px-4 py-12">
-      <div className="w-full max-w-md">
+    <div className="min-h-[100dvh] min-w-0 flex items-center justify-center bg-gray-50 px-4 py-8 sm:py-12 pt-[max(2rem,env(safe-area-inset-top))] pb-[max(2rem,env(safe-area-inset-bottom))]">
+      <div className="w-full max-w-md min-w-0">
         <div className="text-center mb-10">
           <div className="flex justify-center mb-4">
             <div className="w-16 h-16 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
@@ -75,7 +75,7 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-sm shadow-sm">
-          <div className="px-8 py-10">
+          <div className="px-4 sm:px-8 py-8 sm:py-10">
             <h2 className="text-lg font-semibold text-gray-900 mb-6">{t('login.title')}</h2>
 
             <form onSubmit={handleSubmit} className="space-y-5">
@@ -95,8 +95,9 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  className="w-full min-h-[44px] px-3 py-2 border border-gray-300 rounded-sm text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 touch-manipulation"
                   placeholder="admin@greenpower.com"
+                  autoComplete="email"
                 />
               </div>
 
@@ -111,13 +112,16 @@ export default function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
-                    className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                    className="w-full min-h-[44px] px-3 py-2 pr-12 border border-gray-300 rounded-sm text-base sm:text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500 touch-manipulation"
                     placeholder={t('login.enterPassword')}
+                    autoComplete="current-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 focus:outline-none"
+                    className="absolute inset-y-0 right-0 flex items-center justify-center min-w-[44px] text-gray-500 hover:text-gray-700 focus:outline-none touch-manipulation"
+                    aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                    title={showPassword ? t('login.hidePassword') : t('login.showPassword')}
                   >
                     {showPassword ? (
                       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -136,7 +140,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-green-power-500 text-white py-2.5 px-4 rounded-sm text-sm font-medium hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="w-full min-h-[48px] bg-green-power-500 text-white py-3 px-4 rounded-sm text-base sm:text-sm font-medium hover:bg-green-power-600 focus:outline-none focus:ring-2 focus:ring-green-power-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed touch-manipulation"
               >
                 {loading ? t('login.signingIn') : t('login.signIn')}
               </button>

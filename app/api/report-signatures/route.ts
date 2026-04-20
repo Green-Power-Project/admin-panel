@@ -1,7 +1,20 @@
 import { readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
-import { PDFDocument, StandardFonts, rgb, PDFImage, type PDFFont } from 'pdf-lib';
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb,
+  PDFImage,
+  type PDFFont,
+  pushGraphicsState,
+  popGraphicsState,
+  translate,
+  rotateRadians,
+  reduceRotation,
+  adjustDimsForRotation,
+  degreesToRadians,
+} from 'pdf-lib';
 import type { Firestore } from 'firebase-admin/firestore';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import {
@@ -114,11 +127,38 @@ function wrapTextToLines(text: string, font: PDFFont, size: number, maxWidth: nu
   return lines;
 }
 
-/** Must match customer confirmation checkbox copy (English). */
+/** Must match `projects.signConsentReportFull` in window-app `locales/de/common.json`. */
 const STAMP_CONFIRMATION_TEXT =
-  'I confirm that I have read and reviewed all pages of the report.';
+  'Ich bestätige, dass ich alle Seiten des Berichts gelesen und geprüft habe.';
 
 type StampTextRow = { text: string; size: number; color: ReturnType<typeof rgb>; gapAfter: number };
+
+/**
+ * Lower-left corner of the stamp box in **default user space** so it lands on the
+ * viewer's bottom-right after the page's `/Rotate` is applied (0, 90, 180, 270).
+ * Without this, stamps drawn at (width-margin, margin) appear top-right or sideways on rotated pages.
+ */
+function stampBoxLowerLeftInUserSpace(
+  mediaW: number,
+  mediaH: number,
+  pageRotation: ReturnType<typeof reduceRotation>,
+  margin: number,
+  boxW: number,
+  totalH: number
+): { boxX: number; boxY: number } {
+  switch (pageRotation) {
+    case 0:
+      return { boxX: mediaW - margin - boxW, boxY: margin };
+    case 90:
+      return { boxX: margin, boxY: margin };
+    case 180:
+      return { boxX: margin, boxY: mediaH - margin - totalH };
+    case 270:
+      return { boxX: mediaW - margin - boxW, boxY: mediaH - margin - totalH };
+    default:
+      return { boxX: mediaW - margin - boxW, boxY: margin };
+  }
+}
 
 async function stampPdfBuffer(
   pdfInput: Uint8Array | ArrayBuffer,
@@ -130,7 +170,7 @@ async function stampPdfBuffer(
     signatureDataUrl?: string;
   }
 ): Promise<Uint8Array> {
-  const { signRole, signatoryName, placeText, signedAt, signatureDataUrl } = opts;
+  const { signatoryName, placeText, signedAt, signatureDataUrl } = opts;
 
   const pdfDoc = await PDFDocument.load(pdfInput);
   const pages = pdfDoc.getPages();
@@ -138,7 +178,9 @@ async function stampPdfBuffer(
     throw new Error('pdf_empty');
   }
   const page = pages[pages.length - 1];
-  const { width } = page.getSize();
+  const { width: mediaW, height: mediaH } = page.getSize();
+  const pageRotation = reduceRotation(page.getRotation().angle);
+  const eff = adjustDimsForRotation({ width: mediaW, height: mediaH }, pageRotation);
 
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
@@ -157,10 +199,10 @@ async function stampPdfBuffer(
 
   const margin = 32;
   const pad = 10;
-  const colW = Math.min(340, width - margin * 2 - 16);
+  const colW = Math.min(340, eff.width - margin * 2 - 16);
   let sigMaxW = Math.min(220, colW - 8);
   let sigH = signatureImage ? (signatureImage.height / signatureImage.width) * sigMaxW : 0;
-  const maxStampHeight = page.getSize().height - margin * 2 - 40;
+  const maxStampHeight = eff.height - margin * 2 - 40;
   if (signatureImage && sigH > maxStampHeight * 0.35) {
     sigMaxW = Math.max(120, sigMaxW * 0.75);
     sigH = (signatureImage.height / signatureImage.width) * sigMaxW;
@@ -184,10 +226,8 @@ async function stampPdfBuffer(
 
   const nameSafe = signatoryName.trim() || '—';
   const placeSafe = placeText.trim() || '—';
-  const roleLine =
-    signRole === 'representative'
-      ? `Authorized representative: "${nameSafe}"`
-      : `Client: "${nameSafe}"`;
+  /** Single German label for both roles (no English “Client” / “Authorized representative”). */
+  const roleLine = `Auftraggeber oder Bevollmächtigte: „${nameSafe}“`;
 
   const placeLines = wrapTextToLines(placeSafe, font, bodySize, colW);
   const dateLines = wrapTextToLines(signedAtStr, font, bodySize, colW);
@@ -205,11 +245,11 @@ async function stampPdfBuffer(
   const hImageBlock = signatureImage ? gapBeforeImage + sigH + gapAfterImage : 0;
 
   const middleRows: StampTextRow[] = [];
-  middleRows.push({ text: 'Place', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
+  middleRows.push({ text: 'Ort', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
   for (const pl of placeLines) {
     middleRows.push({ text: pl, size: bodySize, color: placeColor, gapAfter: 11 });
   }
-  middleRows.push({ text: 'Date, time', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
+  middleRows.push({ text: 'Datum, Uhrzeit', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
   for (const dl of dateLines) {
     middleRows.push({ text: dl, size: bodySize, color: dateColor, gapAfter: 11 });
   }
@@ -223,11 +263,14 @@ async function stampPdfBuffer(
 
   const totalH = pad * 2 + hBottom + hImageBlock + hMiddle + hTop + gapSection * 2 + 4;
   const boxW = colW + pad * 2;
-  const boxX = width - margin - boxW;
+  const { boxX, boxY } = stampBoxLowerLeftInUserSpace(mediaW, mediaH, pageRotation, margin, boxW, totalH);
+  const stampRad = -degreesToRadians(pageRotation);
+
+  page.pushOperators(pushGraphicsState(), translate(boxX, boxY), rotateRadians(stampRad));
 
   page.drawRectangle({
-    x: boxX,
-    y: margin,
+    x: 0,
+    y: 0,
     width: boxW,
     height: totalH,
     color: rgb(0.99, 0.99, 1),
@@ -236,8 +279,8 @@ async function stampPdfBuffer(
     opacity: 0.95,
   });
 
-  const textLeft = boxX + pad;
-  let textY = margin + pad;
+  const textLeft = pad;
+  let textY = pad;
 
   const drawRows = (rows: StampTextRow[]) => {
     for (const row of rows) {
@@ -271,6 +314,8 @@ async function stampPdfBuffer(
   drawRows(middleRows);
   textY += gapSection;
   drawRows(topRows);
+
+  page.pushOperators(popGraphicsState());
 
   return pdfDoc.save();
 }
