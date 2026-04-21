@@ -131,6 +131,39 @@ function wrapTextToLines(text: string, font: PDFFont, size: number, maxWidth: nu
 const STAMP_CONFIRMATION_TEXT =
   'Ich bestätige, dass ich alle Seiten des Berichts gelesen und geprüft habe.';
 
+/** Basic IANA zone guard so request bodies cannot inject odd strings into Intl. */
+function isSafeIanaTimeZone(z: string): boolean {
+  if (z.length < 2 || z.length > 80) return false;
+  if (!/^[A-Za-z0-9_/+-]+$/.test(z)) return false;
+  if (z.includes('..') || z.startsWith('/') || z.endsWith('/')) return false;
+  return true;
+}
+
+/**
+ * Same instant as `signedAt`, shown in the signer's local zone (from the device) so the PDF
+ * matches the phone status bar. Falls back to Europe/Berlin if the zone is missing or invalid.
+ */
+function formatSignedAtDe(signedAt: Date, displayTimeZone?: string): string {
+  const tz =
+    typeof displayTimeZone === 'string' && isSafeIanaTimeZone(displayTimeZone.trim())
+      ? displayTimeZone.trim()
+      : 'Europe/Berlin';
+  const opts: Intl.DateTimeFormatOptions = {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZone: tz,
+  };
+  try {
+    return signedAt.toLocaleString('de-DE', opts);
+  } catch {
+    return signedAt.toLocaleString('de-DE', { ...opts, timeZone: 'Europe/Berlin' });
+  }
+}
+
 type StampTextRow = { text: string; size: number; color: ReturnType<typeof rgb>; gapAfter: number };
 
 /**
@@ -167,10 +200,12 @@ async function stampPdfBuffer(
     signatoryName: string;
     placeText: string;
     signedAt: Date;
+    /** Browser `Intl.DateTimeFormat().resolvedOptions().timeZone` — PDF clock matches device status bar. */
+    displayTimeZone?: string;
     signatureDataUrl?: string;
   }
 ): Promise<Uint8Array> {
-  const { signatoryName, placeText, signedAt, signatureDataUrl } = opts;
+  const { signatoryName, placeText, signedAt, signatureDataUrl, signRole, displayTimeZone } = opts;
 
   const pdfDoc = await PDFDocument.load(pdfInput);
   const pages = pdfDoc.getPages();
@@ -208,13 +243,7 @@ async function stampPdfBuffer(
     sigH = (signatureImage.height / signatureImage.width) * sigMaxW;
   }
 
-  const signedAtStr = signedAt.toLocaleString('de-DE', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const signedAtStr = formatSignedAtDe(signedAt, displayTimeZone);
 
   const bodySize = 8;
   const sectionLabelSize = 7;
@@ -226,8 +255,10 @@ async function stampPdfBuffer(
 
   const nameSafe = signatoryName.trim() || '—';
   const placeSafe = placeText.trim() || '—';
-  /** Single German label for both roles (no English “Client” / “Authorized representative”). */
-  const roleLine = `Auftraggeber oder Bevollmächtigte: „${nameSafe}“`;
+  const roleLine =
+    signRole === 'client'
+      ? `Auftraggeber: „${nameSafe}“`
+      : `Bevollmächtigte: „${nameSafe}“`;
 
   const placeLines = wrapTextToLines(placeSafe, font, bodySize, colW);
   const dateLines = wrapTextToLines(signedAtStr, font, bodySize, colW);
@@ -334,6 +365,7 @@ async function attachSignatureToPdf(params: {
   signatoryName: string;
   placeText: string;
   signedAt: Date;
+  displayTimeZone?: string;
   signatureDataUrl?: string;
 }): Promise<StampResult> {
   const {
@@ -346,6 +378,7 @@ async function attachSignatureToPdf(params: {
     signatoryName,
     placeText,
     signedAt,
+    displayTimeZone,
     signatureDataUrl,
   } = params;
 
@@ -354,6 +387,7 @@ async function attachSignatureToPdf(params: {
     signatoryName,
     placeText,
     signedAt,
+    displayTimeZone,
     signatureDataUrl,
   };
 
@@ -466,7 +500,13 @@ export async function POST(request: NextRequest) {
       addressText,
       gps,
       signatureDataUrl,
+      displayTimeZone: displayTimeZoneRaw,
     } = body as Record<string, unknown>;
+
+    const displayTimeZone =
+      typeof displayTimeZoneRaw === 'string' && displayTimeZoneRaw.trim()
+        ? displayTimeZoneRaw.trim()
+        : undefined;
 
     const signRole =
       signRoleRaw === 'representative' || signRoleRaw === 'client' ? signRoleRaw : null;
@@ -502,6 +542,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const signedAt = new Date();
     const doc: Record<string, unknown> = {
       projectId,
       folderPath,
@@ -513,7 +554,7 @@ export async function POST(request: NextRequest) {
       placeText,
       confirmationAccepted: true,
       addressText: typeof addressText === 'string' ? addressText.trim() : '',
-      createdAt: new Date(),
+      createdAt: signedAt,
     };
 
     if (gps && typeof gps === 'object') {
@@ -531,7 +572,6 @@ export async function POST(request: NextRequest) {
       doc.signatureDataUrl = signatureDataUrl;
     }
 
-    const createdAt = doc.createdAt as Date;
     await db.collection('reportSignatures').add(doc);
 
     const stampResult = await attachSignatureToPdf({
@@ -543,7 +583,8 @@ export async function POST(request: NextRequest) {
       signRole,
       signatoryName: signatoryName.trim(),
       placeText,
-      signedAt: createdAt,
+      signedAt,
+      displayTimeZone,
       signatureDataUrl: typeof signatureDataUrl === 'string' ? signatureDataUrl : undefined,
     });
 
