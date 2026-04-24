@@ -15,12 +15,24 @@
  * - 07_Delivery_Notes (with Material_Delivery_Notes, Piecework_Delivery_Notes, Reports_Linked_to_Delivery_Notes subfolders)
  * - 08_General (with Contracts, Plans, Other_Documents subfolders)
  * - 11_Signature_Required_Documents (with Signable_Documents subfolder – PDF signing for customers)
+ * - 12_Signed_Delivery_Notes (signed delivery notes – Signable_Documents)
+ * - 13_Signed_Offers_Change_Orders (signed offers & change orders – Signable_Documents)
  * - 09_Admin_Only (admin-only private folder – not visible to customers; e.g. material prices, internal notes)
  */
 
-/** Customer signable PDFs live under this path (not under Reports). */
-export const SIGNABLE_DOCUMENTS_FOLDER_PATH =
-  '11_Signature_Required_Documents/Signable_Documents' as const;
+/** Customer PDF signing folders (full path including Signable_Documents). */
+export const SIGNABLE_DOCUMENT_FOLDER_PATHS = [
+  '11_Signature_Required_Documents/Signable_Documents',
+  '12_Signed_Delivery_Notes/Signable_Documents',
+  '13_Signed_Offers_Change_Orders/Signable_Documents',
+] as const;
+
+export function isSignableDocumentsFolderPath(folderPath: string): boolean {
+  return (SIGNABLE_DOCUMENT_FOLDER_PATHS as readonly string[]).includes(folderPath);
+}
+
+/** Primary signable path (reports); prefer `isSignableDocumentsFolderPath` for checks. */
+export const SIGNABLE_DOCUMENTS_FOLDER_PATH = SIGNABLE_DOCUMENT_FOLDER_PATHS[0];
 
 /** Folder path for the admin-only private folder. Must match the path used in window-app blocking logic. */
 export const ADMIN_ONLY_FOLDER_PATH = '09_Admin_Only' as const;
@@ -118,6 +130,26 @@ export const PROJECT_FOLDER_STRUCTURE: Folder[] = [
       {
         name: 'Signable_Documents',
         path: '11_Signature_Required_Documents/Signable_Documents',
+      },
+    ],
+  },
+  {
+    name: '12_Signed_Delivery_Notes',
+    path: '12_Signed_Delivery_Notes',
+    children: [
+      {
+        name: 'Signable_Documents',
+        path: '12_Signed_Delivery_Notes/Signable_Documents',
+      },
+    ],
+  },
+  {
+    name: '13_Signed_Offers_Change_Orders',
+    path: '13_Signed_Offers_Change_Orders',
+    children: [
+      {
+        name: 'Signable_Documents',
+        path: '13_Signed_Offers_Change_Orders/Signable_Documents',
       },
     ],
   },

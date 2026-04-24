@@ -207,6 +207,7 @@ export async function POST(request: NextRequest) {
     const folderName = folderPath.split('/').pop() || folderPath;
     const projectLocation = (projectData.location || projectData.ort || '').trim();
     const projectDisplay = projectLocation ? `${projectName} – ${projectLocation}` : projectName;
+    const projectRef = projectNumber ? `${projectDisplay} (${projectNumber})` : projectDisplay;
     const portalLoginUrl = `${PORTAL_URL.replace(/\/$/, '')}/login`;
 
     // Different email content based on recipient type
@@ -250,7 +251,7 @@ export async function POST(request: NextRequest) {
           month: '2-digit',
           year: 'numeric',
         });
-        subject = 'Neuer Upload im Kundenportal – bitte prüfen und ggf. kommentieren';
+        subject = `Neuer Upload im Kundenportal – ${projectRef}`;
         emailContent = `
           <p>Sehr geehrte Damen und Herren,</p>
           <p>wir möchten Sie darüber informieren, dass in Ihrem Kundenportal zu Ihrem Projekt <strong>${projectDisplay}</strong> ein neues Dokument hochgeladen wurde.</p>
@@ -281,7 +282,7 @@ Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.
 
 ${closing.text}`;
       } else {
-        subject = 'Neue Dateien in Ihrem Kundenportal';
+        subject = `Neue Dateien in Ihrem Kundenportal – ${projectRef}`;
         emailContent = `
           <p>Sehr geehrte Damen und Herren,</p>
           <p>wir möchten Sie kurz darüber informieren, dass neue Dateien in Ihrem Kundenportal zu Ihrem Projekt <strong>${projectDisplay}</strong> hochgeladen wurden.</p>

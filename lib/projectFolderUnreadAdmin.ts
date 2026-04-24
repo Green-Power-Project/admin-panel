@@ -71,6 +71,10 @@ async function countUnreadFilesInLeaf(
     let unread = 0;
     snapshot.forEach((docSnap) => {
       const d = docSnap.data();
+      // Admin unread badges should reflect customer-originated files only.
+      // Admin uploads must not create admin unread noise on folder cards.
+      const uploadedBy = typeof d.uploadedBy === 'string' ? d.uploadedBy.trim() : '';
+      if (!uploadedBy) return;
       const filePath = fileKeyFromFirestoreDoc(d as Record<string, unknown>);
       if (!readPaths.has(filePath)) unread++;
     });

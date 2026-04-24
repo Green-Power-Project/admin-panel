@@ -9,9 +9,13 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { translateFolderPath, translateStatus } from '@/lib/translations';
 import {
   collection,
+  deleteDoc,
+  doc,
+  getDoc,
   onSnapshot,
   query,
   orderBy,
+  setDoc,
   Timestamp,
   getDocs,
 } from 'firebase/firestore';
@@ -29,6 +33,7 @@ interface FileReadStatus {
 }
 
 interface AuditLogData {
+  id: string;
   fileName: string;
   filePath: string;
   projectName: string;
@@ -41,6 +46,18 @@ interface AuditLogData {
   isRead: boolean;
   uploadedAt?: string;
   downloadUrl?: string;
+}
+
+type AuditLogOverride = {
+  fileName?: string;
+  folderPath?: string;
+  projectName?: string;
+  customerNumber?: string;
+  hidden?: boolean;
+};
+
+function auditLogOverrideId(projectId: string, filePath: string): string {
+  return `${projectId}__${filePath.replace(/\//g, '__')}`;
 }
 
 export default function AuditLogsPage() {
@@ -73,6 +90,10 @@ function AuditLogsContent() {
   const [viewerUrl, setViewerUrl] = useState<string | null>(null);
   const [viewerFileName, setViewerFileName] = useState<string | null>(null);
   const [viewerBlobUrl, setViewerBlobUrl] = useState<string | null>(null);
+  const [editingLog, setEditingLog] = useState<AuditLogData | null>(null);
+  const [editFileName, setEditFileName] = useState('');
+  const [editFolderPath, setEditFolderPath] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   function closeViewer() {
     if (viewerBlobUrl) URL.revokeObjectURL(viewerBlobUrl);
@@ -112,8 +133,12 @@ function AuditLogsContent() {
     const dbInstance = db; // Store for TypeScript narrowing
 
     let readStatusesMap = new Map<string, FileReadStatus[]>();
-    let projectsMap = new Map<string, { name: string; customerId: string }>();
+    let projectsMap = new Map<
+      string,
+      { name: string; customerId: string; dynamicSubfolders?: Record<string, string[]>; customFolders?: string[] }
+    >();
     let customersMap = new Map<string, { customerNumber: string; email: string }>();
+    let overridesMap = new Map<string, AuditLogOverride>();
 
     // Real-time listener for file read status
     const fileReadStatusUnsubscribe = onSnapshot(
@@ -133,7 +158,7 @@ function AuditLogsContent() {
           readStatusesMap.get(status.filePath)!.push(status);
         });
         // Always process (even with empty maps) so loading is cleared when there is no data
-        processAuditLogs(readStatusesMap, projectsMap, customersMap);
+        processAuditLogs(readStatusesMap, projectsMap, customersMap, overridesMap);
       },
       (error) => {
         console.error('Error listening to file read status:', error);
@@ -144,16 +169,26 @@ function AuditLogsContent() {
     const projectsUnsubscribe = onSnapshot(
       collection(dbInstance, 'projects'),
       (snapshot) => {
-        projectsMap = new Map<string, { name: string; customerId: string }>();
+        projectsMap = new Map<
+          string,
+          { name: string; customerId: string; dynamicSubfolders?: Record<string, string[]>; customFolders?: string[] }
+        >();
         snapshot.forEach((doc) => {
           const data = doc.data();
           projectsMap.set(doc.id, {
             name: data.name,
             customerId: data.customerId,
+            dynamicSubfolders:
+              data.dynamicSubfolders && typeof data.dynamicSubfolders === 'object'
+                ? (data.dynamicSubfolders as Record<string, string[]>)
+                : undefined,
+            customFolders: Array.isArray(data.customFolders)
+              ? (data.customFolders as string[]).filter((p) => typeof p === 'string' && p.trim().length > 0)
+              : undefined,
           });
         });
         // Always process (even with empty maps) so loading is cleared when there is no data
-        processAuditLogs(readStatusesMap, projectsMap, customersMap);
+        processAuditLogs(readStatusesMap, projectsMap, customersMap, overridesMap);
       },
       (error) => {
         console.error('Error listening to projects:', error);
@@ -173,10 +208,25 @@ function AuditLogsContent() {
           });
         });
         // Always process (even with empty maps) so loading is cleared when there is no data
-        processAuditLogs(readStatusesMap, projectsMap, customersMap);
+        processAuditLogs(readStatusesMap, projectsMap, customersMap, overridesMap);
       },
       (error) => {
         console.error('Error listening to customers:', error);
+      }
+    );
+
+    const overridesUnsubscribe = onSnapshot(
+      collection(dbInstance, 'auditLogOverrides'),
+      (snapshot) => {
+        overridesMap = new Map<string, AuditLogOverride>();
+        snapshot.forEach((d) => {
+          const data = d.data() as AuditLogOverride;
+          overridesMap.set(d.id, data);
+        });
+        processAuditLogs(readStatusesMap, projectsMap, customersMap, overridesMap);
+      },
+      (error) => {
+        console.error('Error listening to audit log overrides:', error);
       }
     );
 
@@ -185,14 +235,19 @@ function AuditLogsContent() {
       fileReadStatusUnsubscribe();
       projectsUnsubscribe();
       customersUnsubscribe();
+      overridesUnsubscribe();
     };
   }, []);
 
 
   async function processAuditLogs(
     readStatusesMap: Map<string, FileReadStatus[]>,
-    projectsMap: Map<string, { name: string; customerId: string }>,
-    customersMap: Map<string, { customerNumber: string; email: string }>
+    projectsMap: Map<
+      string,
+      { name: string; customerId: string; dynamicSubfolders?: Record<string, string[]>; customFolders?: string[] }
+    >,
+    customersMap: Map<string, { customerNumber: string; email: string }>,
+    overridesMap: Map<string, AuditLogOverride>
   ) {
     if (!db) return;
     const dbInstance = db; // Store for TypeScript narrowing
@@ -218,7 +273,7 @@ function AuditLogsContent() {
 
       // Get all files from all projects via Firestore metadata
       const allLogsData: AuditLogData[] = [];
-      const folderPaths = getAllFolderPathsArray();
+      const fixedFolderPaths = getAllFolderPathsArray();
 
       // Build all folder refs first so we can fetch in parallel (much faster than sequential awaits)
       const folderTasks: {
@@ -230,8 +285,25 @@ function AuditLogsContent() {
       }[] = [];
 
       for (const [projectId, projectData] of projectsMap.entries()) {
-        // Use all defined folders (including customer uploads for audit logs)
-        for (const folderPath of folderPaths) {
+        // Use fixed folders + project dynamic/custom folders so logs include new structures.
+        const folderPathSet = new Set<string>(fixedFolderPaths);
+        const dynamic = projectData.dynamicSubfolders;
+        if (dynamic && typeof dynamic === 'object') {
+          for (const [parent, segments] of Object.entries(dynamic)) {
+            if (!parent || !Array.isArray(segments)) continue;
+            for (const seg of segments) {
+              if (typeof seg !== 'string' || !seg.trim()) continue;
+              folderPathSet.add(`${parent}/${seg}`);
+            }
+          }
+        }
+        for (const customPath of projectData.customFolders ?? []) {
+          if (typeof customPath === 'string' && customPath.trim()) {
+            folderPathSet.add(customPath);
+          }
+        }
+
+        for (const folderPath of folderPathSet) {
           const segments = getFolderSegments(folderPath);
           if (segments.length === 0) continue;
           try {
@@ -284,13 +356,18 @@ function AuditLogsContent() {
             uploadedAtFormatted = data.uploadedAt.toDate().toLocaleString();
           }
 
+          const id = auditLogOverrideId(projectId, storagePath);
+          const override = overridesMap.get(id);
+          if (override?.hidden) return;
+
           allLogsData.push({
-            fileName,
+            id,
+            fileName: override?.fileName?.trim() || fileName,
             filePath: storagePath,
-            projectName,
+            projectName: override?.projectName?.trim() || projectName,
             projectId,
-            folderPath,
-            customerNumber: customerInfo?.customerNumber || 'N/A',
+            folderPath: override?.folderPath?.trim() || folderPath,
+            customerNumber: override?.customerNumber?.trim() || customerInfo?.customerNumber || 'N/A',
             customerEmail: customerInfo?.email || 'N/A',
             customerId,
             readAt: readAtFormatted,
@@ -410,6 +487,35 @@ function AuditLogsContent() {
       return;
     }
     router.push(`/files/${log.projectId}?folder=${encodeURIComponent(log.folderPath)}`);
+  }
+
+  async function handleSaveLogEdit() {
+    if (!db || !editingLog) return;
+    setSavingEdit(true);
+    try {
+      const ref = doc(db, 'auditLogOverrides', editingLog.id);
+      const existing = await getDoc(ref);
+      const prev = existing.exists() ? (existing.data() as AuditLogOverride) : {};
+      await setDoc(
+        ref,
+        {
+          ...prev,
+          fileName: editFileName.trim() || editingLog.fileName,
+          folderPath: editFolderPath.trim() || editingLog.folderPath,
+          hidden: false,
+        },
+        { merge: true }
+      );
+      setEditingLog(null);
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleHideLog(log: AuditLogData) {
+    if (!db) return;
+    const ref = doc(db, 'auditLogOverrides', log.id);
+    await setDoc(ref, { hidden: true }, { merge: true });
   }
 
   const isViewerImage = viewerFileName && /\.(jpg|jpeg|png|gif|webp)$/i.test(viewerFileName);
@@ -556,29 +662,32 @@ function AuditLogsContent() {
           ) : (
             <div className="bg-white border border-gray-100 rounded-lg overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200">
+                <table className="min-w-full table-fixed divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[10%]">
+                    <th className="w-[110px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       {t('common.status')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[25%]">
+                    <th className="w-[260px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       {t('files.fileName')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[18%]">
+                    <th className="w-[210px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       {t('auditLogs.project')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[15%]">
+                    <th className="w-[190px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       {t('auditLogs.folder')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[12%]">
+                    <th className="w-[110px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       {t('auditLogs.customer')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
+                    <th className="w-[165px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       {t('auditLogs.uploadedDate')}
                     </th>
-                    <th className="px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide w-[14%]">
+                    <th className="w-[165px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
                       {t('auditLogs.dateTimeOpened')}
+                    </th>
+                    <th className="w-[120px] px-3 py-2 text-left text-[10px] font-semibold text-gray-500 uppercase tracking-wide">
+                      {t('common.actions')}
                     </th>
                   </tr>
                 </thead>
@@ -587,7 +696,7 @@ function AuditLogsContent() {
                     .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                     .map((log, index) => (
                     <tr
-                      key={`${log.filePath}-${index}`}
+                      key={`${log.id}-${index}`}
                       role="button"
                       tabIndex={0}
                       onClick={() => handleRowClick(log)}
@@ -633,6 +742,32 @@ function AuditLogsContent() {
                       <td className="px-3 py-2.5">
                         <div className="text-xs text-gray-900 truncate">
                           {log.isRead ? log.readAt : <span className="text-gray-400">{t('auditLogs.notReadYet')}</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingLog(log);
+                              setEditFileName(log.fileName);
+                              setEditFolderPath(log.folderPath);
+                            }}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            {t('common.edit')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void handleHideLog(log);
+                            }}
+                            className="text-xs text-red-600 hover:underline"
+                          >
+                            {t('common.delete')}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -689,6 +824,52 @@ function AuditLogsContent() {
             <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
               {viewerFileName}
             </p>
+          </div>
+        </div>
+      )}
+
+      {editingLog && (
+        <div className="fixed inset-0 z-[60] admin-modal-host bg-black/50" onClick={() => !savingEdit && setEditingLog(null)}>
+          <div className="mx-auto mt-20 w-full max-w-lg rounded-xl bg-white p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-semibold text-gray-900 mb-4">{t('common.edit')}</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">{t('files.fileName')}</label>
+                <input
+                  type="text"
+                  value={editFileName}
+                  onChange={(e) => setEditFileName(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">{t('auditLogs.folder')}</label>
+                <input
+                  type="text"
+                  value={editFolderPath}
+                  onChange={(e) => setEditFolderPath(e.target.value)}
+                  className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+                />
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingLog(null)}
+                className="px-3 py-2 text-sm rounded-md border border-gray-300 text-gray-700 hover:bg-gray-50"
+                disabled={savingEdit}
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSaveLogEdit()}
+                className="px-3 py-2 text-sm rounded-md bg-green-power-600 text-white hover:bg-green-power-700 disabled:opacity-50"
+                disabled={savingEdit}
+              >
+                {savingEdit ? t('common.loading') : t('common.save')}
+              </button>
+            </div>
           </div>
         </div>
       )}

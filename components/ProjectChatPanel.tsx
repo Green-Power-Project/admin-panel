@@ -43,9 +43,11 @@ export default function ProjectChatPanel({
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const messagesScrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messageInputRef = useRef<HTMLInputElement>(null);
+  const sendLockRef = useRef(false);
 
   const focusMessageInput = useCallback(() => {
     requestAnimationFrame(() => {
@@ -55,21 +57,29 @@ export default function ProjectChatPanel({
     });
   }, []);
 
+  const scrollMessagesToBottom = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const el = messagesScrollRef.current;
+    if (!el) return;
+    requestAnimationFrame(() => {
+      el.scrollTo({ top: el.scrollHeight, behavior });
+    });
+  }, []);
+
   // Scroll to latest message when messages change (e.g. new message arrives).
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    scrollMessagesToBottom('smooth');
+  }, [messages, scrollMessagesToBottom]);
 
   // When chat opens, scroll to latest message after panel is laid out.
   useEffect(() => {
     if (!isOpen) return;
     const raf = requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'auto' });
+        scrollMessagesToBottom('auto');
       });
     });
     return () => cancelAnimationFrame(raf);
-  }, [isOpen]);
+  }, [isOpen, scrollMessagesToBottom]);
 
   // Focus message field when chat opens and after actions (same UX as customer portal).
   useEffect(() => {
@@ -88,12 +98,18 @@ export default function ProjectChatPanel({
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text && !replyTo) return;
-    if (sending) return;
-    await sendMessage(currentUserId, text || null, null, null, replyTo);
-    setInputText('');
-    setReplyTo(null);
-    setTypingThrottled(false);
-    focusMessageInput();
+    if (sending || sendLockRef.current) return;
+    sendLockRef.current = true;
+    try {
+      await sendMessage(currentUserId, text || null, null, null, replyTo);
+      setInputText('');
+      setReplyTo(null);
+      setTypingThrottled(false);
+      scrollMessagesToBottom('auto');
+      focusMessageInput();
+    } finally {
+      sendLockRef.current = false;
+    }
   };
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,6 +124,7 @@ export default function ProjectChatPanel({
     if (result) {
       await sendMessage(currentUserId, null, result.url, result.fileType, replyTo);
       setReplyTo(null);
+      scrollMessagesToBottom('auto');
     }
     e.target.value = '';
     focusMessageInput();
@@ -186,9 +203,9 @@ export default function ProjectChatPanel({
     <>
       <div className="fixed inset-0 z-40 flex">
         <div className="fixed inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-        <div className="relative flex flex-col w-full max-w-lg bg-white shadow-xl ml-auto h-full">
+        <div className="relative flex flex-col w-full max-w-lg bg-white shadow-xl ml-auto h-full max-h-[100dvh] min-h-0 overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">{t('chat.projectChat')}</h2>
               {projectName && <p className="text-xs text-gray-500 truncate">{projectName}</p>}
@@ -204,44 +221,51 @@ export default function ProjectChatPanel({
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-            {messages.length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-8">{t('chat.noMessagesYet')}</p>
-            )}
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.messageId}
-                msg={msg}
-                isOwn={msg.senderType === 'admin'}
-                formatTime={formatTime}
-                onReply={() => {
-                  setReplyTo({ messageId: msg.messageId, text: msg.text, fileType: msg.fileType });
-                  setOpenMenuId(null);
-                  focusMessageInput();
-                }}
-                onCopy={() => handleCopy(msg)}
-                onOpenFile={(url, type) => setViewerFile({ url, type })}
-                copied={copiedId === msg.messageId}
-                t={t}
-                isAdminPanel
-                projectId={projectId}
-                openMenuId={openMenuId}
-                onMenuToggle={(id) => setOpenMenuId((prev) => (prev === id ? null : id))}
-                onDelete={() => handleDelete(msg.messageId)}
-                onEdit={() => handleEditStart(msg)}
-                isEditing={editingMessageId === msg.messageId}
-                editingValue={editingValue}
-                onEditingValueChange={setEditingValue}
-                onEditSave={handleEditSave}
-                onEditCancel={() => { setEditingMessageId(null); setEditingValue(''); }}
-              />
-            ))}
-            {customerTyping && (
-              <div className="flex justify-start">
-                <span className="text-xs text-gray-500 italic px-3 py-1">{CHAT_TYPING_AUFTRAGNEHMER}</span>
+          <div
+            ref={messagesScrollRef}
+            className="flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain min-h-0 touch-pan-y"
+          >
+            <div className="flex min-h-full w-full flex-col">
+              <div className="mt-auto flex w-full flex-col gap-3 p-4">
+                {messages.length === 0 && (
+                  <p className="text-sm text-gray-500 text-center py-4 shrink-0">{t('chat.noMessagesYet')}</p>
+                )}
+                {messages.map((msg) => (
+                  <MessageBubble
+                    key={msg.messageId}
+                    msg={msg}
+                    isOwn={msg.senderType === 'admin'}
+                    formatTime={formatTime}
+                    onReply={() => {
+                      setReplyTo({ messageId: msg.messageId, text: msg.text, fileType: msg.fileType });
+                      setOpenMenuId(null);
+                      focusMessageInput();
+                    }}
+                    onCopy={() => handleCopy(msg)}
+                    onOpenFile={(url, type) => setViewerFile({ url, type })}
+                    copied={copiedId === msg.messageId}
+                    t={t}
+                    isAdminPanel
+                    projectId={projectId}
+                    openMenuId={openMenuId}
+                    onMenuToggle={(id) => setOpenMenuId((prev) => (prev === id ? null : id))}
+                    onDelete={() => handleDelete(msg.messageId)}
+                    onEdit={() => handleEditStart(msg)}
+                    isEditing={editingMessageId === msg.messageId}
+                    editingValue={editingValue}
+                    onEditingValueChange={setEditingValue}
+                    onEditSave={handleEditSave}
+                    onEditCancel={() => { setEditingMessageId(null); setEditingValue(''); }}
+                  />
+                ))}
+                {customerTyping && (
+                  <div className="flex justify-start shrink-0">
+                    <span className="text-xs text-gray-500 italic px-3 py-1">{CHAT_TYPING_AUFTRAGNEHMER}</span>
+                  </div>
+                )}
+                <div ref={messagesEndRef} className="shrink-0 h-0" aria-hidden="true" />
               </div>
-            )}
-            <div ref={messagesEndRef} />
+            </div>
           </div>
 
           {/* Reply preview */}
@@ -260,7 +284,7 @@ export default function ProjectChatPanel({
           )}
 
           {/* Input */}
-          <div className="p-4 border-t border-gray-200 bg-white">
+          <div className="p-4 border-t border-gray-200 bg-white pb-[max(1rem,env(safe-area-inset-bottom))] shrink-0">
             <div className="flex gap-2">
               <input
                 type="file"
@@ -291,18 +315,18 @@ export default function ProjectChatPanel({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    handleSend();
+                    void handleSend();
                   }
                 }}
                 placeholder={t('chat.typeMessage')}
                 className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500"
-                disabled={sending}
                 autoComplete="off"
                 enterKeyHint="send"
               />
               <button
                 type="button"
-                onClick={handleSend}
+                onPointerDown={(e) => e.preventDefault()}
+                onClick={() => void handleSend()}
                 disabled={sending || (!inputText.trim() && !replyTo)}
                 title={t('common.submit')}
                 className="p-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"

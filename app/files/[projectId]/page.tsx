@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
+import JSZip from 'jszip';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
@@ -25,7 +26,7 @@ import {
 } from 'firebase/firestore';
 import {
   PROJECT_FOLDER_STRUCTURE,
-  SIGNABLE_DOCUMENTS_FOLDER_PATH,
+  isSignableDocumentsFolderPath,
   isValidFolderPath,
   isValidFolderPathForProject,
   getScopeFolderForProject,
@@ -37,6 +38,7 @@ import { uploadFile, deleteFile } from '@/lib/fileStorage';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
 import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
+import NativePdfIframe from '@/components/NativePdfIframe';
 import Pagination from '@/components/Pagination';
 import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
 import { deleteFileRelatedData } from '@/lib/cascadeDelete';
@@ -143,6 +145,8 @@ function getFolderConfig(path: string, t: (key: string) => string) {
     '07_Delivery_Notes': { gradient: 'from-teal-500 to-cyan-500', icon: '📦' },
     '08_General': { gradient: 'from-gray-500 to-slate-500', icon: '📋' },
     '11_Signature_Required_Documents': { gradient: 'from-violet-500 to-fuchsia-600', icon: '✍️' },
+    '12_Signed_Delivery_Notes': { gradient: 'from-teal-500 to-emerald-600', icon: '✍️' },
+    '13_Signed_Offers_Change_Orders': { gradient: 'from-amber-500 to-orange-500', icon: '✍️' },
     '09_Admin_Only': { gradient: 'from-amber-600 to-orange-600', icon: '🔒' },
   };
   const base = configs[path] || { gradient: 'from-gray-400 to-gray-500', icon: '📁' };
@@ -165,6 +169,8 @@ function getFolderIcon(path: string): string {
   if (path.startsWith('09_')) return '🔒';
   if (path.startsWith('10_')) return '📂';
   if (path.startsWith('11_')) return '✍️';
+  if (path.startsWith('12_')) return '✍️';
+  if (path.startsWith('13_')) return '✍️';
   return '📁';
 }
 
@@ -229,6 +235,8 @@ function ProjectFilesContent() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [uploadingFileName, setUploadingFileName] = useState<string>('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [selectedDownloadKeys, setSelectedDownloadKeys] = useState<Set<string>>(new Set());
   const [uploadError, setUploadError] = useState('');
   const [uploadSuccess, setUploadSuccess] = useState('');
   const [successFolder, setSuccessFolder] = useState('');
@@ -250,6 +258,38 @@ function ProjectFilesContent() {
   const [reportSignatures, setReportSignatures] = useState<Record<string, ReportSignatureItem>>({});
   const [selectedSignature, setSelectedSignature] = useState<ReportSignatureItem | null>(null);
 
+  const stepViewerFile = useCallback(
+    (delta: -1 | 1) => {
+      setViewerFile((current) => {
+        if (!current) return current;
+        const idx = files.findIndex((f) => f.fileKey === current.fileKey);
+        if (idx < 0) return current;
+        const nextIdx = idx + delta;
+        if (nextIdx < 0 || nextIdx >= files.length) return current;
+        return files[nextIdx];
+      });
+    },
+    [files]
+  );
+
+  useEffect(() => {
+    if (!viewerFile) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        stepViewerFile(-1);
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        stepViewerFile(1);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        setViewerFile(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [viewerFile, stepViewerFile]);
+
   /** Mark file as viewed by admin so project unread counts drop. */
   useEffect(() => {
     if (!viewerFile || !db || !projectId || !project?.customerId) return;
@@ -265,7 +305,7 @@ function ProjectFilesContent() {
       },
       { merge: true }
     ).catch((e) => console.error('adminFileReadStatus', e));
-  }, [viewerFile?.fileKey, projectId, project?.customerId]);
+  }, [viewerFile, projectId, project?.customerId]);
 
   // Avoid flash of folder UI (sidebar with "Emails" etc.) during navigation – show content only after a short delay once project is loaded
   useEffect(() => {
@@ -437,7 +477,7 @@ function ProjectFilesContent() {
   /** Load via Admin API so Firestore client rules do not need reportSignatures read access. */
   useEffect(() => {
     if (!projectId) return;
-    if (selectedFolder !== SIGNABLE_DOCUMENTS_FOLDER_PATH) {
+    if (!isSignableDocumentsFolderPath(selectedFolder)) {
       setReportSignatures({});
       return;
     }
@@ -677,6 +717,22 @@ function ProjectFilesContent() {
           docData.autoApproveDate = Timestamp.fromDate(addWorkingDays(new Date(), 5));
         }
         await addDoc(filesRef, docData);
+        // Admin uploaded this file, so it should not appear as "unread" for admin.
+        // Keep customer unread flow unchanged (customer read state is tracked separately in `fileReadStatus`).
+        if (project?.customerId) {
+          const adminReadDocId = result.public_id.replace(/\//g, '__');
+          await setDoc(
+            doc(db, 'adminFileReadStatus', adminReadDocId),
+            {
+              adminRead: true,
+              filePath: result.public_id,
+              projectId,
+              customerId: project.customerId,
+              readAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
         uploadedFiles.push(file.name);
         try {
           await fetch('/api/notifications/file-upload', {
@@ -750,6 +806,204 @@ function ProjectFilesContent() {
       setDeleting(null);
       setShowDeleteConfirm(false);
       setDeleteFileData(null);
+    }
+  }
+
+  function getDownloadUrlForFile(file: FileMetadata): string {
+    const lower = file.fileName.toLowerCase();
+    let url = file.fileUrl;
+    if (lower.endsWith('.pdf') && url.includes('/image/upload/')) {
+      url = url.replace('/image/upload/', '/raw/upload/');
+    }
+    if (lower.endsWith('.pdf') && !url.includes('fl_attachment')) {
+      const sep = url.includes('?') ? '&' : '?';
+      url = `${url}${sep}fl_attachment`;
+    }
+    return url;
+  }
+
+  async function fetchFileBlobForZip(file: FileMetadata): Promise<Blob> {
+    const lower = file.fileName.toLowerCase();
+    const mimeType = lower.endsWith('.pdf')
+      ? 'application/pdf'
+      : lower.endsWith('.jpg') || lower.endsWith('.jpeg')
+      ? 'image/jpeg'
+      : lower.endsWith('.png')
+      ? 'image/png'
+      : 'application/octet-stream';
+
+    const primaryUrl = getDownloadUrlForFile(file);
+    const tryFetch = async (url: string): Promise<Blob | null> => {
+      try {
+        const proxyUrl = `/api/storage/proxy-download?url=${encodeURIComponent(url)}&fileName=${encodeURIComponent(file.fileName || 'download')}`;
+        const response = await fetch(proxyUrl, {
+          method: 'GET',
+          headers: { Accept: mimeType },
+          redirect: 'follow',
+        });
+        if (!response.ok) return null;
+        const blob = await response.blob();
+        return blob.type && blob.type !== 'application/octet-stream'
+          ? blob
+          : new Blob([blob], { type: mimeType });
+      } catch {
+        return null;
+      }
+    };
+
+    const primaryBlob = await tryFetch(primaryUrl);
+    if (primaryBlob) return primaryBlob;
+
+    // PDF fallback: when `/raw/upload/` fails, retry original URL with attachment flag.
+    if (lower.endsWith('.pdf') && primaryUrl.includes('/raw/upload/')) {
+      const originalBase = file.fileUrl;
+      const fallbackUrl = `${originalBase}${originalBase.includes('?') ? '&' : '?'}fl_attachment`;
+      const fallbackBlob = await tryFetch(fallbackUrl);
+      if (fallbackBlob) return fallbackBlob;
+    }
+
+    throw new Error(`zip_fetch_failed_${file.fileName}`);
+  }
+
+  async function triggerBrowserDownload(file: FileMetadata): Promise<void> {
+    const lower = file.fileName.toLowerCase();
+    const mimeType = lower.endsWith('.pdf')
+      ? 'application/pdf'
+      : lower.endsWith('.jpg') || lower.endsWith('.jpeg')
+      ? 'image/jpeg'
+      : lower.endsWith('.png')
+      ? 'image/png'
+      : 'application/octet-stream';
+    const downloadUrl = getDownloadUrlForFile(file);
+    try {
+      const response = await fetch(downloadUrl, {
+        method: 'GET',
+        headers: { Accept: mimeType },
+        redirect: 'follow',
+      });
+      if (!response.ok) throw new Error(`download_failed_${response.status}`);
+      const blob = await response.blob();
+      const typedBlob =
+        blob.type && blob.type !== 'application/octet-stream' ? blob : new Blob([blob], { type: mimeType });
+      const url = URL.createObjectURL(typedBlob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = file.fileName || 'download';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+      }, 100);
+    } catch {
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = file.fileName || 'download';
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      setTimeout(() => document.body.removeChild(anchor), 100);
+    }
+  }
+
+  async function handleDownloadFile(file: FileMetadata) {
+    if (downloading === file.fileKey) return;
+    setDownloading(file.fileKey);
+    try {
+      await triggerBrowserDownload(file);
+    } catch (e) {
+      setAlertData({
+        title: t('messages.error.generic'),
+        message: e instanceof Error ? e.message : t('messages.error.generic'),
+        type: 'error',
+      });
+      setShowAlert(true);
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  async function handleDownloadSelected() {
+    if (selectedDownloadKeys.size === 0) return;
+    const targets = files.filter((f) => selectedDownloadKeys.has(f.fileKey));
+    if (targets.length === 0) return;
+    if (downloading !== null) return;
+
+    const bulkDownloadKey = '__bulk_zip__';
+    setDownloading(bulkDownloadKey);
+    try {
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+      const failedFiles: string[] = [];
+
+      for (const file of targets) {
+        try {
+          const blob = await fetchFileBlobForZip(file);
+
+          const originalName = (file.fileName || 'file').trim();
+          const cleanedBase = originalName.replace(/[\\/:*?"<>|]+/g, '_') || 'file';
+          let entryName = cleanedBase;
+          let n = 2;
+          while (usedNames.has(entryName)) {
+            const dotIdx = cleanedBase.lastIndexOf('.');
+            if (dotIdx > 0) {
+              entryName = `${cleanedBase.slice(0, dotIdx)} (${n})${cleanedBase.slice(dotIdx)}`;
+            } else {
+              entryName = `${cleanedBase} (${n})`;
+            }
+            n += 1;
+          }
+          usedNames.add(entryName);
+          zip.file(entryName, blob);
+        } catch {
+          failedFiles.push(file.fileName);
+        }
+      }
+
+      if (Object.keys(zip.files).length === 0) {
+        throw new Error(t('messages.error.generic'));
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const folderLabel = (selectedFolder.split('/').pop() || 'files').replace(/[^a-zA-Z0-9_-]+/g, '_');
+      const projectLabel = (project?.name || 'project').replace(/[^a-zA-Z0-9_-]+/g, '_');
+      const zipName = `${projectLabel}-${folderLabel}.zip`;
+
+      const url = URL.createObjectURL(zipBlob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = zipName;
+      anchor.style.display = 'none';
+      document.body.appendChild(anchor);
+      anchor.click();
+      setTimeout(() => {
+        document.body.removeChild(anchor);
+        URL.revokeObjectURL(url);
+      }, 100);
+
+      if (failedFiles.length > 0) {
+        setAlertData({
+          title: t('messages.error.generic'),
+          message:
+            failedFiles.length <= 3
+              ? `Could not add to ZIP: ${failedFiles.join(', ')}`
+              : `${failedFiles.length} file(s) could not be added to ZIP.`,
+          type: 'warning',
+        });
+        setShowAlert(true);
+      }
+    } catch (e) {
+      setAlertData({
+        title: t('messages.error.generic'),
+        message: e instanceof Error ? e.message : t('messages.error.generic'),
+        type: 'error',
+      });
+      setShowAlert(true);
+    } finally {
+      setDownloading(null);
     }
   }
 
@@ -1030,8 +1284,35 @@ function ProjectFilesContent() {
 
                 {/* Files list */}
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-gray-200">
+                  <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between gap-3">
                     <h3 className="text-base font-bold text-gray-900">{t('files.filesListTitle')}</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = new Set(selectedDownloadKeys);
+                          if (next.size === paginatedFiles.length && paginatedFiles.length > 0) {
+                            setSelectedDownloadKeys(new Set());
+                          } else {
+                            for (const f of paginatedFiles) next.add(f.fileKey);
+                            setSelectedDownloadKeys(next);
+                          }
+                        }}
+                        className="text-xs text-gray-600 hover:text-gray-900"
+                      >
+                        {selectedDownloadKeys.size === paginatedFiles.length && paginatedFiles.length > 0
+                          ? t('common.clear')
+                          : 'Select all'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDownloadSelected()}
+                        disabled={selectedDownloadKeys.size === 0 || downloading !== null}
+                        className="px-3 py-1.5 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        {t('common.download')} ({selectedDownloadKeys.size})
+                      </button>
+                    </div>
                   </div>
                   <div className="p-4">
                     {files.length === 0 ? (
@@ -1048,6 +1329,18 @@ function ProjectFilesContent() {
                                 className="py-3 flex items-center justify-between gap-4"
                               >
                                 <div className="flex items-center gap-3 min-w-0">
+                                  <input
+                                    type="checkbox"
+                                    checked={selectedDownloadKeys.has(file.fileKey)}
+                                    onChange={(e) => {
+                                      const next = new Set(selectedDownloadKeys);
+                                      if (e.target.checked) next.add(file.fileKey);
+                                      else next.delete(file.fileKey);
+                                      setSelectedDownloadKeys(next);
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="h-4 w-4 rounded border-gray-300 text-green-power-600"
+                                  />
                                   <span className="text-xl">
                                     {file.fileType === 'pdf'
                                       ? '📄'
@@ -1056,15 +1349,20 @@ function ProjectFilesContent() {
                                       : '📎'}
                                   </span>
                                   <div className="min-w-0">
-                                    <p className="text-sm font-medium text-gray-900 truncate">
+                                    <button
+                                      type="button"
+                                      onClick={() => setViewerFile(file)}
+                                      className="text-sm font-medium text-gray-900 truncate hover:underline text-left"
+                                      title={file.fileName}
+                                    >
                                       {file.fileName}
-                                    </p>
+                                    </button>
                                     {file.uploadedAt && (
                                       <p className="text-xs text-gray-500">
                                         {file.uploadedAt.toLocaleDateString()}
                                       </p>
                                     )}
-                                    {selectedFolder === SIGNABLE_DOCUMENTS_FOLDER_PATH && (
+                                    {isSignableDocumentsFolderPath(selectedFolder) && (
                                       <div className="mt-1 flex items-center gap-2">
                                         {sig ? (
                                           <button
@@ -1090,6 +1388,14 @@ function ProjectFilesContent() {
                                     className="text-sm text-green-power-600 hover:underline"
                                   >
                                     {t('files.open')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDownloadFile(file)}
+                                    disabled={downloading === file.fileKey}
+                                    className="text-sm text-blue-600 hover:underline disabled:opacity-50"
+                                  >
+                                    {downloading === file.fileKey ? t('common.loading') : t('common.download')}
                                   </button>
                                   {!isCustomerUploadsFolder(selectedFolder) && (
                                     <button
@@ -1417,41 +1723,70 @@ function ProjectFilesContent() {
         onCancel={clearSelectedFiles}
       />
       {/* File viewer modal (in-portal, no new tab) */}
-      {viewerFile && (
-        <div
-          className="fixed inset-0 z-50 admin-modal-host bg-black/90"
-          onClick={() => setViewerFile(null)}
-        >
-          <button
-            type="button"
+      {viewerFile && (() => {
+        const viewerIndex = files.findIndex((f) => f.fileKey === viewerFile.fileKey);
+        const hasPrev = viewerIndex > 0;
+        const hasNext = viewerIndex >= 0 && viewerIndex < files.length - 1;
+        return (
+          <div
+            className="fixed inset-0 z-50 admin-modal-host bg-black/90"
             onClick={() => setViewerFile(null)}
-            className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
-            aria-label={t('common.close')}
           >
-            <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-          <div className="relative max-w-[95vw] max-h-[min(90dvh,90svh)] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
-            {viewerFile.fileType === 'image' ? (
-              <img
-                src={viewerFile.fileUrl}
-                alt={viewerFile.fileName}
-                className="max-h-[min(90dvh,90svh)] w-auto object-contain rounded-lg"
-              />
-            ) : (
-              <iframe
-                src={viewerFile.fileUrl}
-                title={viewerFile.fileName}
-                className="w-full max-w-4xl h-[min(90dvh,90svh)] rounded-lg bg-white"
-              />
+            <button
+              type="button"
+              onClick={() => setViewerFile(null)}
+              className="absolute top-4 right-4 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+              aria-label={t('common.close')}
+            >
+              <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+            {hasPrev && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); stepViewerFile(-1); }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+                aria-label={t('common.previous')}
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
             )}
-            <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
-              {viewerFile.fileName}
-            </p>
+            {hasNext && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); stepViewerFile(1); }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-2 text-white hover:bg-white/10 rounded-lg transition-colors z-10"
+                aria-label={t('common.next')}
+              >
+                <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            )}
+            <div className="relative max-w-[95vw] max-h-[min(90dvh,90svh)] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+              {viewerFile.fileType === 'image' ? (
+                <img
+                  src={viewerFile.fileUrl}
+                  alt={viewerFile.fileName}
+                  className="max-h-[min(90dvh,90svh)] w-auto object-contain rounded-lg"
+                />
+              ) : (
+                <NativePdfIframe
+                  src={viewerFile.fileUrl}
+                  title={viewerFile.fileName}
+                  className="h-[min(90dvh,90svh)] min-h-[320px] w-full max-w-4xl rounded-lg"
+                />
+              )}
+              <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
+                {viewerFile.fileName}
+              </p>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
       {selectedEmail && (
         <div
           className="fixed inset-0 z-50 admin-modal-host bg-black/80"
