@@ -166,6 +166,15 @@ function formatSignedAtDe(signedAt: Date, displayTimeZone?: string): string {
 
 type StampTextRow = { text: string; size: number; color: ReturnType<typeof rgb>; gapAfter: number };
 
+function truncateLinesWithEllipsis(lines: string[], maxLines: number): string[] {
+  if (maxLines <= 0) return [];
+  if (lines.length <= maxLines) return lines;
+  const clipped = lines.slice(0, maxLines);
+  const last = clipped[maxLines - 1] ?? '';
+  clipped[maxLines - 1] = last.endsWith('...') ? last : `${last}...`;
+  return clipped;
+}
+
 /**
  * Lower-left corner of the stamp box in **default user space** so it lands on the
  * viewer's bottom-right after the page's `/Rotate` is applied (0, 90, 180, 270).
@@ -233,14 +242,25 @@ async function stampPdfBuffer(
   }
 
   const margin = 32;
-  const pad = 10;
-  const colW = Math.min(340, eff.width - margin * 2 - 16);
-  let sigMaxW = Math.min(220, colW - 8);
-  let sigH = signatureImage ? (signatureImage.height / signatureImage.width) * sigMaxW : 0;
+  const pad = 8;
+  const colW = Math.min(280, eff.width - margin * 2 - 24);
+  const sigBoxMaxW = Math.min(150, colW - 12);
+  const sigBoxMaxH = 62;
+  let sigDrawW = 0;
+  let sigDrawH = 0;
+  if (signatureImage) {
+    const w = Math.max(1, signatureImage.width);
+    const h = Math.max(1, signatureImage.height);
+    // contain-fit: preserve aspect ratio inside the signature box, no clipping.
+    const scale = Math.min(sigBoxMaxW / w, sigBoxMaxH / h);
+    sigDrawW = Math.max(1, Math.floor(w * scale));
+    sigDrawH = Math.max(1, Math.floor(h * scale));
+  }
   const maxStampHeight = eff.height - margin * 2 - 40;
-  if (signatureImage && sigH > maxStampHeight * 0.35) {
-    sigMaxW = Math.max(120, sigMaxW * 0.75);
-    sigH = (signatureImage.height / signatureImage.width) * sigMaxW;
+  if (signatureImage && sigDrawH > maxStampHeight * 0.22) {
+    const shrink = (maxStampHeight * 0.22) / sigDrawH;
+    sigDrawW = Math.max(1, Math.floor(sigDrawW * shrink));
+    sigDrawH = Math.max(1, Math.floor(sigDrawH * shrink));
   }
 
   const signedAtStr = formatSignedAtDe(signedAt, displayTimeZone);
@@ -248,6 +268,7 @@ async function stampPdfBuffer(
   const bodySize = 8;
   const sectionLabelSize = 7;
   const roleLineSize = 9;
+  const topBodySize = 7;
   const labelMuted = rgb(0.42, 0.44, 0.48);
   const bodyColor = rgb(0.12, 0.14, 0.18);
   const dateColor = rgb(0.35, 0.38, 0.42);
@@ -262,18 +283,21 @@ async function stampPdfBuffer(
 
   const placeLines = wrapTextToLines(placeSafe, font, bodySize, colW);
   const dateLines = wrapTextToLines(signedAtStr, font, bodySize, colW);
-  const confirmationLines = wrapTextToLines(STAMP_CONFIRMATION_TEXT, font, bodySize, colW);
+  const confirmationLines = truncateLinesWithEllipsis(
+    wrapTextToLines(STAMP_CONFIRMATION_TEXT, font, topBodySize, colW),
+    2
+  );
 
-  const gapSection = 10;
-  const gapBeforeImage = 8;
-  const gapAfterImage = 8;
+  const gapSection = 7;
+  const gapBeforeImage = 5;
+  const gapAfterImage = 5;
 
   /** Bottom → top (PDF y): role+name, signature image, place/date, confirmation at top. */
   const bottomRows: StampTextRow[] = [
     { text: roleLine, size: roleLineSize, color: bodyColor, gapAfter: gapSection },
   ];
   const hBottom = bottomRows.reduce((s, r) => s + r.gapAfter, 0);
-  const hImageBlock = signatureImage ? gapBeforeImage + sigH + gapAfterImage : 0;
+  const hImageBlock = signatureImage ? gapBeforeImage + sigDrawH + gapAfterImage : 0;
 
   const middleRows: StampTextRow[] = [];
   middleRows.push({ text: 'Ort', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
@@ -288,11 +312,11 @@ async function stampPdfBuffer(
 
   const topRows: StampTextRow[] = [];
   for (const cl of confirmationLines) {
-    topRows.push({ text: cl, size: bodySize, color: bodyColor, gapAfter: 11 });
+    topRows.push({ text: cl, size: topBodySize, color: bodyColor, gapAfter: 9 });
   }
   const hTop = topRows.reduce((s, r) => s + r.gapAfter, 0);
 
-  const totalH = pad * 2 + hBottom + hImageBlock + hMiddle + hTop + gapSection * 2 + 4;
+  const totalH = pad * 2 + hBottom + hImageBlock + hMiddle + hTop + gapSection * 2 + 2;
   const boxW = colW + pad * 2;
   const { boxX, boxY } = stampBoxLowerLeftInUserSpace(mediaW, mediaH, pageRotation, margin, boxW, totalH);
   const stampRad = -degreesToRadians(pageRotation);
@@ -332,13 +356,14 @@ async function stampPdfBuffer(
 
   if (signatureImage) {
     textY += gapBeforeImage;
+    const sigX = textLeft + Math.max(0, (sigBoxMaxW - sigDrawW) / 2);
     page.drawImage(signatureImage, {
-      x: textLeft,
+      x: sigX,
       y: textY,
-      width: sigMaxW,
-      height: sigH,
+      width: sigDrawW,
+      height: sigDrawH,
     });
-    textY += sigH + gapAfterImage;
+    textY += sigDrawH + gapAfterImage;
   }
 
   textY += gapSection;

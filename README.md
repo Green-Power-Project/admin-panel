@@ -141,10 +141,10 @@ For automatic emails to work in both directions, set these environment variables
 - `EMAIL_USER` – Gmail address used to send (e.g. `your@gmail.com`)
 - `EMAIL_PASSWORD` – Gmail app password (not the normal password)
 - `FIREBASE_SERVICE_ACCOUNT_KEY` – JSON string for Firebase Admin SDK (needed for lookups and for **deleting customers from Firebase Authentication** when you delete a customer in the admin panel; without it, only Firestore data is removed)
-- `NEXT_PUBLIC_CUSTOMER_APP_ORIGIN` – Full URL of the customer panel (e.g. `http://localhost:3001` or `https://your-customer-app.vercel.app`). Required so the customer app can call the admin notification APIs (file-upload, customer-message) from a different origin (CORS).
+- `NEXT_PUBLIC_CUSTOMER_APP_ORIGIN` – Full URL of the customer panel (e.g. `http://localhost:3001` or `https://customer.gruen-power.cloud`). Required so the customer app can call the admin notification APIs (file-upload, customer-message) from a different origin (CORS).
 
 **Customer panel (window-app) `.env.local`:**
-- `NEXT_PUBLIC_ADMIN_API_BASE_URL` – Full URL of the admin panel (e.g. `http://localhost:3000` or `https://your-admin.vercel.app`). Required so the customer app can notify the admin when the customer uploads a file or sends a comment/message.
+- `NEXT_PUBLIC_ADMIN_API_BASE_URL` – Full URL of the admin panel (e.g. `http://localhost:3000` or `https://admin.gruen-power.cloud`). Required so the customer app can notify the admin when the customer uploads a file or sends a comment/message.
 
 Without these, admin uploads will not email the customer, and customer uploads/comments will not email the admin.
 

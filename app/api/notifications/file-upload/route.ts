@@ -3,6 +3,7 @@ import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { logProjectEmail } from '@/lib/server/emailLogger';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
+import { getAdminServerBaseUrl } from '@/lib/serverBaseUrl';
 import { addWorkingDays } from '@/lib/reportApproval';
 
 interface FileUploadNotificationPayload {
@@ -239,9 +240,9 @@ export async function POST(request: NextRequest) {
         </div>
         <p>Please review the uploaded file in the admin panel.</p>
         <p style="margin-top: 20px; color: #666; font-size: 12px;">This email was sent from the Customer Portal.</p>
-        <a href="${process.env.ADMIN_PANEL_URL || 'http://localhost:3000'}" class="button">View in Admin Panel</a>
+        <a href="${getAdminServerBaseUrl()}" class="button">View in Admin Panel</a>
       `;
-      emailContentText = `Hello,\n\nI have uploaded a new file to my project.\n\nCustomer Information:\n${customerName ? `Name: ${customerName}\n` : ''}${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${customerEmail ? `Email: ${customerEmail}\n` : ''}\nProject: ${projectName}\nFolder: ${folderName}\nFile Name: ${fileName}\n\nPlease review the uploaded file in the admin panel.\n\nThis email was sent from the Customer Portal.\n\n${process.env.ADMIN_PANEL_URL || 'http://localhost:3000'}`;
+      emailContentText = `Hello,\n\nI have uploaded a new file to my project.\n\nCustomer Information:\n${customerName ? `Name: ${customerName}\n` : ''}${customerNumber ? `Customer Number: ${customerNumber}\n` : ''}${customerEmail ? `Email: ${customerEmail}\n` : ''}\nProject: ${projectName}\nFolder: ${folderName}\nFile Name: ${fileName}\n\nPlease review the uploaded file in the admin panel.\n\nThis email was sent from the Customer Portal.\n\n${getAdminServerBaseUrl()}`;
     } else {
       // Admin uploaded → notify customer (German content)
       if (isReport) {

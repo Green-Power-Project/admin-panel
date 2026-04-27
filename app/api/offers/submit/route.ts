@@ -4,6 +4,7 @@ import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { buildEmailLogoHtml } from '@/lib/emailSignature';
 import { generateOfferPdfBuffer } from '@/lib/offerPdf';
 import { logProjectEmail } from '@/lib/server/emailLogger';
+import { getAdminServerBaseUrl } from '@/lib/serverBaseUrl';
 
 export interface OfferRequestItem {
   itemType?: 'gallery' | 'folder' | 'catalogue';
@@ -110,7 +111,7 @@ function validatePayload(body: unknown): OfferSubmitPayload | null {
 }
 
 function withCors(res: NextResponse) {
-  const origin = (process.env.NEXT_PUBLIC_CUSTOMER_APP_ORIGIN || 'http://localhost:3000').trim();
+  const origin = (process.env.NEXT_PUBLIC_CUSTOMER_APP_ORIGIN || 'https://customer.gruen-power.cloud').trim();
   res.headers.set('Access-Control-Allow-Origin', origin);
   res.headers.set('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.headers.set('Access-Control-Allow-Headers', 'Content-Type');
@@ -205,7 +206,9 @@ export async function POST(request: NextRequest) {
         createdAt: new Date().toISOString(),
       });
 
-      const adminPanelBase = (process.env.NEXT_PUBLIC_ADMIN_PANEL_URL || '').trim();
+      const adminPanelBase =
+        (process.env.NEXT_PUBLIC_ADMIN_PANEL_URL || process.env.NEXT_PUBLIC_ADMIN_API_BASE_URL || '').trim() ||
+        getAdminServerBaseUrl();
       const offersUrl = adminPanelBase ? `${adminPanelBase.replace(/\/+$/, '')}/offers` : '';
 
       const html = `

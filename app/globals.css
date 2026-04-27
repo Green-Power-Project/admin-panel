@@ -86,6 +86,15 @@ a {
   background: #a8a8a8;
 }
 
+/* Hide scrollbar while preserving scroll behavior */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Modern Loading Animations */
 @keyframes spin {
   from {

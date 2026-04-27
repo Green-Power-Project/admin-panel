@@ -14,14 +14,23 @@
  * - 06_Invoices (with Progress_Invoices, Final_Invoices, Credit_Notes subfolders)
  * - 07_Delivery_Notes (with Material_Delivery_Notes, Piecework_Delivery_Notes, Reports_Linked_to_Delivery_Notes subfolders)
  * - 08_General (with Contracts, Plans, Other_Documents subfolders)
- * - 11_Signature_Required_Documents (with Signable_Documents subfolder – PDF signing for customers)
- * - 12_Signed_Delivery_Notes (signed delivery notes – Signable_Documents)
- * - 13_Signed_Offers_Change_Orders (signed offers & change orders – Signable_Documents)
+ * - Signature (with per-document-type signing subfolders)
  * - 09_Admin_Only (admin-only private folder – not visible to customers; e.g. material prices, internal notes)
  */
 
 /** Customer PDF signing folders (full path including Signable_Documents). */
 export const SIGNABLE_DOCUMENT_FOLDER_PATHS = [
+  'Signature/Offers',
+  'Signature/Order_Confirmations',
+  'Signature/Variations_Additional_Work',
+  'Signature/Delivery_Notes',
+  'Signature/Reports',
+  'Signature/Contracts',
+  'Signature/Documentation',
+  // Previous signature-folder names kept for backward compatibility.
+  'Signature/Offers_Quotations',
+  'Signature/Additions_Change_Orders',
+  // Legacy paths kept for backward compatibility with older projects.
   '11_Signature_Required_Documents/Signable_Documents',
   '12_Signed_Delivery_Notes/Signable_Documents',
   '13_Signed_Offers_Change_Orders/Signable_Documents',
@@ -33,6 +42,15 @@ export function isSignableDocumentsFolderPath(folderPath: string): boolean {
 
 /** Primary signable path (reports); prefer `isSignableDocumentsFolderPath` for checks. */
 export const SIGNABLE_DOCUMENTS_FOLDER_PATH = SIGNABLE_DOCUMENT_FOLDER_PATHS[0];
+
+const LEGACY_FIXED_FOLDER_PATHS = new Set<string>([
+  '11_Signature_Required_Documents',
+  '11_Signature_Required_Documents/Signable_Documents',
+  '12_Signed_Delivery_Notes',
+  '12_Signed_Delivery_Notes/Signable_Documents',
+  '13_Signed_Offers_Change_Orders',
+  '13_Signed_Offers_Change_Orders/Signable_Documents',
+]);
 
 /** Folder path for the admin-only private folder. Must match the path used in window-app blocking logic. */
 export const ADMIN_ONLY_FOLDER_PATH = '09_Admin_Only' as const;
@@ -124,33 +142,16 @@ export const PROJECT_FOLDER_STRUCTURE: Folder[] = [
     ],
   },
   {
-    name: '11_Signature_Required_Documents',
-    path: '11_Signature_Required_Documents',
+    name: 'Signature',
+    path: 'Signature',
     children: [
-      {
-        name: 'Signable_Documents',
-        path: '11_Signature_Required_Documents/Signable_Documents',
-      },
-    ],
-  },
-  {
-    name: '12_Signed_Delivery_Notes',
-    path: '12_Signed_Delivery_Notes',
-    children: [
-      {
-        name: 'Signable_Documents',
-        path: '12_Signed_Delivery_Notes/Signable_Documents',
-      },
-    ],
-  },
-  {
-    name: '13_Signed_Offers_Change_Orders',
-    path: '13_Signed_Offers_Change_Orders',
-    children: [
-      {
-        name: 'Signable_Documents',
-        path: '13_Signed_Offers_Change_Orders/Signable_Documents',
-      },
+      { name: 'Offers', path: 'Signature/Offers' },
+      { name: 'Order_Confirmations', path: 'Signature/Order_Confirmations' },
+      { name: 'Variations_Additional_Work', path: 'Signature/Variations_Additional_Work' },
+      { name: 'Delivery_Notes', path: 'Signature/Delivery_Notes' },
+      { name: 'Reports', path: 'Signature/Reports' },
+      { name: 'Contracts', path: 'Signature/Contracts' },
+      { name: 'Documentation', path: 'Signature/Documentation' },
     ],
   },
   {
@@ -222,6 +223,7 @@ export function getAllValidFolderPaths(): Set<string> {
  * @returns true if the path is valid, false otherwise
  */
 export function isValidFolderPath(folderPath: string): boolean {
+  if (LEGACY_FIXED_FOLDER_PATHS.has(folderPath)) return true;
   const validPaths = getAllValidFolderPaths();
   return validPaths.has(folderPath);
 }

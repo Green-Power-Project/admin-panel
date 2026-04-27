@@ -38,7 +38,7 @@ import { uploadFile, deleteFile } from '@/lib/fileStorage';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import AlertModal from '@/components/AlertModal';
 import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
-import NativePdfIframe from '@/components/NativePdfIframe';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import Pagination from '@/components/Pagination';
 import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
 import { deleteFileRelatedData } from '@/lib/cascadeDelete';
@@ -61,6 +61,7 @@ interface FileMetadata {
   fileType: 'pdf' | 'image' | 'file';
   folderPath: string;
   uploadedAt: Date | null;
+  customerDownloadCount?: number;
 }
 
 interface CustomerMessageItem {
@@ -144,9 +145,7 @@ function getFolderConfig(path: string, t: (key: string) => string) {
     '06_Invoices': { gradient: 'from-red-500 to-rose-500', icon: '🧾' },
     '07_Delivery_Notes': { gradient: 'from-teal-500 to-cyan-500', icon: '📦' },
     '08_General': { gradient: 'from-gray-500 to-slate-500', icon: '📋' },
-    '11_Signature_Required_Documents': { gradient: 'from-violet-500 to-fuchsia-600', icon: '✍️' },
-    '12_Signed_Delivery_Notes': { gradient: 'from-teal-500 to-emerald-600', icon: '✍️' },
-    '13_Signed_Offers_Change_Orders': { gradient: 'from-amber-500 to-orange-500', icon: '✍️' },
+    Signature: { gradient: 'from-amber-500 to-orange-500', icon: '✍️' },
     '09_Admin_Only': { gradient: 'from-amber-600 to-orange-600', icon: '🔒' },
   };
   const base = configs[path] || { gradient: 'from-gray-400 to-gray-500', icon: '📁' };
@@ -168,6 +167,7 @@ function getFolderIcon(path: string): string {
   if (path.startsWith('08_')) return '📋';
   if (path.startsWith('09_')) return '🔒';
   if (path.startsWith('10_')) return '📂';
+  if (path === 'Signature' || path.startsWith('Signature/')) return '✍️';
   if (path.startsWith('11_')) return '✍️';
   if (path.startsWith('12_')) return '✍️';
   if (path.startsWith('13_')) return '✍️';
@@ -362,6 +362,10 @@ function ProjectFilesContent() {
             fileType: deriveFileType((data.fileName as string) || ''),
             folderPath: selectedFolder,
             uploadedAt: data.uploadedAt?.toDate ? data.uploadedAt.toDate() : null,
+            customerDownloadCount:
+              typeof data.customerDownloadCount === 'number' && Number.isFinite(data.customerDownloadCount)
+                ? Math.max(0, Math.floor(data.customerDownloadCount))
+                : 0,
           };
         });
         setFiles(list);
@@ -1362,6 +1366,14 @@ function ProjectFilesContent() {
                                         {file.uploadedAt.toLocaleDateString()}
                                       </p>
                                     )}
+                                    <div className="mt-1">
+                                      <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+                                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                        </svg>
+                                        {file.customerDownloadCount ?? 0} {t('common.downloads')}
+                                      </span>
+                                    </div>
                                     {isSignableDocumentsFolderPath(selectedFolder) && (
                                       <div className="mt-1 flex items-center gap-2">
                                         {sig ? (
@@ -1774,10 +1786,10 @@ function ProjectFilesContent() {
                   className="max-h-[min(90dvh,90svh)] w-auto object-contain rounded-lg"
                 />
               ) : (
-                <NativePdfIframe
-                  src={viewerFile.fileUrl}
-                  title={viewerFile.fileName}
-                  className="h-[min(90dvh,90svh)] min-h-[320px] w-full max-w-4xl rounded-lg"
+                <PdfCanvasViewer
+                  pdfUrl={viewerFile.fileUrl}
+                  variant="flush"
+                  rootClassName="h-[min(90dvh,90svh)] min-h-[320px] w-full max-w-4xl rounded-lg"
                 />
               )}
               <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">

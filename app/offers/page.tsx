@@ -7,6 +7,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { generateOfferPdf } from '@/lib/offerPdf';
 import OfferCatalog from '@/components/OfferCatalog';
 import CatalogManager from '@/components/CatalogManager';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 
 interface GalleryInternalNotes {
   id: string;
@@ -342,10 +343,10 @@ function OffersContent() {
             </button>
           </div>
           <div className="flex-1 min-h-0 w-full">
-            <iframe
-              src={viewPdfUrl}
-              title={t('offers.viewPdf')}
-              className="w-full h-full border-0"
+            <PdfCanvasViewer
+              pdfUrl={viewPdfUrl}
+              variant="flush"
+              rootClassName="w-full h-full border-0"
             />
           </div>
         </div>

@@ -4,7 +4,7 @@ import { getAdminDb } from '@/lib/server/firebaseAdmin';
 import { logProjectEmail } from '@/lib/server/emailLogger';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 
-const PORTAL_URL_DEFAULT = 'https://window-app-roan.vercel.app';
+const PORTAL_URL_DEFAULT = 'https://customer.gruen-power.cloud';
 const CONTACT_EMAIL = 'info@gruen-power.de';
 
 export async function POST(request: NextRequest) {

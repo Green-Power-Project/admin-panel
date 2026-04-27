@@ -105,27 +105,24 @@ const folderConfig: Record<string, { description: string; icon: string; gradient
     color: 'text-slate-600',
     subfolderBg: 'bg-gray-50/60 border-gray-200',
   },
-  '11_Signature_Required_Documents': {
-    description: 'Documents that require customer signature (PDF review and signing)',
-    icon: '✍️',
-    gradient: 'from-violet-500 to-fuchsia-600',
-    color: 'text-violet-600',
-    subfolderBg: 'bg-gray-50/60 border-gray-200',
-  },
-  '12_Signed_Delivery_Notes': {
-    description: 'Signed delivery notes (PDF review and signing)',
-    icon: '✍️',
-    gradient: 'from-teal-500 to-emerald-600',
-    color: 'text-teal-600',
-    subfolderBg: 'bg-gray-50/60 border-gray-200',
-  },
-  '13_Signed_Offers_Change_Orders': {
-    description: 'Signed offers and change orders (PDF review and signing)',
+  Signature: {
+    description: 'All documents that require customer signature',
     icon: '✍️',
     gradient: 'from-amber-500 to-orange-500',
     color: 'text-amber-600',
     subfolderBg: 'bg-gray-50/60 border-gray-200',
   },
+};
+
+const folderIconImages: Record<string, string> = {
+  Signature: '/icons/signature-removebg-preview.png',
+  'Signature/Offers': '/icons/offer-removebg-preview.png',
+  'Signature/Order_Confirmations': '/icons/order_confirmation-removebg-preview.png',
+  'Signature/Variations_Additional_Work': '/icons/variations-removebg-preview.png',
+  'Signature/Delivery_Notes': '/icons/delivery_notes-removebg-preview.png',
+  'Signature/Reports': '/icons/reports-removebg-preview.png',
+  'Signature/Contracts': '/icons/contracts-removebg-preview.png',
+  'Signature/Documentation': '/icons/documentation-removebg-preview.png',
 };
 
 type InlineEditProps = {
@@ -187,6 +184,7 @@ function ChildList({
           ? 'Sent'
           : getProjectFolderDisplayName(child.path, folderDisplayNames, t);
         const u = unreadCounts?.get(child.path) || 0;
+        const childIcon = folderIconImages[child.path];
         const isDynamic =
           !!onRequestDeleteDynamicSubfolder &&
           isDynamicSubfolderPath(child.path, dynamicSubfolders);
@@ -198,8 +196,12 @@ function ChildList({
             style={{ animationDelay: `${idx * 50}ms` }}
           >
             <div className="flex items-center gap-3">
-              <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${accentColor} flex items-center justify-center group-hover:scale-110 transition-transform duration-200 shadow-sm flex-shrink-0`}>
-                <span className="text-base">📄</span>
+              <div className={`w-9 h-9 rounded-lg ${childIcon ? 'bg-white' : `bg-gradient-to-br ${accentColor}`} flex items-center justify-center group-hover:scale-110 transition-transform duration-200 shadow-sm flex-shrink-0 overflow-hidden`}>
+                {childIcon ? (
+                  <Image src={childIcon} alt="" width={28} height={28} className="h-7 w-7 object-contain" />
+                ) : (
+                  <span className="text-base">📄</span>
+                )}
               </div>
               {isEditing ? (
                 <div className="flex-1 flex items-center gap-2 min-w-0" onClick={(e) => e.stopPropagation()}>
@@ -336,6 +338,7 @@ function FolderCard({
     ...baseConfig,
     description: t(`folders.${folder.path}.description`) || baseConfig.description,
   };
+  const folderIcon = folderIconImages[folder.path];
 
   const handleCardClick = () => {
     if (isEditing) return;
@@ -369,8 +372,12 @@ function FolderCard({
         >
           <div className="flex items-center gap-4 flex-1 min-w-0">
             {/* Icon with gradient background */}
-            <div className={`flex-shrink-0 w-14 h-14 rounded-xl bg-gradient-to-br ${config.gradient} flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300`}>
-              <span className="text-2xl filter drop-shadow-sm">{config.icon}</span>
+            <div className={`flex-shrink-0 w-14 h-14 rounded-xl ${folderIcon ? 'bg-white border border-gray-200' : `bg-gradient-to-br ${config.gradient}`} flex items-center justify-center shadow-lg group-hover:scale-110 group-hover:rotate-3 transition-all duration-300 overflow-hidden`}>
+              {folderIcon ? (
+                <Image src={folderIcon} alt="" width={44} height={44} className="h-11 w-11 object-contain" />
+              ) : (
+                <span className="text-2xl filter drop-shadow-sm">{config.icon}</span>
+              )}
             </div>
             
             <div className="flex-1 min-w-0">

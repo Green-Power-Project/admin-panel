@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import NativePdfIframe from '@/components/NativePdfIframe';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 
 interface FileUploadPreviewModalProps {
   isOpen: boolean;
@@ -92,7 +92,7 @@ export default function FileUploadPreviewModal({
     } else if (fileType === 'pdf' && previewUrl) {
       return (
         <div className="flex w-full min-h-[40vh] max-h-[70vh] justify-center">
-          <NativePdfIframe src={previewUrl} title={file.name} className="h-[65vh] min-h-[280px] w-full max-w-full rounded-lg" />
+          <PdfCanvasViewer pdfUrl={previewUrl} variant="flush" rootClassName="h-[65vh] min-h-[280px] w-full max-w-full rounded-lg" />
         </div>
       );
     } else {

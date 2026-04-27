@@ -20,6 +20,7 @@ import {
 } from 'firebase/firestore';
 import { PROJECT_FOLDER_STRUCTURE, getAllFolderPathsArray } from '@/lib/folderStructure';
 import Pagination from '@/components/Pagination';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 
 interface FileReadStatus {
@@ -669,6 +670,12 @@ function TrackingContent() {
                 src={viewerUrl}
                 alt={viewerFileName}
                 className="max-h-[90vh] w-auto object-contain rounded-lg"
+              />
+            ) : viewerFileName && /\.pdf$/i.test(viewerFileName) ? (
+              <PdfCanvasViewer
+                pdfUrl={viewerUrl}
+                variant="flush"
+                rootClassName="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
               />
             ) : (
               <iframe

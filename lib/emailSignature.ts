@@ -8,7 +8,7 @@ const DEFAULT_ADDRESS = 'Waldseestraße 22, 88255 Baienfurt';
 const DEFAULT_PHONE = '01573 1709686';
 const DEFAULT_EMAIL = 'info@gruen-power.de';
 const DEFAULT_WEBSITE = 'https://gruen-power.de/';
-const ADMIN_PANEL_URL_DEFAULT = 'http://localhost:3000';
+const ADMIN_PANEL_URL_DEFAULT = 'https://admin.gruen-power.cloud';
 
 /**
  * Absolute URL for the email logo (hosted from admin panel public folder).

@@ -18,6 +18,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import Pagination from '@/components/Pagination';
+import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
 
 interface Project {
@@ -603,6 +604,12 @@ function CustomerUploadsContent() {
                 src={viewerUrl}
                 alt={viewerFileName}
                 className="max-h-[90vh] w-auto object-contain rounded-lg"
+              />
+            ) : viewerFileName && /\.pdf$/i.test(viewerFileName) ? (
+              <PdfCanvasViewer
+                pdfUrl={viewerUrl}
+                variant="flush"
+                rootClassName="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
               />
             ) : (
               <iframe
