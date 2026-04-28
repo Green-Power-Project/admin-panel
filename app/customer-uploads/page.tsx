@@ -326,10 +326,10 @@ function CustomerUploadsContent() {
     return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 
-  function getFileIcon(type: string): string {
-    if (type.includes('pdf')) return '📄';
-    if (type.includes('image')) return '🖼️';
-    return '📎';
+  function getFileIcon(type: string): { kind: 'pdf' | 'text'; value: string } {
+    if (type.includes('pdf')) return { kind: 'pdf', value: '/icons/pdf-icon.png' };
+    if (type.includes('image')) return { kind: 'text', value: '🖼️' };
+    return { kind: 'text', value: '📎' };
   }
 
   function getFolderDisplayName(folderPath: string): string {
@@ -519,7 +519,14 @@ function CustomerUploadsContent() {
                     >
                       <td className="px-3 py-2.5 overflow-hidden">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-sm flex-shrink-0">{getFileIcon(upload.fileType)}</span>
+                          {(() => {
+                            const icon = getFileIcon(upload.fileType);
+                            return icon.kind === 'pdf' ? (
+                              <img src={icon.value} alt="PDF" className="w-4 h-4 object-contain flex-shrink-0" />
+                            ) : (
+                              <span className="text-sm flex-shrink-0">{icon.value}</span>
+                            );
+                          })()}
                           <span
                             className="text-xs font-medium text-gray-900 hover:text-green-power-600 truncate block min-w-0"
                             title={upload.fileName}

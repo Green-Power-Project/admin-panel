@@ -1345,12 +1345,14 @@ function ProjectFilesContent() {
                                     onClick={(e) => e.stopPropagation()}
                                     className="h-4 w-4 rounded border-gray-300 text-green-power-600"
                                   />
-                                  <span className="text-xl">
-                                    {file.fileType === 'pdf'
-                                      ? '📄'
-                                      : file.fileType === 'image'
-                                      ? '🖼️'
-                                      : '📎'}
+                                  <span className="text-xl flex-shrink-0">
+                                    {file.fileType === 'pdf' ? (
+                                      <img src="/icons/pdf-icon.png" alt="PDF" className="w-5 h-5 object-contain" />
+                                    ) : file.fileType === 'image' ? (
+                                      '🖼️'
+                                    ) : (
+                                      '📎'
+                                    )}
                                   </span>
                                   <div className="min-w-0">
                                     <button

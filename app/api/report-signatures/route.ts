@@ -164,7 +164,13 @@ function formatSignedAtDe(signedAt: Date, displayTimeZone?: string): string {
   }
 }
 
-type StampTextRow = { text: string; size: number; color: ReturnType<typeof rgb>; gapAfter: number };
+type StampTextRow = {
+  text: string;
+  size: number;
+  color: ReturnType<typeof rgb>;
+  gapAfter: number;
+  bold?: boolean;
+};
 
 function truncateLinesWithEllipsis(lines: string[], maxLines: number): string[] {
   if (maxLines <= 0) return [];
@@ -227,6 +233,7 @@ async function stampPdfBuffer(
   const eff = adjustDimsForRotation({ width: mediaW, height: mediaH }, pageRotation);
 
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+  const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
 
   let signatureImage: PDFImage | null = null;
   if (signatureDataUrl && typeof signatureDataUrl === 'string' && signatureDataUrl.startsWith('data:image/')) {
@@ -242,10 +249,12 @@ async function stampPdfBuffer(
   }
 
   const margin = 32;
-  const pad = 8;
+  const pad = 10;
   const colW = Math.min(280, eff.width - margin * 2 - 24);
-  const sigBoxMaxW = Math.min(150, colW - 12);
-  const sigBoxMaxH = 62;
+  const sigSideInset = 10;
+  const sigTopBottomInset = 4;
+  const sigBoxMaxW = Math.min(138, Math.max(80, colW - sigSideInset * 2));
+  const sigBoxMaxH = 54;
   let sigDrawW = 0;
   let sigDrawH = 0;
   if (signatureImage) {
@@ -269,10 +278,11 @@ async function stampPdfBuffer(
   const sectionLabelSize = 7;
   const roleLineSize = 9;
   const topBodySize = 7;
-  const labelMuted = rgb(0.42, 0.44, 0.48);
-  const bodyColor = rgb(0.12, 0.14, 0.18);
-  const dateColor = rgb(0.35, 0.38, 0.42);
-  const placeColor = rgb(0.1, 0.12, 0.16);
+  // Deep black for print-safe readability.
+  const labelMuted = rgb(0, 0, 0);
+  const bodyColor = rgb(0, 0, 0);
+  const dateColor = rgb(0, 0, 0);
+  const placeColor = rgb(0, 0, 0);
 
   const nameSafe = signatoryName.trim() || '—';
   const placeSafe = placeText.trim() || '—';
@@ -289,22 +299,30 @@ async function stampPdfBuffer(
   );
 
   const gapSection = 7;
-  const gapBeforeImage = 5;
-  const gapAfterImage = 5;
+  const gapBeforeImage = 6;
+  const gapAfterImage = 6;
 
   /** Bottom → top (PDF y): role+name, signature image, place/date, confirmation at top. */
   const bottomRows: StampTextRow[] = [
-    { text: roleLine, size: roleLineSize, color: bodyColor, gapAfter: gapSection },
+    { text: roleLine, size: roleLineSize, color: bodyColor, gapAfter: gapSection, bold: true },
   ];
   const hBottom = bottomRows.reduce((s, r) => s + r.gapAfter, 0);
-  const hImageBlock = signatureImage ? gapBeforeImage + sigDrawH + gapAfterImage : 0;
+  const hImageBlock = signatureImage
+    ? gapBeforeImage + sigTopBottomInset + sigDrawH + sigTopBottomInset + gapAfterImage
+    : 0;
 
   const middleRows: StampTextRow[] = [];
-  middleRows.push({ text: 'Ort', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
+  middleRows.push({ text: 'Ort', size: sectionLabelSize, color: labelMuted, gapAfter: 6, bold: true });
   for (const pl of placeLines) {
     middleRows.push({ text: pl, size: bodySize, color: placeColor, gapAfter: 11 });
   }
-  middleRows.push({ text: 'Datum, Uhrzeit', size: sectionLabelSize, color: labelMuted, gapAfter: 6 });
+  middleRows.push({
+    text: 'Datum, Uhrzeit',
+    size: sectionLabelSize,
+    color: labelMuted,
+    gapAfter: 6,
+    bold: true,
+  });
   for (const dl of dateLines) {
     middleRows.push({ text: dl, size: bodySize, color: dateColor, gapAfter: 11 });
   }
@@ -331,7 +349,7 @@ async function stampPdfBuffer(
     color: rgb(0.99, 0.99, 1),
     borderColor: rgb(0.78, 0.8, 0.85),
     borderWidth: 0.75,
-    opacity: 0.95,
+    opacity: 1,
   });
 
   const textLeft = pad;
@@ -344,7 +362,7 @@ async function stampPdfBuffer(
           x: textLeft,
           y: textY,
           size: row.size,
-          font,
+          font: row.bold ? fontBold : font,
           color: row.color,
         });
       }
@@ -356,14 +374,22 @@ async function stampPdfBuffer(
 
   if (signatureImage) {
     textY += gapBeforeImage;
-    const sigX = textLeft + Math.max(0, (sigBoxMaxW - sigDrawW) / 2);
+    textY += sigTopBottomInset;
+    const sigX = textLeft + sigSideInset + Math.max(0, (sigBoxMaxW - sigDrawW) / 2);
     page.drawImage(signatureImage, {
       x: sigX,
       y: textY,
       width: sigDrawW,
       height: sigDrawH,
     });
-    textY += sigDrawH + gapAfterImage;
+    // Slight overdraw to make thin strokes print darker without changing box size.
+    page.drawImage(signatureImage, {
+      x: sigX + 0.35,
+      y: textY,
+      width: sigDrawW,
+      height: sigDrawH,
+    });
+    textY += sigDrawH + sigTopBottomInset + gapAfterImage;
   }
 
   textY += gapSection;

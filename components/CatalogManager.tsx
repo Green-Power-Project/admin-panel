@@ -739,8 +739,8 @@ export default function CatalogManager() {
                       <p className="text-sm text-gray-500 py-4">{t('common.loading')}</p>
                     ) : entries.length === 0 ? (
                       <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/50 py-10 px-6 text-center">
-                        <div className="w-14 h-14 mx-auto rounded-full bg-green-power-100 flex items-center justify-center text-2xl mb-3" aria-hidden>
-                          📄
+                        <div className="w-14 h-14 mx-auto rounded-full bg-green-power-100 flex items-center justify-center mb-3" aria-hidden>
+                          <img src="/icons/pdf-icon.png" alt="PDF" className="w-8 h-8 object-contain" />
                         </div>
                         <p className="text-sm font-medium text-gray-700 mb-1">{t('catalog.noEntries')}</p>
                         <p className="text-xs text-gray-500 mb-4">{t('catalog.entriesSubtitle')}</p>
