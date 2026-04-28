@@ -826,15 +826,6 @@ function ProjectFilesContent() {
     return url;
   }
 
-  function getPreviewUrlForFile(file: FileMetadata): string {
-    const lower = file.fileName.toLowerCase();
-    let url = file.fileUrl;
-    if (lower.endsWith('.pdf') && url.includes('/image/upload/')) {
-      url = url.replace('/image/upload/', '/raw/upload/');
-    }
-    return url;
-  }
-
   async function fetchFileBlobForZip(file: FileMetadata): Promise<Blob> {
     const lower = file.fileName.toLowerCase();
     const mimeType = lower.endsWith('.pdf')
@@ -1792,13 +1783,13 @@ function ProjectFilesContent() {
             <div className="relative max-w-[95vw] max-h-[min(90dvh,90svh)] w-full flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
               {viewerFile.fileType === 'image' ? (
                 <img
-                  src={getPreviewUrlForFile(viewerFile)}
+                  src={viewerFile.fileUrl}
                   alt={viewerFile.fileName}
                   className="max-h-[min(90dvh,90svh)] w-auto object-contain rounded-lg"
                 />
               ) : (
                 <PdfCanvasViewer
-                  pdfUrl={getPreviewUrlForFile(viewerFile)}
+                  pdfUrl={viewerFile.fileUrl}
                   variant="flush"
                   rootClassName="h-[min(90dvh,90svh)] min-h-[320px] w-full max-w-4xl rounded-lg"
                 />
