@@ -29,7 +29,16 @@ async function openPdfDocument(
   pdfUrl: string
 ): Promise<PdfDoc> {
   const baseOpts = { disableRange: true, disableStream: true, verbosity: 0 } as const;
-  if (pdfUrl.startsWith('/')) {
+  const isSameOriginUrl = (() => {
+    if (pdfUrl.startsWith('/')) return true;
+    if (typeof window === 'undefined') return false;
+    try {
+      return new URL(pdfUrl).origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  })();
+  if (isSameOriginUrl) {
     const res = await fetch(pdfUrl, { credentials: 'same-origin', cache: 'no-store' });
     if (!res.ok) throw new Error(`PDF fetch ${res.status}`);
     const buf = await res.arrayBuffer();
@@ -183,14 +192,14 @@ export default function PdfCanvasViewer({ pdfUrl, variant = 'card', rootClassNam
   }
 
   if (phase === 'error') {
-    const iframeShell =
-      variant === 'card'
-        ? 'w-full max-w-4xl max-h-[90vh] flex flex-col rounded-lg bg-white overflow-hidden border border-gray-200 shadow-lg min-w-0 min-h-[min(90vh,640px)]'
-        : 'w-full flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-white min-h-[min(55vh,480px)]';
-    const iframeMin = variant === 'card' ? 'min-h-[min(70vh,560px)]' : 'min-h-[min(50vh,420px)]';
     return (
-      <div className={`${iframeShell} ${rootClassName}`.trim()}>
-        <iframe src={pdfUrl} title="PDF" className={`block w-full flex-1 border-0 bg-white ${iframeMin}`} />
+      <div className={`${placeholderShell} ${rootClassName}`.trim()}>
+        <p className="text-gray-600 text-sm text-center px-4 max-w-md">
+          PDF preview unavailable.{' '}
+          <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
+            Open in new tab
+          </a>
+        </p>
       </div>
     );
   }
