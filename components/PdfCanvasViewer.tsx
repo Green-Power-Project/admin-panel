@@ -29,6 +29,14 @@ async function openPdfDocument(
   pdfUrl: string
 ): Promise<PdfDoc> {
   const baseOpts = { disableRange: true, disableStream: true, verbosity: 0 } as const;
+  if (pdfUrl.startsWith('/')) {
+    const res = await fetch(pdfUrl, { credentials: 'same-origin', cache: 'no-store' });
+    if (!res.ok) throw new Error(`PDF fetch ${res.status}`);
+    const buf = await res.arrayBuffer();
+    return (await pdfjsLib
+      .getDocument({ data: new Uint8Array(buf), ...baseOpts })
+      .promise) as unknown as PdfDoc;
+  }
   try {
     return (await pdfjsLib.getDocument({ url: pdfUrl, ...baseOpts }).promise) as unknown as PdfDoc;
   } catch {
@@ -128,12 +136,23 @@ export default function PdfCanvasViewer({ pdfUrl, variant = 'card', rootClassNam
         if (!canvas) continue;
         try {
           const page = await pdf.getPage(pageNum);
-          const { viewport } = getViewportFitColumn(page as unknown as PdfPageLike, layoutWidth, 8);
-          canvas.width = viewport.width;
-          canvas.height = viewport.height;
+          const { viewport, rotation, scale } = getViewportFitColumn(
+            page as unknown as PdfPageLike,
+            layoutWidth,
+            8
+          );
+          const dpr = typeof window !== 'undefined' ? Math.max(1, Math.min(window.devicePixelRatio || 1, 2)) : 1;
+          const renderViewport = (page as unknown as PdfPageLike).getViewport({
+            scale: scale * dpr,
+            rotation,
+          });
+          canvas.width = Math.max(1, Math.floor(renderViewport.width));
+          canvas.height = Math.max(1, Math.floor(renderViewport.height));
+          canvas.style.width = `${Math.max(1, Math.floor(viewport.width))}px`;
+          canvas.style.height = `${Math.max(1, Math.floor(viewport.height))}px`;
           const ctx = canvas.getContext('2d');
           if (!ctx) continue;
-          await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+          await page.render({ canvasContext: ctx, viewport: renderViewport, canvas }).promise;
         } catch {
           drawPageRenderFailed(canvas, layoutWidth, pageNum);
         }
@@ -164,14 +183,14 @@ export default function PdfCanvasViewer({ pdfUrl, variant = 'card', rootClassNam
   }
 
   if (phase === 'error') {
+    const iframeShell =
+      variant === 'card'
+        ? 'w-full max-w-4xl max-h-[90vh] flex flex-col rounded-lg bg-white overflow-hidden border border-gray-200 shadow-lg min-w-0 min-h-[min(90vh,640px)]'
+        : 'w-full flex flex-col flex-1 min-h-0 min-w-0 overflow-hidden bg-white min-h-[min(55vh,480px)]';
+    const iframeMin = variant === 'card' ? 'min-h-[min(70vh,560px)]' : 'min-h-[min(50vh,420px)]';
     return (
-      <div className={`${placeholderShell} ${rootClassName}`.trim()}>
-        <p className="text-gray-600 text-sm text-center px-4 max-w-md">
-          PDF preview unavailable.{' '}
-          <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline">
-            Open in new tab
-          </a>
-        </p>
+      <div className={`${iframeShell} ${rootClassName}`.trim()}>
+        <iframe src={pdfUrl} title="PDF" className={`block w-full flex-1 border-0 bg-white ${iframeMin}`} />
       </div>
     );
   }
