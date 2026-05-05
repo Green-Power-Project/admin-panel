@@ -1,7 +1,7 @@
 {
   "name": "green-power-admin-functions",
   "version": "1.0.0",
-  "description": "Cloud Functions for Green Power Admin Panel",
+  "description": "Cloud Functions for Grün Power Admin Panel",
   "scripts": {
     "lint": "eslint .",
     "serve": "firebase emulators:start --only functions",

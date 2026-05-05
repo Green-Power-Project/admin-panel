@@ -23,6 +23,15 @@ export interface UploadResult {
 }
 
 const STORAGE_BASE = '/api/storage';
+const XHR_PROGRESS_MAX = 85;
+
+type UploadStep = 'upload' | 'metadata' | 'notification' | 'response';
+
+type UploadErrorPayload = {
+  error?: string;
+  fileName?: string;
+  step?: UploadStep;
+};
 
 export async function uploadFile(
   file: File | Blob,
@@ -44,17 +53,17 @@ export async function uploadFile(
 
     xhr.upload.addEventListener('progress', (e) => {
       if (e.lengthComputable && onProgress) {
-        const uploadProgress = Math.round((e.loaded / e.total) * 90);
+        const uploadProgress = Math.round((e.loaded / e.total) * XHR_PROGRESS_MAX);
         onProgress(uploadProgress);
       }
     });
 
     xhr.addEventListener('load', () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        if (onProgress) onProgress(95);
+        if (onProgress) onProgress(90);
         try {
           const data = JSON.parse(xhr.responseText);
-          if (onProgress) onProgress(100);
+          if (onProgress) onProgress(95);
           resolve({
             public_id: data.public_id,
             secure_url: data.secure_url,
@@ -69,15 +78,19 @@ export async function uploadFile(
         }
       } else {
         try {
-          const body = JSON.parse(xhr.responseText) as { error?: string; fileName?: string };
+          const body = JSON.parse(xhr.responseText) as UploadErrorPayload;
           if (body.error === 'duplicate_file_name') {
             const err = Object.assign(new Error('duplicate_file_name'), {
               code: 'DUPLICATE_FILE_NAME' as const,
               fileName: typeof body.fileName === 'string' ? body.fileName : '',
+              step: body.step || 'upload',
             });
             reject(err);
           } else {
-            reject(new Error(body.error || 'Upload failed'));
+            const err = Object.assign(new Error(body.error || 'Upload failed'), {
+              step: body.step || 'upload',
+            });
+            reject(err);
           }
         } catch {
           reject(new Error('Upload failed'));
@@ -86,11 +99,13 @@ export async function uploadFile(
     });
 
     xhr.addEventListener('error', () => {
-      reject(new Error('Network error during upload'));
+      const err = Object.assign(new Error('Network error during upload'), { step: 'upload' as UploadStep });
+      reject(err);
     });
 
     xhr.addEventListener('abort', () => {
-      reject(new Error('Upload aborted'));
+      const err = Object.assign(new Error('Upload aborted'), { step: 'upload' as UploadStep });
+      reject(err);
     });
 
     xhr.open('POST', `${STORAGE_BASE}/upload`);

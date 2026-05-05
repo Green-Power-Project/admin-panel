@@ -127,9 +127,30 @@ function wrapTextToLines(text: string, font: PDFFont, size: number, maxWidth: nu
   return lines;
 }
 
-/** Must match `projects.signConsentReportFull` in window-app `locales/de/common.json`. */
-const STAMP_CONFIRMATION_TEXT =
-  'Ich bestätige, dass ich alle Seiten des Berichts gelesen und geprüft habe.';
+function getStampConfirmationText(folderPath: string): string {
+  if (folderPath.endsWith('/Offers') || folderPath.endsWith('/Offers_Quotations')) {
+    return 'Ich bestätige, dass ich das gesamte Angebot gelesen und geprüft habe.';
+  }
+  if (folderPath.endsWith('/Order_Confirmations')) {
+    return 'Ich bestätige, dass ich die gesamte Auftragsbestätigung gelesen und geprüft habe.';
+  }
+  if (folderPath.endsWith('/Variations_Additional_Work') || folderPath.endsWith('/Additions_Change_Orders')) {
+    return 'Ich bestätige, dass ich den gesamten Nachtrag bzw. die Zusatzarbeit gelesen und geprüft habe.';
+  }
+  if (folderPath.endsWith('/Delivery_Notes')) {
+    return 'Ich bestätige, dass ich den gesamten Lieferschein gelesen und geprüft habe.';
+  }
+  if (folderPath.endsWith('/Reports')) {
+    return 'Ich bestätige, dass ich den gesamten Rapport gelesen und geprüft habe.';
+  }
+  if (folderPath.endsWith('/Contracts')) {
+    return 'Ich bestätige, dass ich den gesamten Vertrag gelesen und geprüft habe.';
+  }
+  if (folderPath.endsWith('/Documentation')) {
+    return 'Ich bestätige, dass ich die gesamte Dokumentation gelesen und geprüft habe.';
+  }
+  return 'Ich bestätige, dass ich alle Seiten des Berichts gelesen und geprüft habe.';
+}
 
 /** Basic IANA zone guard so request bodies cannot inject odd strings into Intl. */
 function isSafeIanaTimeZone(z: string): boolean {
@@ -218,9 +239,10 @@ async function stampPdfBuffer(
     /** Browser `Intl.DateTimeFormat().resolvedOptions().timeZone` — PDF clock matches device status bar. */
     displayTimeZone?: string;
     signatureDataUrl?: string;
+    confirmationText: string;
   }
 ): Promise<Uint8Array> {
-  const { signatoryName, placeText, signedAt, signatureDataUrl, signRole, displayTimeZone } = opts;
+  const { signatoryName, placeText, signedAt, signatureDataUrl, signRole, displayTimeZone, confirmationText } = opts;
 
   const pdfDoc = await PDFDocument.load(pdfInput);
   const pages = pdfDoc.getPages();
@@ -288,13 +310,13 @@ async function stampPdfBuffer(
   const placeSafe = placeText.trim() || '—';
   const roleLine =
     signRole === 'client'
-      ? `Auftraggeber: „${nameSafe}“`
-      : `Bevollmächtigte: „${nameSafe}“`;
+      ? `Auftraggeber / Kunde: „${nameSafe}“`
+      : `Bevollmächtigte Person / Vertreter: „${nameSafe}“`;
 
   const placeLines = wrapTextToLines(placeSafe, font, bodySize, colW);
   const dateLines = wrapTextToLines(signedAtStr, font, bodySize, colW);
   const confirmationLines = truncateLinesWithEllipsis(
-    wrapTextToLines(STAMP_CONFIRMATION_TEXT, font, topBodySize, colW),
+    wrapTextToLines(confirmationText, font, topBodySize, colW),
     2
   );
 
@@ -440,6 +462,7 @@ async function attachSignatureToPdf(params: {
     signedAt,
     displayTimeZone,
     signatureDataUrl,
+    confirmationText: getStampConfirmationText(folderPath),
   };
 
   try {

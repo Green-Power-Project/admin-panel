@@ -471,9 +471,8 @@ function AuditLogsContent() {
 
     const blob = exportFilteredLogsToPDFBlob(exportData, filterProject, filterStatus, projects, pdfLanguage);
     const url = URL.createObjectURL(blob);
-    setViewerUrl(url);
-    setViewerFileName(`${t('auditLogs.title')}.pdf`);
-    setViewerBlobUrl(url);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
   const totalLogs = logs.length;
@@ -482,9 +481,13 @@ function AuditLogsContent() {
 
   function handleRowClick(log: AuditLogData) {
     if (log.downloadUrl) {
-      setViewerUrl(log.downloadUrl);
-      setViewerFileName(log.fileName || t('common.untitledFile'));
-      setViewerBlobUrl(null);
+      if ((log.fileName || '').toLowerCase().endsWith('.pdf')) {
+        window.open(log.downloadUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        setViewerUrl(log.downloadUrl);
+        setViewerFileName(log.fileName || t('common.untitledFile'));
+        setViewerBlobUrl(null);
+      }
       return;
     }
     router.push(`/files/${log.projectId}?folder=${encodeURIComponent(log.folderPath)}`);
@@ -822,11 +825,14 @@ function AuditLogsContent() {
                 rootClassName="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
               />
             ) : (
-              <iframe
-                src={viewerUrl}
-                title={viewerFileName || ''}
-                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
-              />
+              <a
+                href={viewerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white border border-gray-200 flex items-center justify-center text-sm font-medium text-green-power-700 hover:text-green-power-800"
+              >
+                Open file in new tab
+              </a>
             )}
             <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
               {viewerFileName}

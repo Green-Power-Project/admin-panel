@@ -1,6 +1,6 @@
-# Green Power Admin Panel
+# Grün Power Admin Panel
 
-A comprehensive admin panel for managing customers, projects, files, and workflows for the Green Power customer portal.
+A comprehensive admin panel for managing customers, projects, files, and workflows for the Grün Power customer portal.
 
 ## Features
 

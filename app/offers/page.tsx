@@ -121,7 +121,8 @@ function OffersContent() {
       createdAt: offer.createdAt,
     });
     const url = URL.createObjectURL(blob);
-    setViewPdfUrl(url);
+    window.open(url, '_blank', 'noopener,noreferrer');
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }, []);
 
   const closePdfViewer = useCallback(() => {

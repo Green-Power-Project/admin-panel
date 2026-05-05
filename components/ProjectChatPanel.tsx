@@ -208,7 +208,7 @@ export default function ProjectChatPanel({
     return (
       <div className="fixed inset-0 z-40 flex">
         <div className="fixed inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-        <div className="relative flex flex-col w-full max-w-lg bg-white shadow-xl ml-auto h-full">
+        <div className="relative flex flex-col w-full max-w-lg lg:max-w-2xl bg-white shadow-xl ml-auto h-full">
           <div className="flex items-center justify-between px-4 py-3 border-b">
             <h2 className="text-lg font-semibold">{t('chat.projectChat')}</h2>
             <button type="button" onClick={onClose} className="p-2 rounded-lg text-gray-500 hover:bg-gray-200">{t('common.close')}</button>
@@ -225,7 +225,7 @@ export default function ProjectChatPanel({
     <>
       <div className="fixed inset-0 z-40 flex">
         <div className="fixed inset-0 bg-black/40" onClick={onClose} aria-hidden="true" />
-        <div className="relative flex flex-col w-full max-w-lg bg-white shadow-xl ml-auto h-full max-h-[100dvh] min-h-0 overflow-hidden">
+        <div className="relative flex flex-col w-full max-w-lg lg:max-w-2xl bg-white shadow-xl ml-auto h-full max-h-[100dvh] min-h-0 overflow-hidden">
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 bg-gray-50 shrink-0">
             <div>
@@ -264,7 +264,13 @@ export default function ProjectChatPanel({
                       focusMessageInput();
                     }}
                     onCopy={() => handleCopy(msg)}
-                    onOpenFile={(url, type) => setViewerFile({ url, type })}
+                    onOpenFile={(url, type) => {
+                      if (type === 'pdf') {
+                        window.open(url, '_blank', 'noopener,noreferrer');
+                        return;
+                      }
+                      setViewerFile({ url, type });
+                    }}
                     copied={copiedId === msg.messageId}
                     t={t}
                     isAdminPanel
@@ -334,7 +340,7 @@ export default function ProjectChatPanel({
                 onChange={(e) => { setInputText(e.target.value); setTypingThrottled(true); }}
                 onBlur={() => setTypingThrottled(false)}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
+                  if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     void handleSend();
                   }
@@ -342,7 +348,7 @@ export default function ProjectChatPanel({
                 placeholder={t('chat.typeMessage')}
                 className="scrollbar-hide flex-1 resize-none rounded-lg border border-gray-300 px-3 py-2 text-sm leading-5 focus:ring-2 focus:ring-green-500 focus:border-green-500"
                 autoComplete="off"
-                enterKeyHint="send"
+                enterKeyHint="enter"
                 rows={1}
               />
               <button

@@ -504,14 +504,22 @@ function CustomerUploadsContent() {
                       role="button"
                       tabIndex={0}
                       onClick={() => {
-                        setViewerUrl(upload.downloadUrl);
-                        setViewerFileName(upload.fileName || 'file');
+                        if ((upload.fileName || '').toLowerCase().endsWith('.pdf')) {
+                          window.open(upload.downloadUrl, '_blank', 'noopener,noreferrer');
+                        } else {
+                          setViewerUrl(upload.downloadUrl);
+                          setViewerFileName(upload.fileName || 'file');
+                        }
                         handleMarkAsRead(upload);
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
-                          setViewerUrl(upload.downloadUrl);
-                          setViewerFileName(upload.fileName || 'file');
+                          if ((upload.fileName || '').toLowerCase().endsWith('.pdf')) {
+                            window.open(upload.downloadUrl, '_blank', 'noopener,noreferrer');
+                          } else {
+                            setViewerUrl(upload.downloadUrl);
+                            setViewerFileName(upload.fileName || 'file');
+                          }
                           handleMarkAsRead(upload);
                         }
                       }}
@@ -619,11 +627,14 @@ function CustomerUploadsContent() {
                 rootClassName="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
               />
             ) : (
-              <iframe
-                src={viewerUrl}
-                title={viewerFileName || ''}
-                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
-              />
+              <a
+                href={viewerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white border border-gray-200 flex items-center justify-center text-sm font-medium text-green-power-700 hover:text-green-power-800"
+              >
+                Open file in new tab
+              </a>
             )}
             <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
               {viewerFileName}

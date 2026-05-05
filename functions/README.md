@@ -1,4 +1,4 @@
-# Cloud Functions for Green Power Admin Panel
+# Cloud Functions for Grün Power Admin Panel
 
 This directory contains Firebase Cloud Functions for email automation and notifications.
 

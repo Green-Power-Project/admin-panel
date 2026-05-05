@@ -20,7 +20,6 @@ import {
   query,
   serverTimestamp,
   setDoc,
-  Timestamp,
   updateDoc,
   where,
 } from 'firebase/firestore';
@@ -40,7 +39,7 @@ import AlertModal from '@/components/AlertModal';
 import FileUploadPreviewModal from '@/components/FileUploadPreviewModal';
 import PdfCanvasViewer from '@/components/PdfCanvasViewer';
 import Pagination from '@/components/Pagination';
-import { isReportFile, addWorkingDays } from '@/lib/reportApproval';
+import { isReportFile } from '@/lib/reportApproval';
 import { deleteFileRelatedData } from '@/lib/cascadeDelete';
 import { groupMessagesByThread, sortThreadsNewestFirst } from '@/lib/customerMessageThreads';
 import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
@@ -699,61 +698,93 @@ function ProjectFilesContent() {
     setUploadError('');
     const folderPathFull = `projects/${projectId}/${selectedFolder}`;
     const uploadedFiles: string[] = [];
+    const notificationFailures: string[] = [];
     try {
       for (let i = 0; i < selectedFiles.length; i++) {
         const file = selectedFiles[i];
+        const totalFiles = selectedFiles.length;
+        const fileStartPercent = (i / totalFiles) * 100;
+        const fileSpanPercent = 100 / totalFiles;
+        setUploadProgress(Math.round(fileStartPercent));
+        const setFileProgress = (filePercent: number) => {
+          const bounded = Math.max(0, Math.min(100, filePercent));
+          const aggregate = fileStartPercent + (bounded / 100) * fileSpanPercent;
+          setUploadProgress((prev) => Math.max(prev, Math.round(aggregate)));
+        };
         const sanitizedBaseName = file.name.replace(/\.[^/.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
         const publicId = `${folderPathFull}/${sanitizedBaseName}`;
         setUploadingFileName(`${i + 1}/${selectedFiles.length}: ${file.name}`);
-        setUploadProgress(Math.round(((i + 1) / selectedFiles.length) * 100));
-        const result = await uploadFile(file, folderPathFull, undefined, (p) => setUploadProgress(p));
-        const segments = getFolderSegments(selectedFolder);
-        const filesRef = getProjectFolderRef(projectId, segments);
-        const docData: Record<string, unknown> = {
-          fileName: file.name,
-          fileUrl: result.secure_url,
-          fileKey: result.public_id,
-          storageProvider: 'vps' as const,
-          uploadedAt: serverTimestamp(),
-        };
-        if (result.storagePath) docData.storagePath = result.storagePath;
-        if (isReportFile(selectedFolder) && file.name.toLowerCase().endsWith('.pdf')) {
-          docData.autoApproveDate = Timestamp.fromDate(addWorkingDays(new Date(), 5));
-        }
-        await addDoc(filesRef, docData);
-        // Admin uploaded this file, so it should not appear as "unread" for admin.
-        // Keep customer unread flow unchanged (customer read state is tracked separately in `fileReadStatus`).
-        if (project?.customerId) {
-          const adminReadDocId = result.public_id.replace(/\//g, '__');
-          await setDoc(
-            doc(db, 'adminFileReadStatus', adminReadDocId),
-            {
-              adminRead: true,
-              filePath: result.public_id,
-              projectId,
-              customerId: project.customerId,
-              readAt: serverTimestamp(),
-            },
-            { merge: true }
-          );
-        }
+        const result = await uploadFile(file, folderPathFull, undefined, (p) => {
+          setFileProgress(p);
+        });
+        // Metadata is confirmed server-side before upload API responds.
+        setFileProgress(95);
+        setFiles((prev) => {
+          if (prev.some((f) => f.fileKey === result.public_id)) return prev;
+          const optimistic: FileMetadata = {
+            fileName: file.name,
+            fileUrl: result.secure_url,
+            fileKey: result.public_id,
+            fileType: deriveFileType(file.name),
+            folderPath: selectedFolder,
+            uploadedAt: new Date(),
+            customerDownloadCount: 0,
+          };
+          return [optimistic, ...prev];
+        });
         uploadedFiles.push(file.name);
-        try {
-          await fetch('/api/notifications/file-upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              projectId,
-              filePath: result.public_id,
-              folderPath: selectedFolder,
-              fileName: file.name,
-              isReport: isReportFile(selectedFolder) && file.name.toLowerCase().endsWith('.pdf'),
-            }),
+
+        const notificationRequest = fetch('/api/notifications/file-upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId,
+            filePath: result.public_id,
+            folderPath: selectedFolder,
+            fileName: file.name,
+            isReport: isReportFile(selectedFolder) && file.name.toLowerCase().endsWith('.pdf'),
+          }),
+        }).then((res) => {
+          if (!res.ok) {
+            throw new Error(`notification failed (${res.status})`);
+          }
+        });
+
+        const notificationOutcome = await Promise.race<
+          { kind: 'ok' } | { kind: 'error'; error: unknown } | { kind: 'timeout' }
+        >([
+          notificationRequest
+            .then(() => ({ kind: 'ok' as const }))
+            .catch((error) => ({ kind: 'error' as const, error })),
+          new Promise<{ kind: 'timeout' }>((resolve) => {
+            setTimeout(() => resolve({ kind: 'timeout' }), 500);
+          }),
+        ]);
+
+        if (notificationOutcome.kind === 'error') {
+          notificationFailures.push(file.name);
+        } else if (notificationOutcome.kind === 'timeout') {
+          void notificationRequest.catch((error) => {
+            console.error('notification failed after timeout window', error);
           });
-        } catch (_) {}
+        }
+
+        setFileProgress(100);
       }
+      // Hide progress UI immediately after successful upload completion.
+      setUploading(false);
+      setUploadProgress(0);
+      setUploadingFileName('');
       clearSelectedFiles();
       scheduleSuccessMessage(t('files.filesUploadedSuccess', { count: uploadedFiles.length }));
+      if (notificationFailures.length > 0) {
+        const message =
+          notificationFailures.length <= 2
+            ? `Notification failed for: ${notificationFailures.join(', ')}`
+            : `Notification failed for ${notificationFailures.length} uploaded files.`;
+        setAlertData({ title: t('common.status'), message, type: 'warning' });
+        setShowAlert(true);
+      }
     } catch (err: unknown) {
       if (
         err &&
@@ -767,9 +798,15 @@ function ProjectFilesContent() {
             : '';
         setUploadError(t('files.duplicateFileName', { name: fn }));
       } else {
-        setUploadError(err instanceof Error ? err.message : t('files.uploadFailed'));
+        const step =
+          err && typeof err === 'object' && 'step' in err && typeof (err as { step?: unknown }).step === 'string'
+            ? String((err as { step: string }).step)
+            : 'upload';
+        const detail = err instanceof Error ? err.message : t('files.uploadFailed');
+        setUploadError(`[${step}] ${detail}`);
       }
     } finally {
+      // Keep catch/finally as a safety net for failed uploads.
       setUploading(false);
       setUploadProgress(0);
       setUploadingFileName('');
@@ -777,9 +814,15 @@ function ProjectFilesContent() {
   }
 
   async function handleDeleteConfirm() {
-    if (!deleteFileData || !projectId || !db) return;
+    const pendingDelete = deleteFileData;
+    // Close modal immediately so the UI never appears stuck.
+    setShowDeleteConfirm(false);
+    if (!pendingDelete || !projectId || !db) {
+      setDeleteFileData(null);
+      return;
+    }
     const dbInstance = db;
-    const { folderPath, publicId } = deleteFileData;
+    const { folderPath, publicId } = pendingDelete;
     setDeleting(publicId);
     try {
       const segments = getFolderSegments(folderPath);
@@ -791,9 +834,8 @@ function ProjectFilesContent() {
       const hintName = snapshot.docs[0]?.data()?.fileName as string | undefined;
       const deleted = await deleteFile(publicId, hintName);
       if (!deleted) {
-        setAlertData({ title: t('files.deleteFailedTitle'), message: t('files.deleteFailedMessage'), type: 'error' });
-        setShowAlert(true);
-        return;
+        // Continue metadata cleanup even when physical file is already missing or could not be removed.
+        console.warn('Storage delete returned false; continuing metadata cleanup for', publicId);
       }
 
       // Storage is already deleted successfully; now delete Firebase metadata.
@@ -801,14 +843,15 @@ function ProjectFilesContent() {
         snapshot.docs.map((d) => deleteDoc(doc(dbInstance, 'files', 'projects', projectId, folderPathId, 'files', d.id)))
       );
 
-      // Remove related data so audit logs, tracking, etc. stay in sync.
-      await deleteFileRelatedData(dbInstance, projectId, publicId);
+      // Do not block delete UX on related-data cleanup queries.
+      void deleteFileRelatedData(dbInstance, projectId, publicId).catch((err) => {
+        console.error('deleteFileRelatedData failed:', err);
+      });
     } catch (err) {
       setAlertData({ title: t('messages.error.generic'), message: err instanceof Error ? err.message : t('files.fileDeleteFailed'), type: 'error' });
       setShowAlert(true);
     } finally {
       setDeleting(null);
-      setShowDeleteConfirm(false);
       setDeleteFileData(null);
     }
   }
@@ -1255,9 +1298,15 @@ function ProjectFilesContent() {
                         {uploading && (
                           <div className="mt-4">
                             <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                              <div className="h-full bg-green-power-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                              <div
+                                className="h-full upload-progress-shimmer transition-all"
+                                style={{ width: `${uploadProgress}%` }}
+                              />
                             </div>
-                            <p className="text-xs text-gray-600 mt-2">{uploadingFileName}</p>
+                            <div className="mt-2 flex items-center justify-between gap-3 text-xs text-gray-600">
+                              <p className="truncate">{uploadingFileName}</p>
+                              <p className="font-semibold tabular-nums">{Math.round(uploadProgress)}%</p>
+                            </div>
                           </div>
                         )}
                         {selectedFiles.length > 0 && !uploading && (
@@ -1357,7 +1406,13 @@ function ProjectFilesContent() {
                                   <div className="min-w-0">
                                     <button
                                       type="button"
-                                      onClick={() => setViewerFile(file)}
+                                      onClick={() => {
+                                        if (file.fileType === 'pdf' || file.fileName.toLowerCase().endsWith('.pdf')) {
+                                          window.open(file.fileUrl, '_blank', 'noopener,noreferrer');
+                                          return;
+                                        }
+                                        setViewerFile(file);
+                                      }}
                                       className="text-sm font-medium text-gray-900 truncate hover:underline text-left"
                                       title={file.fileName}
                                     >
@@ -1398,7 +1453,13 @@ function ProjectFilesContent() {
                                 <div className="flex items-center gap-2 flex-shrink-0">
                                   <button
                                     type="button"
-                                    onClick={() => setViewerFile(file)}
+                                    onClick={() => {
+                                      if (file.fileType === 'pdf' || file.fileName.toLowerCase().endsWith('.pdf')) {
+                                        window.open(file.fileUrl, '_blank', 'noopener,noreferrer');
+                                        return;
+                                      }
+                                      setViewerFile(file);
+                                    }}
                                     className="text-sm text-green-power-600 hover:underline"
                                   >
                                     {t('files.open')}

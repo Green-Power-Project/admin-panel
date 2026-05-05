@@ -346,8 +346,12 @@ function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
         const d = first?.data();
         const url = d ? fileUrlFromFirestoreDoc(d as Record<string, unknown>) : undefined;
         if (url) {
-          setViewerUrl(url);
-          setViewerFileName(approval.fileName || 'file');
+          if ((approval.fileName || '').toLowerCase().endsWith('.pdf')) {
+            window.open(url, '_blank', 'noopener,noreferrer');
+          } else {
+            setViewerUrl(url);
+            setViewerFileName(approval.fileName || 'file');
+          }
           return;
         }
       }
@@ -640,11 +644,14 @@ function formatDate(t: (key: string) => string, timestamp?: Timestamp): string {
                 rootClassName="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
               />
             ) : (
-              <iframe
-                src={viewerUrl}
-                title={viewerFileName || ''}
-                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white"
-              />
+              <a
+                href={viewerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full max-w-4xl h-[90vh] rounded-lg bg-white border border-gray-200 flex items-center justify-center text-sm font-medium text-green-power-700 hover:text-green-power-800"
+              >
+                Open file in new tab
+              </a>
             )}
             <p className="absolute bottom-0 left-0 right-0 py-2 text-center text-white text-sm bg-black/50 rounded-b-lg">
               {viewerFileName}

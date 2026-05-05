@@ -14,6 +14,22 @@ interface FileUploadNotificationPayload {
   isReport?: boolean;
 }
 
+function normalizeFolderLabel(segment: string): string {
+  return segment
+    .replace(/^\d+_/, '')
+    .replace(/_/g, ' ')
+    .trim();
+}
+
+function buildUploadEmailSubject(projectName: string, folderPath: string): string {
+  const parts = folderPath.split('/').filter(Boolean);
+  const folder = parts[0] ? normalizeFolderLabel(parts[0]) : '';
+  const subfolder = parts[1] ? normalizeFolderLabel(parts[1]) : '';
+  if (folder && subfolder) return `${projectName} – ${folder} – ${subfolder}`;
+  if (folder) return `${projectName} – ${folder}`;
+  return projectName;
+}
+
 function validatePayload(body: any): FileUploadNotificationPayload | null {
   if (!body || typeof body !== 'object') return null;
 
@@ -206,6 +222,7 @@ export async function POST(request: NextRequest) {
     });
 
     const folderName = folderPath.split('/').pop() || folderPath;
+    const subjectByPath = buildUploadEmailSubject(projectName, folderPath);
     const projectLocation = (projectData.location || projectData.ort || '').trim();
     const projectDisplay = projectLocation ? `${projectName} – ${projectLocation}` : projectName;
     const projectRef = projectNumber ? `${projectDisplay} (${projectNumber})` : projectDisplay;
@@ -221,7 +238,7 @@ export async function POST(request: NextRequest) {
     if (isCustomerUpload) {
       // Customer uploaded → notify admin (unchanged)
       const customerDisplayName = customerName || customerNumber || 'Customer';
-      subject = `New File Uploaded - ${projectName}`;
+      subject = subjectByPath;
       fromName = customerDisplayName;
       replyTo = customerEmail || undefined;
       emailContent = `
@@ -252,7 +269,7 @@ export async function POST(request: NextRequest) {
           month: '2-digit',
           year: 'numeric',
         });
-        subject = `Neuer Upload im Kundenportal – ${projectRef}`;
+        subject = subjectByPath;
         emailContent = `
           <p>Sehr geehrte Damen und Herren,</p>
           <p>wir möchten Sie darüber informieren, dass in Ihrem Kundenportal zu Ihrem Projekt <strong>${projectDisplay}</strong> ein neues Dokument hochgeladen wurde.</p>
@@ -283,7 +300,7 @@ Bei Fragen stehen wir Ihnen jederzeit gerne zur Verfügung.
 
 ${closing.text}`;
       } else {
-        subject = `Neue Dateien in Ihrem Kundenportal – ${projectRef}`;
+        subject = subjectByPath;
         emailContent = `
           <p>Sehr geehrte Damen und Herren,</p>
           <p>wir möchten Sie kurz darüber informieren, dass neue Dateien in Ihrem Kundenportal zu Ihrem Projekt <strong>${projectDisplay}</strong> hochgeladen wurden.</p>
