@@ -7,7 +7,7 @@ import { ProtectedRoute } from '@/components/ProtectedRoute';
 import AdminLayout from '@/components/AdminLayout';
 import Link from 'next/link';
 import { db } from '@/lib/firebase';
-import { deleteField, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { collection, deleteField, doc, getCountFromServer, onSnapshot, query, updateDoc } from 'firebase/firestore';
 import {
   PROJECT_FOLDER_STRUCTURE,
   Folder,
@@ -136,6 +136,34 @@ type InlineEditProps = {
   savingFolderName: boolean;
 };
 
+function getFolderSegments(folderPath: string): string[] {
+  return folderPath.split('/').filter(Boolean);
+}
+
+function getProjectFolderFilesCollection(projectId: string, folderPath: string) {
+  if (!db) {
+    throw new Error('Firestore database is not initialized');
+  }
+  const folderSegments = getFolderSegments(folderPath);
+  if (folderSegments.length === 0) {
+    throw new Error('Folder path is empty');
+  }
+  const folderPathId = folderSegments.join('__');
+  return collection(db, 'files', 'projects', projectId, folderPathId, 'files');
+}
+
+function collectChildPaths(folder: Folder): string[] {
+  const paths: string[] = [];
+  if (!folder.children) return paths;
+  for (const child of folder.children) {
+    paths.push(child.path);
+    if (child.children) {
+      for (const grand of child.children) paths.push(grand.path);
+    }
+  }
+  return paths;
+}
+
 function ChildList({
   childrenFolders,
   projectId,
@@ -143,6 +171,7 @@ function ChildList({
   subfolderBg,
   folderDisplayNames,
   unreadCounts,
+  fileCountsByPath,
   editingFolderPath,
   setEditingFolderPath,
   editingValue,
@@ -160,6 +189,7 @@ function ChildList({
   subfolderBg: string;
   folderDisplayNames?: Record<string, string>;
   unreadCounts?: Map<string, number>;
+  fileCountsByPath?: Map<string, number>;
   dynamicSubfolders?: Record<string, string[]>;
   onRequestDeleteDynamicSubfolder?: (fullPath: string) => void;
 } & InlineEditProps) {
@@ -184,6 +214,7 @@ function ChildList({
           ? 'Sent'
           : getProjectFolderDisplayName(child.path, folderDisplayNames, t);
         const u = unreadCounts?.get(child.path) || 0;
+        const f = fileCountsByPath?.get(child.path) || 0;
         const childIcon = folderIconImages[child.path];
         const isDynamic =
           !!onRequestDeleteDynamicSubfolder &&
@@ -245,6 +276,9 @@ function ChildList({
                       {u}
                     </span>
                   )}
+                  <span className="px-2 py-0.5 rounded-full bg-gray-100 text-gray-500 text-[10px] font-medium flex-shrink-0">
+                    {f}
+                  </span>
                   {!isEmailsSystemFolder && (
                     <button
                       type="button"
@@ -299,7 +333,9 @@ function FolderCard({
   projectId,
   folderDisplayNames,
   totalUnreadCount,
+  totalFileCount,
   folderUnreadByPath,
+  folderFileByPath,
   editingFolderPath,
   setEditingFolderPath,
   editingValue,
@@ -316,7 +352,9 @@ function FolderCard({
   projectId: string;
   folderDisplayNames?: Record<string, string>;
   totalUnreadCount: number;
+  totalFileCount: number;
   folderUnreadByPath: Map<string, number>;
+  folderFileByPath: Map<string, number>;
   onAddSubfolder?: (parentPath: string) => void;
   dynamicSubfolders?: Record<string, string[]>;
   onRequestDeleteDynamicSubfolder?: (fullPath: string) => void;
@@ -446,6 +484,11 @@ function FolderCard({
           </div>
           
           <div className="flex items-center gap-3 flex-shrink-0 ml-4">
+            {!isEditing && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-gray-100 text-gray-500 text-xs font-medium">
+                {totalFileCount}
+              </span>
+            )}
             {totalUnreadCount > 0 && !isEditing && (
               <span className="inline-flex items-center px-2.5 py-1 rounded-full bg-red-500/90 text-white text-xs font-semibold">
                 {totalUnreadCount} {t('status.unread')}
@@ -483,6 +526,7 @@ function FolderCard({
                 subfolderBg={config.subfolderBg}
                 folderDisplayNames={folderDisplayNames}
                 unreadCounts={folderUnreadByPath}
+                fileCountsByPath={folderFileByPath}
                 editingFolderPath={editingFolderPath}
                 setEditingFolderPath={setEditingFolderPath}
                 editingValue={editingValue}
@@ -507,6 +551,7 @@ function ProjectFoldersSection({
   loading,
   folderDisplayNames,
   folderUnreadByPath,
+  folderFileByPath,
   editingFolderPath,
   setEditingFolderPath,
   editingValue,
@@ -523,6 +568,7 @@ function ProjectFoldersSection({
   loading: boolean;
   folderDisplayNames?: Record<string, string>;
   folderUnreadByPath: Map<string, number>;
+  folderFileByPath: Map<string, number>;
   dynamicSubfolders?: Record<string, string[]>;
   onAddSubfolder: (parentPath: string) => void;
   onRequestDeleteDynamicSubfolder: (fullPath: string) => void;
@@ -567,7 +613,9 @@ function ProjectFoldersSection({
               projectId={projectId}
               folderDisplayNames={folderDisplayNames}
               totalUnreadCount={sumUnreadForTopLevelFolder(folder, folderUnreadByPath)}
+              totalFileCount={sumUnreadForTopLevelFolder(folder, folderFileByPath)}
               folderUnreadByPath={folderUnreadByPath}
+              folderFileByPath={folderFileByPath}
               editingFolderPath={editingFolderPath}
               setEditingFolderPath={setEditingFolderPath}
               editingValue={editingValue}
@@ -607,7 +655,46 @@ function ProjectDetailContent() {
   const [deleteSubfolderPath, setDeleteSubfolderPath] = useState<string | null>(null);
   const [deletingSubfolder, setDeletingSubfolder] = useState(false);
   const folderUnreadByPath = useAdminFolderUnreadByPath(projectId);
+  const [folderFileByPath, setFolderFileByPath] = useState<Map<string, number>>(new Map());
   const chatUnread = useAdminChatUnreadCount(projectId);
+
+  useEffect(() => {
+    if (!db) return;
+    const roots = mergeDynamicSubfolders(
+      PROJECT_FOLDER_STRUCTURE.filter((folder) => folder.path !== '00_New_Not_Viewed_Yet_'),
+      project?.dynamicSubfolders
+    );
+    const childPaths = roots.flatMap((folder) => collectChildPaths(folder));
+    if (childPaths.length === 0) {
+      setFolderFileByPath(new Map());
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const entries = await Promise.all(
+          childPaths.map(async (path) => {
+            try {
+              const colRef = getProjectFolderFilesCollection(projectId, path);
+              const snap = await getCountFromServer(query(colRef));
+              return [path, snap.data().count] as const;
+            } catch {
+              return [path, 0] as const;
+            }
+          })
+        );
+        if (cancelled) return;
+        setFolderFileByPath(new Map(entries));
+      } catch {
+        if (!cancelled) setFolderFileByPath(new Map());
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, project?.dynamicSubfolders]);
 
   const handleSaveFolderName = async (path: string, value: string) => {
     if (!projectId || !db || !project) return;
@@ -888,6 +975,7 @@ function ProjectDetailContent() {
           loading={loading}
           folderDisplayNames={project?.folderDisplayNames}
           folderUnreadByPath={folderUnreadByPath}
+          folderFileByPath={folderFileByPath}
           editingFolderPath={editingFolderPath}
           setEditingFolderPath={setEditingFolderPath}
           editingValue={editingValue}
