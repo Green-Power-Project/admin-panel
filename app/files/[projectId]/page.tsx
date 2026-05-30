@@ -43,6 +43,10 @@ import { isReportFile } from '@/lib/reportApproval';
 import { deleteFileRelatedData } from '@/lib/cascadeDelete';
 import { groupMessagesByThread, sortThreadsNewestFirst } from '@/lib/customerMessageThreads';
 import { fileUrlFromFirestoreDoc, fileKeyFromFirestoreDoc } from '@/lib/fileDocFields';
+import { FINANCE_EXPENSES_FOLDER_PATH, FINANCE_INCOME_FOLDER_PATH } from '@/lib/folderStructure';
+import ProjectExpenses from '@/components/ProjectExpenses';
+import ProjectIncome from '@/components/ProjectIncome';
+import ProjectFinanceSummary from '@/components/ProjectFinanceSummary';
 interface Project {
   id: string;
   name: string;
@@ -54,6 +58,7 @@ interface Project {
 }
 
 interface FileMetadata {
+  docId: string;
   fileName: string;
   fileUrl: string;
   fileKey: string;
@@ -61,6 +66,8 @@ interface FileMetadata {
   folderPath: string;
   uploadedAt: Date | null;
   customerDownloadCount?: number;
+  billed: boolean;
+  adminNote: string;
 }
 
 interface CustomerMessageItem {
@@ -146,6 +153,7 @@ function getFolderConfig(path: string, t: (key: string) => string) {
     '08_General': { gradient: 'from-gray-500 to-slate-500', icon: '📋' },
     Signature: { gradient: 'from-amber-500 to-orange-500', icon: '✍️' },
     '09_Admin_Only': { gradient: 'from-amber-600 to-orange-600', icon: '🔒' },
+    '14_Finance': { gradient: 'from-emerald-500 to-green-600', icon: '💶' },
   };
   const base = configs[path] || { gradient: 'from-gray-400 to-gray-500', icon: '📁' };
   const descKey = `folders.${path}.description`;
@@ -166,6 +174,7 @@ function getFolderIcon(path: string): string {
   if (path.startsWith('08_')) return '📋';
   if (path.startsWith('09_')) return '🔒';
   if (path.startsWith('10_')) return '📂';
+  if (path.startsWith('14_')) return '💶';
   if (path === 'Signature' || path.startsWith('Signature/')) return '✍️';
   if (path.startsWith('11_')) return '✍️';
   if (path.startsWith('12_')) return '✍️';
@@ -256,6 +265,9 @@ function ProjectFilesContent() {
   const [selectedEmail, setSelectedEmail] = useState<ProjectEmailItem | null>(null);
   const [reportSignatures, setReportSignatures] = useState<Record<string, ReportSignatureItem>>({});
   const [selectedSignature, setSelectedSignature] = useState<ReportSignatureItem | null>(null);
+  const [editingNoteKey, setEditingNoteKey] = useState<string | null>(null);
+  const [noteEditValue, setNoteEditValue] = useState<string>('');
+  const [noteModalText, setNoteModalText] = useState<string | null>(null);
 
   const stepViewerFile = useCallback(
     (delta: -1 | 1) => {
@@ -355,6 +367,7 @@ function ProjectFilesContent() {
         const list: FileMetadata[] = snap.docs.map((d) => {
           const data = d.data();
           return {
+            docId: d.id,
             fileName: data.fileName as string,
             fileUrl: fileUrlFromFirestoreDoc(data as Record<string, unknown>),
             fileKey: fileKeyFromFirestoreDoc(data as Record<string, unknown>),
@@ -365,6 +378,8 @@ function ProjectFilesContent() {
               typeof data.customerDownloadCount === 'number' && Number.isFinite(data.customerDownloadCount)
                 ? Math.max(0, Math.floor(data.customerDownloadCount))
                 : 0,
+            billed: typeof data.billed === 'boolean' ? data.billed : false,
+            adminNote: typeof data.adminNote === 'string' ? data.adminNote : '',
           };
         });
         setFiles(list);
@@ -722,6 +737,7 @@ function ProjectFilesContent() {
         setFiles((prev) => {
           if (prev.some((f) => f.fileKey === result.public_id)) return prev;
           const optimistic: FileMetadata = {
+            docId: '',
             fileName: file.name,
             fileUrl: result.secure_url,
             fileKey: result.public_id,
@@ -729,6 +745,8 @@ function ProjectFilesContent() {
             folderPath: selectedFolder,
             uploadedAt: new Date(),
             customerDownloadCount: 0,
+            billed: false,
+            adminNote: '',
           };
           return [optimistic, ...prev];
         });
@@ -973,6 +991,31 @@ function ProjectFilesContent() {
     }
   }
 
+  async function handleToggleBilled(file: FileMetadata) {
+    if (!db || !projectId || !file.docId) return;
+    const segments = getFolderSegments(file.folderPath);
+    const folderPathId = segments.join('__');
+    const fileDocRef = doc(db, 'files', 'projects', projectId, folderPathId, 'files', file.docId);
+    try {
+      await updateDoc(fileDocRef, { billed: !file.billed });
+    } catch (err) {
+      console.error('Error toggling billed status:', err);
+    }
+  }
+
+  async function handleSaveNote(file: FileMetadata, note: string) {
+    if (!db || !projectId || !file.docId) return;
+    const segments = getFolderSegments(file.folderPath);
+    const folderPathId = segments.join('__');
+    const fileDocRef = doc(db, 'files', 'projects', projectId, folderPathId, 'files', file.docId);
+    try {
+      await updateDoc(fileDocRef, { adminNote: note.trim() });
+      setEditingNoteKey(null);
+    } catch (err) {
+      console.error('Error saving note:', err);
+    }
+  }
+
   async function handleDownloadSelected() {
     if (selectedDownloadKeys.size === 0) return;
     const targets = files.filter((f) => selectedDownloadKeys.has(f.fileKey));
@@ -1209,7 +1252,17 @@ function ProjectFilesContent() {
           </div>
 
           <div className="lg:col-span-9 space-y-6">
-            {!isEmailsFolder && (
+            {selectedFolder === FINANCE_EXPENSES_FOLDER_PATH ? (
+              <>
+                <ProjectFinanceSummary projectId={projectId} />
+                <ProjectExpenses projectId={projectId} />
+              </>
+            ) : selectedFolder === FINANCE_INCOME_FOLDER_PATH ? (
+              <>
+                <ProjectFinanceSummary projectId={projectId} />
+                <ProjectIncome projectId={projectId} />
+              </>
+            ) : !isEmailsFolder && (
               <>
                 {/* Upload */}
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -1423,13 +1476,27 @@ function ProjectFilesContent() {
                                         {file.uploadedAt.toLocaleDateString()}
                                       </p>
                                     )}
-                                    <div className="mt-1">
+                                    <div className="mt-1 flex items-center gap-2 flex-wrap">
                                       <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
                                         <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
-                                        {file.customerDownloadCount ?? 0} {t('common.downloads')}
+                                        {file.customerDownloadCount ?? 0}
                                       </span>
+                                      {/* Billed toggle — admin only */}
+                                      <div className="flex items-center gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); void handleToggleBilled(file); }}
+                                          className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${file.billed ? 'bg-green-500' : 'bg-gray-300'}`}
+                                          title={file.billed ? 'Berechnet' : 'Nicht berechnet'}
+                                        >
+                                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${file.billed ? 'translate-x-4' : 'translate-x-0'}`} />
+                                        </button>
+                                        <span className="text-xs text-gray-600 whitespace-nowrap select-none">
+                                          {file.billed ? 'Berechnet' : 'Nicht berechnet'}
+                                        </span>
+                                      </div>
                                     </div>
                                     {isSignableDocumentsFolderPath(selectedFolder) && (
                                       <div className="mt-1 flex items-center gap-2">
@@ -1451,6 +1518,80 @@ function ProjectFilesContent() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2 flex-shrink-0">
+                                  {/* Internal note — admin only */}
+                                  <div className="flex items-center gap-1">
+                                    {editingNoteKey === file.fileKey ? (
+                                      <>
+                                        <input
+                                          type="text"
+                                          value={noteEditValue}
+                                          onChange={(e) => setNoteEditValue(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') void handleSaveNote(file, noteEditValue);
+                                            if (e.key === 'Escape') setEditingNoteKey(null);
+                                          }}
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="text-xs border border-gray-300 rounded px-1.5 py-0.5 w-28 focus:outline-none focus:border-green-500"
+                                          autoFocus
+                                          placeholder="Notiz..."
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); void handleSaveNote(file, noteEditValue); }}
+                                          className="text-green-600 hover:text-green-700 flex-shrink-0"
+                                          title="Speichern"
+                                        >
+                                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                          </svg>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); setEditingNoteKey(null); }}
+                                          className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                          title="Abbrechen"
+                                        >
+                                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                                          </svg>
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="flex items-center gap-1 max-w-[160px]">
+                                          <span className="text-xs text-gray-500 truncate">
+                                            {file.adminNote || <span className="text-gray-300">—</span>}
+                                          </span>
+                                          {file.adminNote && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => { e.stopPropagation(); setNoteModalText(file.adminNote); }}
+                                              className="text-blue-500 hover:underline text-[10px] whitespace-nowrap flex-shrink-0"
+                                            >
+                                              mehr
+                                            </button>
+                                          )}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setEditingNoteKey(file.fileKey);
+                                            setNoteEditValue(file.adminNote);
+                                          }}
+                                          className="text-gray-400 hover:text-gray-600 flex-shrink-0"
+                                          title="Notiz bearbeiten"
+                                        >
+                                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                          </svg>
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+
+                                  <div className="w-px h-4 bg-gray-200 flex-shrink-0" />
+
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -2007,6 +2148,33 @@ function ProjectFilesContent() {
                   <p className="text-xs text-gray-500 px-3 py-4">{t('files.signatures.signatureStoredExternal')}</p>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {noteModalText !== null && (
+        <div
+          className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
+          onClick={() => setNoteModalText(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+              <h2 className="text-base font-bold text-gray-900">Notes</h2>
+              <button
+                type="button"
+                onClick={() => setNoteModalText(null)}
+                className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="px-6 py-5">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap">{noteModalText}</p>
             </div>
           </div>
         </div>

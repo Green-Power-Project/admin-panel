@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { sendOneSignalPush } from '@/lib/server/onesignal';
 import { logProjectEmail } from '@/lib/server/emailLogger';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 import { getAdminServerBaseUrl } from '@/lib/serverBaseUrl';
@@ -378,6 +379,31 @@ ${closing.text}`;
     
     await transporter.sendMail(mailOptions);
     console.log('[file-upload-notification] ✅ Email sent successfully to:', recipientEmail);
+
+    // Send OneSignal push notification to customer (admin upload only — not for customer uploads)
+    // Skip admin-private folder; customer never sees those files.
+    const isAdminPrivateFolder = folderPath.startsWith('09_Admin_Only');
+    if (!isCustomerUpload && customerId && !isAdminPrivateFolder) {
+      const portalBase = (process.env.PORTAL_URL ?? 'https://customer.gruen-power.cloud').replace(/\/$/, '');
+      const pushUrl = portalBase.startsWith('https://')
+        ? `${portalBase}/project/${projectId}`
+        : `https://customer.gruen-power.cloud/project/${projectId}`;
+
+      let pushTitle: string;
+      if (isReport || folderPath.includes('Signature')) {
+        pushTitle = 'Bitte prüfen und unterschreiben Sie den Bericht.';
+      } else if (folderPath.startsWith('07_Delivery_Notes')) {
+        pushTitle = 'Lieferschein hochgeladen';
+      } else if (folderPath.startsWith('08_General')) {
+        pushTitle = 'Dokumentation hochgeladen';
+      } else {
+        pushTitle = 'Neue Datei zum Projekt hinzugefügt';
+      }
+
+      const pushBody = `${projectRef}: ${fileName}`;
+      void sendOneSignalPush({ externalUserId: customerId, title: pushTitle, body: pushBody, url: pushUrl })
+        .catch((e) => console.warn('[file-upload-notification] OneSignal fire-and-forget error:', e));
+    }
 
     // Best-effort email logging for project "E-Mails" view
     try {

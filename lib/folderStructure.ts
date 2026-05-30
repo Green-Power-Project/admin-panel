@@ -55,6 +55,10 @@ const LEGACY_FIXED_FOLDER_PATHS = new Set<string>([
 /** Folder path for the admin-only private folder. Must match the path used in window-app blocking logic. */
 export const ADMIN_ONLY_FOLDER_PATH = '09_Admin_Only' as const;
 
+/** Finance & Accounting subfolder paths. */
+export const FINANCE_EXPENSES_FOLDER_PATH = '14_Finance/Project_Expenses' as const;
+export const FINANCE_INCOME_FOLDER_PATH = '14_Finance/Project_Income' as const;
+
 export interface Folder {
   name: string;
   path: string;
@@ -158,6 +162,14 @@ export const PROJECT_FOLDER_STRUCTURE: Folder[] = [
     name: '09_Admin_Only',
     path: '09_Admin_Only',
     // No children – single folder for private files (material prices, internal notes). Not visible to customers.
+  },
+  {
+    name: '14_Finance',
+    path: '14_Finance',
+    children: [
+      { name: 'Project_Income', path: '14_Finance/Project_Income' },
+      { name: 'Project_Expenses', path: '14_Finance/Project_Expenses' },
+    ],
   },
 ];
 

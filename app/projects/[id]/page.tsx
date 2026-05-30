@@ -112,6 +112,13 @@ const folderConfig: Record<string, { description: string; icon: string; gradient
     color: 'text-amber-600',
     subfolderBg: 'bg-gray-50/60 border-gray-200',
   },
+  '14_Finance': {
+    description: 'Finance and accounting — income and expenses',
+    icon: '💶',
+    gradient: 'from-emerald-500 to-green-600',
+    color: 'text-emerald-600',
+    subfolderBg: 'bg-gray-50/60 border-gray-200',
+  },
 };
 
 const folderIconImages: Record<string, string> = {

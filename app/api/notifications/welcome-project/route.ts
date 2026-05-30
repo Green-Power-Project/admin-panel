@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import nodemailer from 'nodemailer';
 import { getAdminDb } from '@/lib/server/firebaseAdmin';
+import { sendOneSignalPush } from '@/lib/server/onesignal';
 import { logProjectEmail } from '@/lib/server/emailLogger';
 import { getContactForEmail, buildGermanEmailClosing, buildEmailLogoHtml } from '@/lib/emailSignature';
 
@@ -128,6 +129,15 @@ ${closing.text}`;
 
     await transporter.sendMail(mailOptions);
     console.log('[welcome-project] ✅ Project welcome email sent to:', toEmail);
+
+    // Send OneSignal push notification to customer
+    const portalBase = PORTAL_URL.startsWith('https://') ? PORTAL_URL.replace(/\/$/, '') : 'https://customer.gruen-power.cloud';
+    void sendOneSignalPush({
+      externalUserId: customerId,
+      title: 'Ihr Kundenportal-Zugang ist bereit',
+      body: `Projekt ${projectNumber} ist jetzt verfügbar. Jetzt anmelden.`,
+      url: `${portalBase}/login`,
+    }).catch((e) => console.warn('[welcome-project] OneSignal fire-and-forget error:', e));
 
     // Log welcome mail against the project so it appears under "Sent"
     try {

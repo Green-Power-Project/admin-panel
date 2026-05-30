@@ -5,7 +5,7 @@ import type { SenderType } from '@/lib/chatRealtimeTypes';
  * Auftraggeber = portal/admin user; Auftragnehmer = customer (client).
  */
 export function chatRoleLabelGerman(senderType: SenderType | string | undefined | null): string {
-  return senderType === 'admin' ? 'Auftraggeber' : 'Auftragnehmer';
+  return senderType === 'admin' ? 'Auftragnehmer' : 'Auftraggeber';
 }
 
 /** Shown when the customer is typing (admin-facing chat). */

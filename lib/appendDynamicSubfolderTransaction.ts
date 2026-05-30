@@ -29,10 +29,11 @@ export async function appendDynamicSubfolderTransaction(
     };
     const merged = mergeDynamicSubfolders(baseStructure, data.dynamicSubfolders);
     const parentFolder = merged.find((f) => f.path === parentPath);
-    if (!parentFolder?.children?.length) {
+    if (!parentFolder) {
       return;
     }
-    const existing = new Set(parentFolder.children.map((c) => c.path));
+    const existingChildren = parentFolder.children ?? [];
+    const existing = new Set(existingChildren.map((c) => c.path));
     if (existing.has(fullPath)) {
       return;
     }
