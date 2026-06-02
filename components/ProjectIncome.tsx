@@ -15,12 +15,36 @@ import {
 import { db } from '@/lib/firebase';
 import { useLanguage } from '@/contexts/LanguageContext';
 
+// Standard German VAT rate used for the Net / VAT / Gross breakdown.
+const VAT_RATE = 0.19;
+
 export type IncomeType =
-  | 'progress_payment'
-  | 'cash'
+  | 'progress_payment' // Abschlagsrechnung (payment)
+  | 'final_invoice'    // Schlussrechnung (payment)
+  | 'cash'             // Barzahlung (payment)
+  | 'quotation'        // Angebot (project value)
+  | 'change_order'     // Nachtrag (project value)
+  | 'report'           // Rapport (project value)
+  // legacy types kept so older entries still render correctly
   | 'bank_transfer'
   | 'partial_payment'
   | 'discount_skonto';
+
+export type ChangeOrderSubType = 'report' | 'quotation' | 'additional_work';
+
+// Types that raise the project value (Total / Outstanding). Everything else is a payment.
+const VALUE_TYPES: IncomeType[] = ['quotation', 'change_order', 'report'];
+// Types that show the invoice fields (discount, invoice number, payment date).
+const INVOICE_TYPES: IncomeType[] = ['progress_payment', 'final_invoice'];
+// Types offered as quick-add buttons / selectable in the form.
+const SELECTABLE_TYPES: IncomeType[] = [
+  'progress_payment',
+  'final_invoice',
+  'cash',
+  'quotation',
+  'change_order',
+  'report',
+];
 
 interface IncomeEntry {
   id: string;
@@ -29,6 +53,11 @@ interface IncomeEntry {
   amount: number;
   date: Date;
   note: string;
+  discount: number | null;
+  cashPercent: number | null;
+  invoiceNumber: string | null;
+  paymentDate: Date | null;
+  changeOrderSubType: ChangeOrderSubType | null;
   createdAt: Date | null;
 }
 
@@ -37,18 +66,52 @@ interface FormState {
   amount: string;
   date: string;
   note: string;
+  discount: string;
+  cashPercent: string;
+  invoiceNumber: string;
+  paymentDate: string;
+  changeOrderSubType: ChangeOrderSubType | '';
 }
 
-const INCOME_TYPE_KEYS: { value: IncomeType; color: string; bg: string }[] = [
-  { value: 'progress_payment', color: 'text-blue-700',   bg: 'bg-blue-100'   },
-  { value: 'cash',             color: 'text-green-700',  bg: 'bg-green-100'  },
-  { value: 'bank_transfer',    color: 'text-indigo-700', bg: 'bg-indigo-100' },
-  { value: 'partial_payment',  color: 'text-purple-700', bg: 'bg-purple-100' },
-  { value: 'discount_skonto',  color: 'text-orange-700', bg: 'bg-orange-100' },
-];
+const TYPE_STYLE: Record<string, { color: string; bg: string }> = {
+  progress_payment: { color: 'text-blue-700',   bg: 'bg-blue-100'   },
+  final_invoice:    { color: 'text-teal-700',   bg: 'bg-teal-100'   },
+  cash:             { color: 'text-green-700',  bg: 'bg-green-100'  },
+  quotation:        { color: 'text-indigo-700', bg: 'bg-indigo-100' },
+  change_order:     { color: 'text-purple-700', bg: 'bg-purple-100' },
+  report:           { color: 'text-amber-700',  bg: 'bg-amber-100'  },
+  // legacy
+  bank_transfer:    { color: 'text-indigo-700', bg: 'bg-indigo-100' },
+  partial_payment:  { color: 'text-purple-700', bg: 'bg-purple-100' },
+  discount_skonto:  { color: 'text-orange-700', bg: 'bg-orange-100' },
+};
+
+const CHANGE_ORDER_SUBTYPES: ChangeOrderSubType[] = ['report', 'quotation', 'additional_work'];
 
 function todayISO(): string {
   return new Date().toISOString().split('T')[0];
+}
+
+function parseNum(value: string): number {
+  const n = parseFloat((value || '').replace(',', '.'));
+  return isNaN(n) ? 0 : n;
+}
+
+function fmtEUR(n: number): string {
+  return n.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' });
+}
+
+// Net amount of an entry after applying its discount (invoices) or surcharge (cash).
+function netOf(args: {
+  type: IncomeType;
+  amount: number;
+  discount: number | null;
+  cashPercent: number | null;
+}): number {
+  const base = args.amount || 0;
+  if (args.type === 'cash') return base * (1 + (args.cashPercent ?? 0) / 100);
+  if (INVOICE_TYPES.includes(args.type)) return base * (1 - (args.discount ?? 0) / 100);
+  return base;
 }
 
 const EMPTY_FORM: FormState = {
@@ -56,6 +119,11 @@ const EMPTY_FORM: FormState = {
   amount: '',
   date: todayISO(),
   note: '',
+  discount: '',
+  cashPercent: '',
+  invoiceNumber: '',
+  paymentDate: '',
+  changeOrderSubType: '',
 };
 
 export default function ProjectIncome({ projectId }: { projectId: string }) {
@@ -69,13 +137,11 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const incomeTypes = useMemo(
-    () => INCOME_TYPE_KEYS.map((e) => ({ ...e, label: t(`income.types.${e.value}`) })),
-    [t]
-  );
-
-  function getTypeConfig(type: IncomeType) {
-    return incomeTypes.find((t) => t.value === type) ?? incomeTypes[0];
+  function typeLabel(type: IncomeType): string {
+    return t(`income.types.${type}`);
+  }
+  function typeStyle(type: IncomeType) {
+    return TYPE_STYLE[type] ?? { color: 'text-gray-700', bg: 'bg-gray-100' };
   }
 
   useEffect(() => {
@@ -103,6 +169,18 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
             amount: typeof data.amount === 'number' ? data.amount : 0,
             date,
             note: typeof data.note === 'string' ? data.note : '',
+            discount: typeof data.discount === 'number' ? data.discount : null,
+            cashPercent: typeof data.cashPercent === 'number' ? data.cashPercent : null,
+            invoiceNumber:
+              typeof data.invoiceNumber === 'string'
+                ? data.invoiceNumber
+                : typeof data.advanceNumber === 'string'
+                ? data.advanceNumber
+                : null,
+            paymentDate:
+              data.paymentDate instanceof Timestamp ? data.paymentDate.toDate() : null,
+            changeOrderSubType:
+              (data.changeOrderSubType as ChangeOrderSubType) || null,
             createdAt: data.createdAt?.toDate?.() ?? null,
           };
         });
@@ -118,25 +196,42 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
     return () => unsub();
   }, [projectId]);
 
-  const total = useMemo(
-    () => entries.reduce((sum, e) => sum + e.amount, 0),
-    [entries]
-  );
-
-  const totalByType = useMemo(() => {
-    const map: Record<IncomeType, number> = {
-      progress_payment: 0,
-      cash: 0,
-      bank_transfer: 0,
-      partial_payment: 0,
-      discount_skonto: 0,
+  // Total (project value) vs Paid, each as Net / VAT / Gross.
+  const summary = useMemo(() => {
+    let totalNet = 0;
+    let paidNet = 0;
+    for (const e of entries) {
+      const net = netOf(e);
+      if (VALUE_TYPES.includes(e.type)) totalNet += net;
+      else paidNet += net;
+    }
+    const outstandingNet = totalNet - paidNet;
+    const withVat = (net: number) => ({
+      net,
+      vat: net * VAT_RATE,
+      gross: net * (1 + VAT_RATE),
+    });
+    return {
+      total: withVat(totalNet),
+      paid: withVat(paidNet),
+      outstanding: withVat(outstandingNet),
     };
-    for (const e of entries) map[e.type] = (map[e.type] ?? 0) + e.amount;
-    return map;
   }, [entries]);
 
-  function openModal() {
-    setForm({ ...EMPTY_FORM, date: todayISO() });
+  // Live Net / VAT / Gross preview for the entry being edited.
+  const formNet = useMemo(
+    () =>
+      netOf({
+        type: form.type,
+        amount: parseNum(form.amount),
+        discount: parseNum(form.discount),
+        cashPercent: parseNum(form.cashPercent),
+      }),
+    [form.type, form.amount, form.discount, form.cashPercent]
+  );
+
+  function openModal(type: IncomeType) {
+    setForm({ ...EMPTY_FORM, type, date: todayISO() });
     setFormError('');
     setShowModal(true);
   }
@@ -147,22 +242,41 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
   }
 
   async function handleSave() {
-    const amount = parseFloat(form.amount.replace(',', '.'));
+    const amount = parseNum(form.amount);
     if (!form.type) { setFormError(t('income.form.typeRequired')); return; }
     if (!form.date) { setFormError(t('income.form.dateRequired')); return; }
-    if (!form.amount || isNaN(amount) || amount <= 0) { setFormError(t('income.form.amountRequired')); return; }
+    if (!form.amount || amount <= 0) { setFormError(t('income.form.amountRequired')); return; }
+    if (form.type === 'change_order' && !form.changeOrderSubType) {
+      setFormError(t('income.form.subTypeRequired'));
+      return;
+    }
     if (!db) return;
     setSaving(true);
     setFormError('');
     try {
-      await addDoc(collection(db, 'projectIncome'), {
+      const payload: Record<string, unknown> = {
         projectId,
         type: form.type,
         amount,
         date: Timestamp.fromDate(new Date(form.date)),
         note: form.note.trim(),
         createdAt: serverTimestamp(),
-      });
+      };
+      if (INVOICE_TYPES.includes(form.type)) {
+        payload.discount = form.discount ? parseNum(form.discount) : null;
+        payload.invoiceNumber = form.invoiceNumber.trim() || null;
+        payload.paymentDate = form.paymentDate
+          ? Timestamp.fromDate(new Date(form.paymentDate))
+          : null;
+      } else if (form.type === 'cash') {
+        payload.cashPercent = form.cashPercent ? parseNum(form.cashPercent) : null;
+      } else if (form.type === 'change_order') {
+        payload.changeOrderSubType = form.changeOrderSubType || null;
+        payload.invoiceNumber = form.invoiceNumber.trim() || null;
+      } else if (form.type === 'quotation' || form.type === 'report') {
+        payload.invoiceNumber = form.invoiceNumber.trim() || null;
+      }
+      await addDoc(collection(db, 'projectIncome'), payload);
       closeModal();
     } catch (err) {
       console.error('Error saving income entry:', err);
@@ -185,9 +299,15 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
     }
   }
 
+  const showInvoiceFields = INVOICE_TYPES.includes(form.type);
+  const isCash = form.type === 'cash';
+  const isChangeOrder = form.type === 'change_order';
+  const showNumberField =
+    form.type === 'quotation' || form.type === 'report' || isChangeOrder;
+
   return (
     <div className="space-y-6">
-      {/* Header card */}
+      {/* Summary card — Total / Paid / Outstanding (Net / VAT / Gross) */}
       <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
         <div className="bg-gradient-to-r from-blue-50 to-indigo-100 px-6 py-4 border-b border-blue-200 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -197,39 +317,52 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
               <p className="text-xs text-gray-600">{t('income.subtitle')}</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={openModal}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 4v16m8-8H4" />
-            </svg>
-            {t('income.addPayment')}
-          </button>
         </div>
 
-        {/* Total + per-type breakdown */}
-        <div className="px-6 py-5">
-          <div className="flex flex-wrap gap-4 items-start">
-            <div className="flex-1 min-w-[160px]">
-              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">{t('income.totalReceived')}</p>
-              <p className="text-3xl font-bold text-gray-900">
-                {total.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
+        <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {([
+            { key: 'total', data: summary.total, accent: 'text-gray-900' },
+            { key: 'paid', data: summary.paid, accent: 'text-green-600' },
+            { key: 'outstanding', data: summary.outstanding, accent: 'text-orange-600' },
+          ] as const).map(({ key, data, accent }) => (
+            <div key={key} className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+                {t(`income.summary.${key}`)}
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">{entries.length} {t('income.entriesCount')}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {incomeTypes.filter((it) => totalByType[it.value] > 0).map((it) => (
-                <div key={it.value} className={`${it.bg} ${it.color} rounded-lg px-3 py-2 text-xs`}>
-                  <p className="font-semibold">{it.label}</p>
-                  <p className="font-bold text-sm">
-                    {totalByType[it.value].toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
-                  </p>
+              <p className={`text-2xl font-bold ${accent}`}>{fmtEUR(data.gross)}</p>
+              <p className="text-[11px] text-gray-400">{t('income.summary.gross')}</p>
+              <div className="mt-2 space-y-0.5 text-xs text-gray-500">
+                <div className="flex justify-between">
+                  <span>{t('income.summary.net')}</span>
+                  <span className="font-medium text-gray-700">{fmtEUR(data.net)}</span>
                 </div>
-              ))}
+                <div className="flex justify-between">
+                  <span>{t('income.summary.vat')}</span>
+                  <span className="font-medium text-gray-700">{fmtEUR(data.vat)}</span>
+                </div>
+              </div>
             </div>
-          </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Quick-add type buttons */}
+      <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4">
+        <p className="text-xs font-semibold text-gray-700 mb-3">{t('income.chooseType')}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+          {SELECTABLE_TYPES.map((type) => {
+            const s = typeStyle(type);
+            return (
+              <button
+                key={type}
+                type="button"
+                onClick={() => openModal(type)}
+                className={`px-3 py-3 rounded-lg text-xs font-semibold border-2 border-gray-200 hover:border-current transition-all ${s.bg} ${s.color}`}
+              >
+                {typeLabel(type)}
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -247,45 +380,47 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
           <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-400">
             <span className="text-4xl">📭</span>
             <p className="text-sm">{t('income.noIncome')}</p>
-            <button
-              type="button"
-              onClick={openModal}
-              className="mt-1 text-sm text-blue-600 hover:underline font-medium"
-            >
-              {t('income.addFirst')}
-            </button>
           </div>
         ) : (
           <ul className="divide-y divide-gray-100">
             {entries.map((entry) => {
-              const cfg = getTypeConfig(entry.type);
+              const s = typeStyle(entry.type);
+              const isValue = VALUE_TYPES.includes(entry.type);
+              const net = netOf(entry);
+              const gross = net * (1 + VAT_RATE);
               return (
                 <li key={entry.id} className="px-6 py-4 flex items-start gap-4 hover:bg-gray-50 transition-colors">
-                  {/* Type badge */}
-                  <span className={`flex-shrink-0 mt-0.5 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${cfg.bg} ${cfg.color}`}>
-                    {cfg.label}
+                  <span className={`flex-shrink-0 mt-0.5 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${s.bg} ${s.color}`}>
+                    {typeLabel(entry.type)}
                   </span>
 
-                  {/* Details */}
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                       <span className="font-medium text-gray-700">
                         {entry.date.toLocaleDateString('de-DE')}
                       </span>
+                      {entry.invoiceNumber && (
+                        <span className="text-gray-400">· {t('income.form.numberShort')} {entry.invoiceNumber}</span>
+                      )}
+                      {entry.changeOrderSubType && (
+                        <span className="text-gray-400">· {t(`income.subTypes.${entry.changeOrderSubType}`)}</span>
+                      )}
                     </div>
                     {entry.note && (
                       <p className="text-sm text-gray-700 mt-1">{entry.note}</p>
                     )}
-                  </div>
-
-                  {/* Amount */}
-                  <div className="flex-shrink-0 text-right">
-                    <p className="text-base font-bold text-green-600">
-                      +{entry.amount.toLocaleString('de-DE', { style: 'currency', currency: 'EUR' })}
+                    <p className="text-[11px] text-gray-400 mt-0.5">
+                      {t('income.summary.net')} {fmtEUR(net)} · {t('income.summary.vat')} {fmtEUR(net * VAT_RATE)}
                     </p>
                   </div>
 
-                  {/* Delete */}
+                  <div className="flex-shrink-0 text-right">
+                    <p className={`text-base font-bold ${isValue ? 'text-gray-700' : 'text-green-600'}`}>
+                      {isValue ? '' : '+'}{fmtEUR(gross)}
+                    </p>
+                    <p className="text-[11px] text-gray-400">{t('income.summary.gross')}</p>
+                  </div>
+
                   <div className="flex-shrink-0">
                     {deleteConfirmId === entry.id ? (
                       <div className="flex items-center gap-1">
@@ -325,19 +460,20 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
         )}
       </div>
 
-      {/* Add payment modal */}
+      {/* Entry modal */}
       {showModal && (
         <div
           className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4"
           onClick={closeModal}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Modal header */}
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
-              <h2 className="text-base font-bold text-gray-900">{t('income.newPayment')}</h2>
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between sticky top-0 bg-white">
+              <h2 className="text-base font-bold text-gray-900">
+                {t('income.newEntry')} · {typeLabel(form.type)}
+              </h2>
               <button
                 type="button"
                 onClick={closeModal}
@@ -349,7 +485,6 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
               </button>
             </div>
 
-            {/* Form */}
             <div className="px-6 py-5 space-y-4">
               {formError && (
                 <div className="bg-red-50 border-l-4 border-red-400 text-red-700 px-4 py-2 text-sm rounded-r">
@@ -361,27 +496,53 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.type')}</label>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {incomeTypes.map((it) => (
-                    <button
-                      key={it.value}
-                      type="button"
-                      onClick={() => setForm((f) => ({ ...f, type: it.value }))}
-                      className={`px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all text-left ${
-                        form.type === it.value
-                          ? `${it.bg} ${it.color} border-current`
-                          : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
-                      }`}
-                    >
-                      {it.label}
-                    </button>
-                  ))}
+                  {SELECTABLE_TYPES.map((type) => {
+                    const s = typeStyle(type);
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, type }))}
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all text-left ${
+                          form.type === type
+                            ? `${s.bg} ${s.color} border-current`
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {typeLabel(type)}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
+
+              {/* Change-order sub-type */}
+              {isChangeOrder && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.subType')}</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {CHANGE_ORDER_SUBTYPES.map((sub) => (
+                      <button
+                        key={sub}
+                        type="button"
+                        onClick={() => setForm((f) => ({ ...f, changeOrderSubType: sub }))}
+                        className={`px-3 py-2 rounded-lg text-xs font-semibold border-2 transition-all ${
+                          form.changeOrderSubType === sub
+                            ? 'bg-purple-100 text-purple-700 border-current'
+                            : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                        }`}
+                      >
+                        {t(`income.subTypes.${sub}`)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Amount + Date */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.amount')}</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.amountNet')}</label>
                   <input
                     type="number"
                     min="0.01"
@@ -403,6 +564,74 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
                 </div>
               </div>
 
+              {/* Invoice fields: discount, invoice number, payment date */}
+              {showInvoiceFields && (
+                <div className="grid grid-cols-2 gap-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.discount')}</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder={t('income.form.discountPlaceholder')}
+                      value={form.discount}
+                      onChange={(e) => setForm((f) => ({ ...f, discount: e.target.value }))}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.invoiceNumber')}</label>
+                    <input
+                      type="text"
+                      placeholder={t('income.form.invoiceNumberPlaceholder')}
+                      value={form.invoiceNumber}
+                      onChange={(e) => setForm((f) => ({ ...f, invoiceNumber: e.target.value }))}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.paymentDate')}</label>
+                    <input
+                      type="date"
+                      value={form.paymentDate}
+                      onChange={(e) => setForm((f) => ({ ...f, paymentDate: e.target.value }))}
+                      className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Cash surcharge percentage */}
+              {isCash && (
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.cashPercent')}</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    placeholder={t('income.form.cashPercentPlaceholder')}
+                    value={form.cashPercent}
+                    onChange={(e) => setForm((f) => ({ ...f, cashPercent: e.target.value }))}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">{t('income.form.cashPercentHint')}</p>
+                </div>
+              )}
+
+              {/* Number field for quotation / report / change order */}
+              {showNumberField && !showInvoiceFields && (
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.number')}</label>
+                  <input
+                    type="text"
+                    placeholder={t('income.form.numberPlaceholder')}
+                    value={form.invoiceNumber}
+                    onChange={(e) => setForm((f) => ({ ...f, invoiceNumber: e.target.value }))}
+                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              )}
+
               {/* Note */}
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('income.form.note')}</label>
@@ -414,10 +643,25 @@ export default function ProjectIncome({ projectId }: { projectId: string }) {
                   className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
+
+              {/* Live Net / VAT / Gross preview */}
+              <div className="rounded-lg bg-blue-50 border border-blue-100 px-4 py-3 text-xs text-gray-700 space-y-1">
+                <div className="flex justify-between">
+                  <span>{t('income.summary.net')}</span>
+                  <span className="font-semibold">{fmtEUR(formNet)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>{t('income.summary.vat')}</span>
+                  <span className="font-semibold">{fmtEUR(formNet * VAT_RATE)}</span>
+                </div>
+                <div className="flex justify-between text-sm text-blue-700">
+                  <span className="font-semibold">{t('income.summary.gross')}</span>
+                  <span className="font-bold">{fmtEUR(formNet * (1 + VAT_RATE))}</span>
+                </div>
+              </div>
             </div>
 
-            {/* Footer */}
-            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3">
+            <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-end gap-3 sticky bottom-0 bg-white">
               <button
                 type="button"
                 onClick={closeModal}
