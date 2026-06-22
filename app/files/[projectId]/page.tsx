@@ -1004,13 +1004,20 @@ function ProjectFilesContent() {
   }
 
   async function handleSaveNote(file: FileMetadata, note: string) {
-    if (!db || !projectId || !file.docId) return;
+    if (!db || !projectId) return;
+    const docId = file.docId || file.fileKey.replace(/\//g, '__');
+    if (!docId) return;
+    const trimmed = note.trim();
     const segments = getFolderSegments(file.folderPath);
     const folderPathId = segments.join('__');
-    const fileDocRef = doc(db, 'files', 'projects', projectId, folderPathId, 'files', file.docId);
+    const fileDocRef = doc(db, 'files', 'projects', projectId, folderPathId, 'files', docId);
     try {
-      await updateDoc(fileDocRef, { adminNote: note.trim() });
-      setEditingNoteKey(null);
+      await updateDoc(fileDocRef, { adminNote: trimmed });
+      setFiles((prev) =>
+        prev.map((f) => (f.fileKey === file.fileKey ? { ...f, adminNote: trimmed } : f))
+      );
+      setEditingNoteKey((current) => (current === file.fileKey ? null : current));
+      setNoteEditValue('');
     } catch (err) {
       console.error('Error saving note:', err);
     }
@@ -1522,21 +1529,25 @@ function ProjectFilesContent() {
                                   <div className="flex items-center gap-1">
                                     {editingNoteKey === file.fileKey ? (
                                       <>
-                                        <input
-                                          type="text"
+                                        <textarea
                                           value={noteEditValue}
                                           onChange={(e) => setNoteEditValue(e.target.value)}
                                           onKeyDown={(e) => {
-                                            if (e.key === 'Enter') void handleSaveNote(file, noteEditValue);
+                                            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                              e.preventDefault();
+                                              void handleSaveNote(file, noteEditValue);
+                                            }
                                             if (e.key === 'Escape') setEditingNoteKey(null);
                                           }}
                                           onClick={(e) => e.stopPropagation()}
-                                          className="text-xs border border-gray-300 rounded px-1.5 py-0.5 w-28 focus:outline-none focus:border-green-500"
+                                          rows={3}
+                                          className="text-sm border border-gray-300 rounded px-2 py-1.5 min-w-[280px] w-80 max-w-md min-h-[4.5rem] resize-y leading-snug focus:outline-none focus:border-green-500"
                                           autoFocus
                                           placeholder="Notiz..."
                                         />
                                         <button
                                           type="button"
+                                          onMouseDown={(e) => e.preventDefault()}
                                           onClick={(e) => { e.stopPropagation(); void handleSaveNote(file, noteEditValue); }}
                                           className="text-green-600 hover:text-green-700 flex-shrink-0"
                                           title="Speichern"
@@ -1558,34 +1569,37 @@ function ProjectFilesContent() {
                                       </>
                                     ) : (
                                       <>
-                                        <div className="flex items-center gap-1 max-w-[160px]">
-                                          <span className="text-xs text-gray-500 truncate">
-                                            {file.adminNote || <span className="text-gray-300">—</span>}
-                                          </span>
-                                          {file.adminNote && (
-                                            <button
-                                              type="button"
-                                              onClick={(e) => { e.stopPropagation(); setNoteModalText(file.adminNote); }}
-                                              className="text-blue-500 hover:underline text-[10px] whitespace-nowrap flex-shrink-0"
-                                            >
-                                              mehr
-                                            </button>
-                                          )}
+                                        <div className="flex items-start gap-1.5">
+                                          <div className="max-w-[300px] min-w-0">
+                                            <p className="text-xs text-gray-600 break-words whitespace-pre-wrap leading-relaxed line-clamp-3">
+                                              {file.adminNote || <span className="text-gray-300">—</span>}
+                                            </p>
+                                            {file.adminNote &&
+                                              (file.adminNote.length > 150 || file.adminNote.split('\n').length > 3) && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => { e.stopPropagation(); setNoteModalText(file.adminNote); }}
+                                                className="mt-1 text-[10px] font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                              >
+                                                mehr
+                                              </button>
+                                            )}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setEditingNoteKey(file.fileKey);
+                                              setNoteEditValue(file.adminNote);
+                                            }}
+                                            className="text-gray-400 hover:text-gray-600 flex-shrink-0 mt-0.5"
+                                            title="Notiz bearbeiten"
+                                          >
+                                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                                            </svg>
+                                          </button>
                                         </div>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setEditingNoteKey(file.fileKey);
-                                            setNoteEditValue(file.adminNote);
-                                          }}
-                                          className="text-gray-400 hover:text-gray-600 flex-shrink-0"
-                                          title="Notiz bearbeiten"
-                                        >
-                                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                          </svg>
-                                        </button>
                                       </>
                                     )}
                                   </div>
@@ -2158,7 +2172,7 @@ function ProjectFilesContent() {
           onClick={() => setNoteModalText(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
@@ -2173,8 +2187,8 @@ function ProjectFilesContent() {
                 </svg>
               </button>
             </div>
-            <div className="px-6 py-5">
-              <p className="text-sm text-gray-700 whitespace-pre-wrap">{noteModalText}</p>
+            <div className="px-6 py-5 max-h-[min(70vh,28rem)] overflow-y-auto">
+              <p className="text-sm text-gray-700 whitespace-pre-wrap break-words leading-relaxed">{noteModalText}</p>
             </div>
           </div>
         </div>
