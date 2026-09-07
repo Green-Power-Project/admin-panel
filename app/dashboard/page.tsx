@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import OperationsOverview from '@/components/dashboard/OperationsOverview';
 import AdminLayout from '@/components/AdminLayout';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { db } from '@/lib/firebase';
@@ -289,6 +290,9 @@ function DashboardContent() {
           <h2 className="text-3xl font-bold text-gray-900 mb-2">{t('dashboard.title')}</h2>
           <p className="text-sm text-gray-600">{t('dashboard.overview')}</p>
         </div>
+
+        {/* Site operations figures (requirement 49) */}
+        <OperationsOverview />
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">

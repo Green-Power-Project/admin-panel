@@ -1,8 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { usePathname } from 'next/navigation';
 import Sidebar from './Sidebar';
 import AppHeader from './AppHeader';
+import EmployeeSectionNav from './employees/EmployeeSectionNav';
+import { isInEmployeeArea } from '@/lib/navigation/employeeArea';
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -11,6 +14,16 @@ interface AdminLayoutProps {
 
 export default function AdminLayout({ children, title }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const pathname = usePathname();
+
+  const showEmployeeNav = isInEmployeeArea(pathname);
+  // Operational employee-area pages (tasks, materials, …) rely on this wrapper.
+  // /employees/* pages already carry their own padding and are excluded.
+  const wrapEmployeeAreaPadding =
+    showEmployeeNav &&
+    pathname != null &&
+    pathname !== '/employees' &&
+    !pathname.startsWith('/employees/');
 
   // Close sidebar when resizing to desktop
   useEffect(() => {
@@ -29,8 +42,15 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <div className="flex-1 flex flex-col lg:ml-64 overflow-hidden min-w-0 min-h-0">
         <AppHeader title={title} onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
+        {showEmployeeNav && <EmployeeSectionNav />}
         <main className="flex-1 min-h-0 min-w-0 max-w-full overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth touch-pan-y pb-[env(safe-area-inset-bottom)]">
-          {children}
+          {wrapEmployeeAreaPadding ? (
+            <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 lg:py-8 min-w-0 max-w-full">
+              {children}
+            </div>
+          ) : (
+            children
+          )}
         </main>
       </div>
     </div>

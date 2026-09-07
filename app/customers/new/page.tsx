@@ -27,6 +27,9 @@ function NewCustomerContent() {
   const [name, setName] = useState('');
   const [customerNumber, setCustomerNumber] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
+  const [companyName, setCompanyName] = useState('');
+  const [contactPerson, setContactPerson] = useState('');
+  const [street, setStreet] = useState('');
   const [zipCode, setZipCode] = useState('');
   const [city, setCity] = useState('');
   const [email, setEmail] = useState('');
@@ -98,6 +101,9 @@ function NewCustomerContent() {
           name: name.trim().charAt(0).toUpperCase() + name.trim().slice(1).toLowerCase(),
           customerNumber: customerNumber.trim(),
           mobileNumber: mobileNumber.trim() || '',
+          companyName: companyName.trim() || '',
+          contactPerson: contactPerson.trim() || '',
+          street: street.trim() || '',
           zipCode: zipCode.trim() || '',
           city: city.trim() || '',
           email: email.trim(),
@@ -197,6 +203,45 @@ function NewCustomerContent() {
                   onChange={(e) => setMobileNumber(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
                   placeholder="e.g., +1234567890"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="companyName" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('customersNew.companyName')}
+                </label>
+                <input
+                  id="companyName"
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="contactPerson" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('customersNew.contactPerson')}
+                </label>
+                <input
+                  id="contactPerson"
+                  type="text"
+                  value={contactPerson}
+                  onChange={(e) => setContactPerson(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="street" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('customersNew.street')}
+                </label>
+                <input
+                  id="street"
+                  type="text"
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
                 />
               </div>
 

@@ -40,6 +40,12 @@ function NewProjectContent() {
   const [notificationEmail, setNotificationEmail] = useState('');
   const [notificationTarget, setNotificationTarget] = useState<'login' | 'project'>('project');
   const [siteManagerName, setSiteManagerName] = useState('');
+  const [siteAddress, setSiteAddress] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [status, setStatus] = useState<'planned' | 'inProgress' | 'completed'>('planned');
   const [notifyCustomerByEmail, setNotifyCustomerByEmail] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
@@ -173,6 +179,20 @@ function NewProjectContent() {
         siteManagerName: (siteManagerName || '').trim(),
         enabled: true,
       };
+
+      const siteAddressValue = siteAddress.trim();
+      if (siteAddressValue) projectData.siteAddress = siteAddressValue;
+
+      const lat = parseFloat(latitude.replace(',', '.'));
+      const lng = parseFloat(longitude.replace(',', '.'));
+      if (!isNaN(lat) && !isNaN(lng)) {
+        projectData.latitude = lat;
+        projectData.longitude = lng;
+      }
+
+      if (startDate) projectData.startDate = startDate;
+      if (endDate) projectData.endDate = endDate;
+      projectData.status = status;
 
       if (year) {
         const yearNum = parseInt(year, 10);
@@ -465,6 +485,95 @@ function NewProjectContent() {
                   placeholder={t('projectsNew.siteManagerNamePlaceholder')}
                 />
                 <p className="mt-1 text-xs text-gray-500">{t('projectsNew.siteManagerNameHelp')}</p>
+              </div>
+
+              {/* Construction site details (requirement 58) */}
+              <div>
+                <label htmlFor="siteAddress" className="block text-sm font-medium text-gray-700 mb-1.5">
+                  {t('projectsNew.siteAddress')}
+                </label>
+                <input
+                  id="siteAddress"
+                  type="text"
+                  value={siteAddress}
+                  onChange={(e) => setSiteAddress(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="latitude" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('projectsNew.latitude')}
+                  </label>
+                  <input
+                    id="latitude"
+                    type="text"
+                    inputMode="decimal"
+                    value={latitude}
+                    onChange={(e) => setLatitude(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                    placeholder="47.3782"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="longitude" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('projectsNew.longitude')}
+                  </label>
+                  <input
+                    id="longitude"
+                    type="text"
+                    inputMode="decimal"
+                    value={longitude}
+                    onChange={(e) => setLongitude(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                    placeholder="8.5401"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label htmlFor="startDate" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('projectsNew.startDate')}
+                  </label>
+                  <input
+                    id="startDate"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="endDate" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('projectsNew.endDate')}
+                  </label>
+                  <input
+                    id="endDate"
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="status" className="block text-sm font-medium text-gray-700 mb-1.5">
+                    {t('projectsNew.status')}
+                  </label>
+                  <select
+                    id="status"
+                    value={status}
+                    onChange={(e) =>
+                      setStatus(e.target.value as 'planned' | 'inProgress' | 'completed')
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-sm text-sm focus:outline-none focus:ring-1 focus:ring-green-power-500 focus:border-green-power-500"
+                  >
+                    <option value="planned">{t('projectsNew.statusPlanned')}</option>
+                    <option value="inProgress">{t('projectsNew.statusInProgress')}</option>
+                    <option value="completed">{t('projectsNew.statusCompleted')}</option>
+                  </select>
+                </div>
               </div>
 
               <div className="flex items-center gap-3">

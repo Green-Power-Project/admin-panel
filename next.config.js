@@ -9,19 +9,11 @@ const nextConfig = {
     },
   },
   // Improve chunk loading reliability
-  webpack: (config, { dev, isServer }) => {
+  webpack: (config, { dev }) => {
     if (dev) {
-      // Increase timeout for chunk loading in development
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
-      };
-      // Faster builds in development
-      config.optimization = {
-        ...config.optimization,
-        removeAvailableModules: false,
-        removeEmptyChunks: false,
-        splitChunks: false,
       };
     }
     return config;

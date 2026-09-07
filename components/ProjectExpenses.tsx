@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { DateInput } from '@/components/DateInput';
 
 export type ExpenseType = 'material' | 'vehicle' | 'staff' | 'machine' | 'disposal' | 'other';
 
@@ -446,15 +447,12 @@ export default function ProjectExpenses({ projectId }: { projectId: string }) {
                     className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">{t('expenses.form.date')}</label>
-                  <input
-                    type="date"
-                    value={form.date}
-                    onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
-                    className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
+                <DateInput
+                  label={t('expenses.form.date')}
+                  value={form.date}
+                  onChange={(e) => setForm((f) => ({ ...f, date: e.target.value }))}
+                  focusClassName="focus:border-emerald-500"
+                />
               </div>
 
               {/* Invoice number */}
